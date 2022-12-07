@@ -1,0 +1,6 @@
+---
+commands:
+  echoes_prelude: |
+    cargo watch -i lib -x "run --features hot_reload"
+  echoes_prelude_lib: |
+    cargo watch -w lib -x "build -p echoes_prelude_lib"

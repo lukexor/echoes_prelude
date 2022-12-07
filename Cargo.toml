@@ -1,0 +1,38 @@
+[package]
+name = "echoes_prelude"
+authors = ["Luke Petherbridge <me@lukeworks.tech>"]
+categories = ["games"]
+description = "A cross-platform 2D platformer RPG."
+keywords = ["game"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lukexor/echos-prelude.git"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[package.metadata]
+msrv = "1.65.0"
+
+[features]
+default = []
+hot_reload = ["dep:hot-lib-reloader"]
+
+[dependencies]
+anyhow = { workspace = true }
+echoes_prelude_lib = { path = "lib" }
+env_logger = { workspace = true }
+hot-lib-reloader = { version = "0.6.4", optional = true }
+log = { workspace = true }
+winit = { workspace = true }
+
+[workspace]
+resolver = "2"
+members = [
+    "lib"
+]
+
+[workspace.dependencies]
+anyhow = "1.0.66"
+log = "0.4.7"
+env_logger = "0.10.0"
+winit = "0.27.5"
