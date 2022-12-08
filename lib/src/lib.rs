@@ -41,6 +41,7 @@ pub mod logger;
 #[macro_use]
 pub mod profiling;
 pub mod application;
+pub mod math;
 
 mod event;
 mod input;
@@ -54,8 +55,8 @@ pub use winit::window::Window;
 
 #[no_mangle]
 /// Initializes the logger correctly when the hot_reload is enabled.
-pub fn app_init() {
-    let _ = logger::init();
+pub fn initialize_logger() {
+    let _ = logger::initialize();
 }
 
 #[no_mangle]

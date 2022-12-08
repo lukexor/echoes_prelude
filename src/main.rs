@@ -39,7 +39,7 @@
 use anyhow::Result;
 use winit::{
     dpi::LogicalSize,
-    event::{ElementState, Event, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
 };
@@ -64,7 +64,7 @@ mod hot_echoes_prelude_lib {
 }
 
 fn main() -> Result<()> {
-    logger::init()?;
+    logger::initialize()?;
 
     // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
 
@@ -78,46 +78,41 @@ fn main() -> Result<()> {
 
     // App
     let mut app = App::create(&window);
-
     // Required to properly initialize logger with reload
     #[cfg(feature = "hot_reload")]
-    app_init();
+    initialize_logger();
 
     event_loop.run(move |event, _window_target, control_flow| {
         control_flow.set_poll();
 
         log::trace!("Received event: {event:?}");
         match event {
-            Event::MainEventsCleared if app.is_active() => {
+            Event::MainEventsCleared if app.is_running() => {
                 if let Err(err) = update_and_render(&mut app, &window) {
                     log::error!("Failed to render: {err}");
                     app.destroy();
                     control_flow.set_exit_with_code(1);
                 }
             }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(size),
-                ..
-            } => {
-                app.resize(size.width, size.height);
-            }
-            Event::WindowEvent {
-                event: WindowEvent::KeyboardInput { input, .. },
-                ..
-            } => {
-                if input.state == ElementState::Pressed {
-                    log::info!("{input:?}");
-                    // TODO: Process keyboard inputs
-                    // match input.virtual_keycode {
-                    //     _ => (),
-                    // }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(size) => app.resize(size.width, size.height),
+                WindowEvent::KeyboardInput { input, .. } => app.on_key_input(input),
+                WindowEvent::MouseInput { state, button, .. } => app.on_mouse_input(state, button),
+                WindowEvent::MouseWheel { delta, phase, .. } => app.on_mouse_wheel(delta, phase),
+                WindowEvent::CursorMoved { position, .. } => {
+                    app.on_mouse_motion(position.x, position.y);
                 }
+                WindowEvent::ModifiersChanged(state) => app.on_modifiers_changed(state),
+                WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                    app.destroy();
+                    control_flow.set_exit();
+                }
+                _ => (),
+            },
+            Event::DeviceEvent { event: _, .. } => {
+                // TODO: device events for controllers
             }
-            Event::LoopDestroyed
-            | Event::WindowEvent {
-                event: WindowEvent::CloseRequested | WindowEvent::Destroyed,
-                ..
-            } => {
+            Event::LoopDestroyed => {
                 app.destroy();
                 control_flow.set_exit();
             }
