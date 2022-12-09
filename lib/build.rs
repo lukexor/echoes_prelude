@@ -33,18 +33,18 @@ fn main() -> io::Result<()> {
         renderer => panic!("`{renderer}` is not a supported renderer backend"),
     }
 
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("valid OUT_DIR"));
+    println!("cargo:rustc-env=OUT_DIR={}", out_dir.display());
     let shader_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/shaders");
     let shaders = find_shaders(&shader_dir)?;
     for shader in &shaders {
         println!("cargo:rerun-if-changed={}", shader.display());
 
-        let shader_out = PathBuf::from(env::var("OUT_DIR").expect("valid OUT_DIR")).join(format!(
-            "{}.spv",
-            shader
-                .file_name()
-                .expect("valid shader filename")
-                .to_string_lossy()
-        ));
+        let filename = shader
+            .file_name()
+            .expect("valid shader filename")
+            .to_string_lossy();
+        let shader_out = out_dir.join(format!("{filename}.spv",));
         Command::new("glslc")
             .arg(shader)
             .arg("-o")

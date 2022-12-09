@@ -1,5 +1,6 @@
 //! Application logic.
 
+use crate::renderer::vulkan::Context;
 use anyhow::Result;
 use std::{
     thread,
@@ -33,7 +34,7 @@ impl Preferences {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 #[must_use]
 pub struct App {
     pub state: State,
@@ -53,13 +54,14 @@ pub struct App {
     pub minimized: bool,
     pub resized: bool,
     // pub renderer: Renderer,
+    pub context: Context,
 }
 
 impl App {
-    pub fn create(window: &Window) -> Self {
+    pub fn create(window: &Window) -> Result<Self> {
         // TODO finish create
         let size = window.inner_size();
-        Self {
+        Ok(Self {
             state: State::new(),
             preferences: Preferences::new(),
             width: size.width,
@@ -76,7 +78,8 @@ impl App {
             destroying: false,
             minimized: false,
             resized: false,
-        }
+            context: unsafe { Context::create(window)? },
+        })
     }
 
     #[must_use]
@@ -93,17 +96,20 @@ impl App {
         }
     }
 
-    pub fn update_and_render(&mut self, _window: &Window) -> Result<()> {
+    pub fn update_and_render(&mut self, window: &Window) -> Result<()> {
         let start_time = Instant::now();
         let delta = start_time - self.last_frame_time;
 
         self.update(delta)?;
-        self.render(delta)?;
+        self.render(delta, window)?;
 
         let end_time = Instant::now();
         let elapsed = end_time - start_time;
         self.fps_timer += delta;
-        let remaining = self.target_frame_rate - elapsed;
+        let remaining = self
+            .target_frame_rate
+            .checked_sub(elapsed)
+            .unwrap_or_default();
         if !remaining.is_zero() {
             if self.limit_frame_rate {
                 thread::sleep(remaining - Duration::from_millis(1));
@@ -128,8 +134,9 @@ impl App {
         Ok(())
     }
 
-    pub fn render(&mut self, _delta: Duration) -> Result<()> {
+    pub fn render(&mut self, _delta: Duration, window: &Window) -> Result<()> {
         // TODO: update
+        unsafe { self.context.render(window)? };
         Ok(())
     }
 
@@ -183,11 +190,13 @@ impl App {
         Ok(vec![])
     }
 
-    pub fn destroy(&mut self) {
+    pub fn destroy(&mut self) -> Result<()> {
         if self.destroying {
-            return;
+            return Ok(());
         }
         // TODO finish destroy
         self.destroying = true;
+        unsafe { self.context.destroy()? };
+        Ok(())
     }
 }

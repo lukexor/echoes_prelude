@@ -250,19 +250,6 @@ impl Vector<4> {
     }
 }
 
-impl<const N: usize> Deref for Vector<N> {
-    type Target = [f32; N];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<const N: usize> DerefMut for Vector<N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl<const N: usize> Vector<N> {
     /// Create a N-dimentional `Vector` from given coordinates.
     #[inline]
@@ -309,6 +296,28 @@ impl<const N: usize> Vector<N> {
     #[must_use]
     pub fn distance(&self, vector: Self) -> f32 {
         (*self - vector).magnitude()
+    }
+}
+
+impl<const N: usize> Deref for Vector<N> {
+    type Target = [f32; N];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> DerefMut for Vector<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<const N: usize> IntoIterator for &Vector<N> {
+    type Item = f32;
+    type IntoIter = std::array::IntoIter<Self::Item, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -532,7 +541,7 @@ pub struct Matrix<const N: usize = 4, const M: usize = 4>([[f32; M]; N]);
 
 impl<const N: usize, const M: usize> Default for Matrix<N, M> {
     fn default() -> Self {
-        Self::identity()
+        Self([[0.0; M]; N])
     }
 }
 

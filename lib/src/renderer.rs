@@ -1,4 +1,4 @@
 #[cfg(opengl)]
-mod opengl;
+pub(crate) mod opengl;
 #[cfg(vulkan)]
-mod vulkan;
+pub(crate) mod vulkan;

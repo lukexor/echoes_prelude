@@ -39,7 +39,7 @@
 use anyhow::Result;
 use winit::{
     dpi::LogicalSize,
-    event::{DeviceEvent, ElementState, Event, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
 };
@@ -77,7 +77,7 @@ fn main() -> Result<()> {
         .build(&event_loop)?;
 
     // App
-    let mut app = App::create(&window);
+    let mut app = App::create(&window)?;
     // Required to properly initialize logger with reload
     #[cfg(feature = "hot_reload")]
     initialize_logger();
@@ -90,7 +90,7 @@ fn main() -> Result<()> {
             Event::MainEventsCleared if app.is_running() => {
                 if let Err(err) = update_and_render(&mut app, &window) {
                     log::error!("Failed to render: {err}");
-                    app.destroy();
+                    let _ = app.destroy();
                     control_flow.set_exit_with_code(1);
                 }
             }
@@ -104,7 +104,7 @@ fn main() -> Result<()> {
                 }
                 WindowEvent::ModifiersChanged(state) => app.on_modifiers_changed(state),
                 WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                    app.destroy();
+                    let _ = app.destroy();
                     control_flow.set_exit();
                 }
                 _ => (),
@@ -113,7 +113,7 @@ fn main() -> Result<()> {
                 // TODO: device events for controllers
             }
             Event::LoopDestroyed => {
-                app.destroy();
+                let _ = app.destroy();
                 control_flow.set_exit();
             }
             _ => (),

@@ -1,10 +1,13 @@
+//! Vulkan renderer.
+
 use crate::{
-    math::{Matrix, Radians},
+    math::{Matrix, Radians, Vector},
     vector,
 };
 use anyhow::{anyhow, bail, Context as _, Result};
 use std::{
     collections::{hash_map::Entry as HashEntry, HashMap, HashSet},
+    env,
     ffi::{c_void, CStr},
     fs::{self, File},
     hash::{Hash, Hasher},
@@ -63,8 +66,8 @@ extern "system" fn debug_callback(
 /// Vulkan State.
 #[derive(Debug, Clone)]
 #[must_use]
-struct Context {
-    entry: Entry,
+pub struct Context {
+    _entry: Entry,
     instance: Instance,
     data: Data,
     device: Device,
@@ -141,7 +144,7 @@ struct Data {
 }
 
 impl Context {
-    unsafe fn create(window: &Window) -> Result<Self> {
+    pub unsafe fn create(window: &Window) -> Result<Self> {
         unsafe fn create_instance(
             window: &Window,
             entry: &Entry,
@@ -366,7 +369,7 @@ impl Context {
         Self::create_sync_objects(&device, &mut data)?;
 
         Ok(Self {
-            entry,
+            _entry: entry,
             instance,
             data,
             device,
@@ -376,7 +379,7 @@ impl Context {
         })
     }
 
-    unsafe fn render(&mut self, window: &Window) -> Result<()> {
+    pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
         time!(render_time);
 
         let in_flight_fence = self.data.in_flight_fences[self.frame];
@@ -534,16 +537,11 @@ impl Context {
         self.device.begin_command_buffer(buffer, &info)?;
 
         // Model
-        let y = (((model_index % 2) as f32) * 2.5) - 1.25;
-        let z = (((model_index / 2) as f32) * -2.0) + 1.0;
-
-        let model = Matrix::translation(vector!(0.0, y, z));
-
         let time = self.start.elapsed().as_secs_f32();
-        let model = model * Matrix::rotation_z(Radians(time * 20.0));
+        let model = Matrix::rotation_z(Radians(time * 20.0f32.to_radians()));
         let (_, model_bytes, _) = model.as_slice().align_to::<u8>();
 
-        let opacity = (model_index + 1) as f32 * 0.25;
+        let opacity = (model_index + 1) as f32 * 1.0;
         let opacity_bytes = &opacity.to_ne_bytes()[..];
 
         self.device
@@ -793,7 +791,7 @@ impl Context {
     unsafe fn load_model(data: &mut Data) -> Result<()> {
         // Model
         let mut obj_reader = BufReader::new(File::open(
-            fs::canonicalize("resources/viking_room.obj")
+            fs::canonicalize("lib/assets/viking_room.obj")
                 .with_context(|| anyhow!("failed to open model obj"))?,
         )?);
 
@@ -818,9 +816,9 @@ impl Context {
                 let pos = &model.mesh.positions;
                 let texcoords = &model.mesh.texcoords;
                 let vertex = Vertex::new(
-                    glm::vec3(pos[pos_offset], pos[pos_offset + 1], pos[pos_offset + 2]),
-                    glm::vec3(1.0, 1.0, 1.0),
-                    glm::vec2(
+                    vector!(pos[pos_offset], pos[pos_offset + 1], pos[pos_offset + 2]),
+                    vector!(1.0, 1.0, 1.0),
+                    vector!(
                         texcoords[texcoord_offset],
                         1.0 - texcoords[texcoord_offset + 1],
                     ),
@@ -971,19 +969,19 @@ impl Context {
 
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         // View / Projection
-        let view = glm::look_at(
-            &glm::vec3(6.0, 0.0, 2.0),
-            &glm::vec3(0.0, 0.0, 0.0),
-            &glm::vec3(0.0, 0.0, 1.0),
+        let view = Matrix::look_at(
+            vector!(2.0, 2.0, 2.0),
+            vector!(0.0, 0.0, 0.0),
+            vector!(0.0, 0.0, 1.0),
         );
         let vk::Extent2D { width, height } = self.data.swapchain_extent;
-        let mut proj = glm::perspective_rh_zo(
+        let mut proj = Matrix::perspective(
+            Radians(45.0f32.to_radians()),
             width as f32 / height as f32,
-            glm::radians(&glm::vec1(45.0))[0],
             0.1,
             10.0,
         );
-        proj[(1, 1)] *= -1.0; // Y-axis is inverted in Vulkan
+        proj[5] *= -1.0; // Y-axis is inverted in Vulkan
 
         let ubo = UniformBufferObject { view, proj };
 
@@ -1065,10 +1063,10 @@ impl Context {
         self.device.destroy_swapchain_khr(self.data.swapchain, None);
     }
 
-    unsafe fn destroy(&mut self) {
+    pub unsafe fn destroy(&mut self) -> Result<()> {
         log::debug!("destroying app");
 
-        self.device.device_wait_idle().unwrap();
+        self.device.device_wait_idle()?;
         self.destroy_swapchain();
 
         self.data
@@ -1107,10 +1105,12 @@ impl Context {
 
         if VALIDATION_ENABLED {
             self.instance
-                .destroy_debug_utils_messenger_ext(self.data.messenger, None)
+                .destroy_debug_utils_messenger_ext(self.data.messenger, None);
         }
 
         self.instance.destroy_instance(None);
+
+        Ok(())
     }
 
     unsafe fn create_swapchain(
@@ -1356,10 +1356,8 @@ impl Context {
         }
 
         // Stages
-        let vert: &[u8] = todo!();
-        let frag: &[u8] = todo!();
-        // let vert = include_bytes!("./vert.spv");
-        // let frag = include_bytes!("./vulkan/shaders/frag.spv");
+        let vert = include_bytes!(concat!(env!("OUT_DIR"), "/primary.vert.spv"));
+        let frag = include_bytes!(concat!(env!("OUT_DIR"), "/primary.frag.spv"));
 
         let vert_shader_module = create_shader_module(device, &vert[..])?;
         let frag_shader_module = create_shader_module(device, &frag[..])?;
@@ -1532,6 +1530,7 @@ impl Context {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     unsafe fn create_image(
         instance: &Instance,
         device: &Device,
@@ -1612,6 +1611,7 @@ impl Context {
         Ok(device.create_image_view(&image_view_info, None)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     unsafe fn generate_mipmaps(
         instance: &Instance,
         device: &Device,
@@ -1756,8 +1756,7 @@ impl Context {
     ) -> Result<()> {
         // Load
         let image = File::open(
-            fs::canonicalize("resources/viking_room.png")
-                .with_context(|| anyhow!("failed to open texture"))?,
+            fs::canonicalize("lib/assets/viking_room.png").context("failed to open texture")?,
         )?;
 
         let decoder = png::Decoder::new(image);
@@ -2102,13 +2101,13 @@ impl Context {
 #[repr(C)]
 #[must_use]
 struct Vertex {
-    pos: glm::Vec3,
-    color: glm::Vec3,
-    texcoords: glm::Vec2,
+    pos: Vector<3>,
+    color: Vector<3>,
+    texcoords: Vector<2>,
 }
 
 impl Vertex {
-    fn new(pos: glm::Vec3, color: glm::Vec3, texcoord: glm::Vec2) -> Self {
+    fn new(pos: Vector<3>, color: Vector<3>, texcoord: Vector<2>) -> Self {
         Self {
             pos,
             color,
@@ -2135,13 +2134,13 @@ impl Vertex {
             .binding(0)
             .location(1) // points to shader.vert location
             .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(size_of::<glm::Vec3>() as u32)
+            .offset(size_of::<Vector<3>>() as u32)
             .build();
         let texcoord = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(2) // points to shader.vert location
             .format(vk::Format::R32G32_SFLOAT)
-            .offset((size_of::<glm::Vec3>() + size_of::<glm::Vec3>()) as u32)
+            .offset((size_of::<Vector<3>>() + size_of::<Vector<3>>()) as u32)
             .build();
         [pos, color, texcoord]
     }
@@ -2174,8 +2173,8 @@ impl Hash for Vertex {
 #[repr(C)]
 #[must_use]
 struct UniformBufferObject {
-    view: glm::Mat4,
-    proj: glm::Mat4,
+    view: Matrix<4, 4>,
+    proj: Matrix<4, 4>,
 }
 
 #[derive(Debug, Copy, Clone)]
