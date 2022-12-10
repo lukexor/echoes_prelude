@@ -39,7 +39,7 @@
 use anyhow::Result;
 use winit::{
     dpi::LogicalSize,
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
 };
@@ -63,40 +63,42 @@ mod hot_echoes_prelude_lib {
     pub(crate) fn _subscribe() -> hot_lib_reloader::LibReloadObserver {}
 }
 
-fn main() -> Result<()> {
-    logger::initialize()?;
+const APPLICATION_NAME: &str = "Echoes: Prelude";
+// TODO: fullscreen?
+const WINDOW_WIDTH: u32 = 1440;
+const WINDOW_HEIGHT: u32 = 900;
 
-    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
+fn create_window(event_loop: &EventLoop<()>) -> Result<Window> {
+    Ok(WindowBuilder::new()
+        .with_title(APPLICATION_NAME)
+        .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+        .build(event_loop)?)
+}
 
-    // Window
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("Echoes: Prelude")
-        // TODO: Choose better default resolution or go fullscreen
-        .with_inner_size(LogicalSize::new(1024, 768))
-        .build(&event_loop)?;
-
-    // App
-    let mut app = App::create(&window)?;
-    // Required to properly initialize logger with reload
-    #[cfg(feature = "hot_reload")]
-    initialize_logger();
-
+fn main_loop(mut app: App, event_loop: EventLoop<()>) {
     event_loop.run(move |event, _window_target, control_flow| {
         control_flow.set_poll();
 
         log::trace!("Received event: {event:?}");
         match event {
             Event::MainEventsCleared if app.is_running() => {
-                if let Err(err) = update_and_render(&mut app, &window) {
+                if let Err(err) = update_and_render(&mut app) {
                     log::error!("Failed to render: {err}");
-                    let _ = app.destroy();
                     control_flow.set_exit_with_code(1);
                 }
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(size) => app.resize(size.width, size.height),
-                WindowEvent::KeyboardInput { input, .. } => app.on_key_input(input),
+                WindowEvent::Resized(size) => app.on_resized(size.width, size.height),
+                WindowEvent::KeyboardInput { input, .. } => {
+                    #[cfg(debug_assertions)]
+                    if matches!(
+                        (input.virtual_keycode, input.state),
+                        (Some(VirtualKeyCode::Escape), ElementState::Pressed)
+                    ) {
+                        control_flow.set_exit();
+                    }
+                    app.on_key_input(input);
+                }
                 WindowEvent::MouseInput { state, button, .. } => app.on_mouse_input(state, button),
                 WindowEvent::MouseWheel { delta, phase, .. } => app.on_mouse_wheel(delta, phase),
                 WindowEvent::CursorMoved { position, .. } => {
@@ -104,7 +106,7 @@ fn main() -> Result<()> {
                 }
                 WindowEvent::ModifiersChanged(state) => app.on_modifiers_changed(state),
                 WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                    let _ = app.destroy();
+                    log::debug!("Window closed. Shutting down...");
                     control_flow.set_exit();
                 }
                 _ => (),
@@ -113,10 +115,28 @@ fn main() -> Result<()> {
                 // TODO: device events for controllers
             }
             Event::LoopDestroyed => {
-                let _ = app.destroy();
+                log::debug!("Shutting down...");
                 control_flow.set_exit();
             }
             _ => (),
         }
     });
+}
+
+fn main() -> Result<()> {
+    logger::initialize()?;
+
+    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
+
+    let event_loop = EventLoop::new();
+    let window = create_window(&event_loop)?;
+
+    // App
+    let app = App::create(APPLICATION_NAME, &window)?;
+    #[cfg(feature = "hot_reload")]
+    initialize_logger(); // Required to properly initialize logger with reload
+
+    main_loop(app, event_loop);
+
+    Ok(())
 }

@@ -23,6 +23,5 @@ derive_more = "0.99.17"
 env_logger = { workspace = true }
 png = "0.17.6"
 tobj = "3.2.3"
-# TODO: "provisional" required because of macOS dependency on `VK_KHR_portability_subset`
-vulkanalia = { version = "0.15.0", features = ["libloading", "window", "provisional"] }
+ash = { version = "0.37.1", features = ["linked"] }
 winit = { workspace = true }

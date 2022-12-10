@@ -25,6 +25,10 @@ hot-lib-reloader = { version = "0.6.4", optional = true }
 log = { workspace = true }
 winit = { workspace = true }
 
+[profile.dev]
+debug-assertions = true
+opt-level = 1
+
 [workspace]
 resolver = "2"
 members = [

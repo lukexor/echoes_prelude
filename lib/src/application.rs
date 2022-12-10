@@ -1,9 +1,9 @@
 //! Application logic.
 
-use crate::renderer::vulkan::Context;
+use crate::renderer::Renderer;
 use anyhow::Result;
 use std::{
-    thread,
+    env, thread,
     time::{Duration, Instant},
 };
 use winit::{
@@ -16,92 +16,83 @@ use winit::{
 
 #[derive(Debug, Default, Copy, Clone)]
 #[must_use]
-pub struct State {}
-
-impl State {
-    pub fn new() -> Self {
-        Self {}
-    }
+pub struct Config {
+    limit_frame_rate: bool,
 }
 
-#[derive(Debug, Default, Copy, Clone)]
-#[must_use]
-pub struct Preferences {}
-
-impl Preferences {
+impl Config {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            limit_frame_rate: env::var("LIMIT_FPS").is_ok(),
+        }
     }
 }
 
 #[derive(Debug)]
 #[must_use]
 pub struct App {
-    pub state: State,
-    pub preferences: Preferences,
-    pub width: u32,
-    pub height: u32,
+    pub config: Config,
 
     pub start_time: Instant,
     pub last_frame_time: Instant,
     pub target_frame_rate: Duration,
-    pub limit_frame_rate: bool,
 
     pub fps_count: usize,
     pub fps_timer: Duration,
 
-    pub destroying: bool,
-    pub minimized: bool,
+    pub suspended: bool,
     pub resized: bool,
-    // pub renderer: Renderer,
-    pub context: Context,
+
+    pub renderer: Renderer,
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.suspended = true;
+    }
 }
 
 impl App {
-    pub fn create(window: &Window) -> Result<Self> {
+    pub fn create(application_name: &str, window: &Window) -> Result<Self> {
         // TODO finish create
-        let size = window.inner_size();
         Ok(Self {
-            state: State::new(),
-            preferences: Preferences::new(),
-            width: size.width,
-            height: size.height,
+            config: Config::new(),
 
             start_time: Instant::now(),
             last_frame_time: Instant::now(),
             target_frame_rate: Duration::from_secs(1) / 60,
-            limit_frame_rate: false,
 
             fps_count: 0,
             fps_timer: Duration::default(),
 
-            destroying: false,
-            minimized: false,
+            suspended: false,
             resized: false,
-            context: unsafe { Context::create(window)? },
+
+            renderer: Renderer::initialize(application_name, window)?,
         })
     }
 
     #[must_use]
     pub fn is_running(&self) -> bool {
-        !self.destroying && !self.minimized
+        !self.suspended
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn on_resized(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
-            self.minimized = true;
+            self.suspended = true;
         } else {
-            self.minimized = false;
+            self.suspended = false;
             self.resized = true;
         }
+        self.renderer.on_resized(width, height);
     }
 
-    pub fn update_and_render(&mut self, window: &Window) -> Result<()> {
+    pub fn update_and_render(&mut self) -> Result<()> {
         let start_time = Instant::now();
         let delta = start_time - self.last_frame_time;
 
         self.update(delta)?;
-        self.render(delta, window)?;
+        self.render(delta)?;
 
         let end_time = Instant::now();
         let elapsed = end_time - start_time;
@@ -110,8 +101,8 @@ impl App {
             .target_frame_rate
             .checked_sub(elapsed)
             .unwrap_or_default();
-        if !remaining.is_zero() {
-            if self.limit_frame_rate {
+        if remaining.as_millis() > 0 {
+            if self.config.limit_frame_rate {
                 thread::sleep(remaining - Duration::from_millis(1));
             }
             self.fps_count += 1;
@@ -134,9 +125,9 @@ impl App {
         Ok(())
     }
 
-    pub fn render(&mut self, _delta: Duration, window: &Window) -> Result<()> {
-        // TODO: update
-        unsafe { self.context.render(window)? };
+    pub fn render(&mut self, _delta: Duration) -> Result<()> {
+        // TODO: render
+        self.renderer.draw_frame()?;
         Ok(())
     }
 
@@ -188,15 +179,5 @@ impl App {
     pub fn audio_samples(&mut self) -> Result<Vec<f32>> {
         // TODO audio_samples https://github.com/RustAudio/cpal?
         Ok(vec![])
-    }
-
-    pub fn destroy(&mut self) -> Result<()> {
-        if self.destroying {
-            return Ok(());
-        }
-        // TODO finish destroy
-        self.destroying = true;
-        unsafe { self.context.destroy()? };
-        Ok(())
     }
 }
