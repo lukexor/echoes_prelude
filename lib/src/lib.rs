@@ -59,8 +59,8 @@ pub fn initialize_logger() {
 }
 
 #[no_mangle]
-pub fn update_and_render(app: &mut App) -> Result<()> {
-    app.update_and_render()
+pub fn update_and_render(app: &mut App, window: &Window) -> Result<()> {
+    app.update_and_render(window)
 }
 
 #[no_mangle]

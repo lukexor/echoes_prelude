@@ -3,7 +3,9 @@
 use crate::renderer::Renderer;
 use anyhow::Result;
 use std::{
-    env, thread,
+    env,
+    fmt::Write,
+    thread,
     time::{Duration, Instant},
 };
 use winit::{
@@ -31,19 +33,21 @@ impl Config {
 #[derive(Debug)]
 #[must_use]
 pub struct App {
-    pub config: Config,
+    application_name: String,
+    window_title: String,
+    config: Config,
 
-    pub start_time: Instant,
-    pub last_frame_time: Instant,
-    pub target_frame_rate: Duration,
+    start_time: Instant,
+    last_frame_time: Instant,
+    target_frame_rate: Duration,
 
-    pub fps_count: usize,
-    pub fps_timer: Duration,
+    fps_counter: usize,
+    fps_timer: Duration,
 
-    pub suspended: bool,
-    pub resized: bool,
+    suspended: bool,
+    resized: bool,
 
-    pub renderer: Renderer,
+    renderer: Renderer,
 }
 
 impl Drop for App {
@@ -54,15 +58,18 @@ impl Drop for App {
 
 impl App {
     pub fn create(application_name: &str, window: &Window) -> Result<Self> {
+        let target_fps = 60;
         // TODO finish create
         Ok(Self {
+            application_name: application_name.to_string(),
+            window_title: application_name.to_string(),
             config: Config::new(),
 
             start_time: Instant::now(),
             last_frame_time: Instant::now(),
-            target_frame_rate: Duration::from_secs(1) / 60,
+            target_frame_rate: Duration::from_secs(1) / target_fps,
 
-            fps_count: 0,
+            fps_counter: 0,
             fps_timer: Duration::default(),
 
             suspended: false,
@@ -87,15 +94,15 @@ impl App {
         self.renderer.on_resized(width, height);
     }
 
-    pub fn update_and_render(&mut self) -> Result<()> {
-        let start_time = Instant::now();
-        let delta = start_time - self.last_frame_time;
+    pub fn update_and_render(&mut self, window: &Window) -> Result<()> {
+        let current_time = Instant::now();
+        let delta = current_time - self.last_frame_time;
 
         self.update(delta)?;
         self.render(delta)?;
 
         let end_time = Instant::now();
-        let elapsed = end_time - start_time;
+        let elapsed = end_time - current_time;
         self.fps_timer += delta;
         let remaining = self
             .target_frame_rate
@@ -105,17 +112,23 @@ impl App {
             if self.config.limit_frame_rate {
                 thread::sleep(remaining - Duration::from_millis(1));
             }
-            self.fps_count += 1;
+            self.fps_counter += 1;
         }
 
         let one_second = Duration::from_secs(1);
         if self.fps_timer > one_second {
-            log::debug!("FPS: {}", self.fps_count);
+            self.window_title.clear();
+            let _ = write!(
+                self.window_title,
+                "{} - FPS: {}",
+                self.application_name, self.fps_counter
+            );
+            window.set_title(&self.window_title);
             self.fps_timer -= one_second;
-            self.fps_count = 0;
+            self.fps_counter = 0;
         }
 
-        self.last_frame_time = start_time;
+        self.last_frame_time = current_time;
 
         Ok(())
     }

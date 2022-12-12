@@ -75,14 +75,16 @@ fn create_window(event_loop: &EventLoop<()>) -> Result<Window> {
         .build(event_loop)?)
 }
 
-fn main_loop(mut app: App, event_loop: EventLoop<()>) {
+fn main_loop(mut app: App, event_loop: EventLoop<()>, window: Window) {
+    log::info!("application started");
+
     event_loop.run(move |event, _window_target, control_flow| {
         control_flow.set_poll();
 
         log::trace!("Received event: {event:?}");
         match event {
             Event::MainEventsCleared if app.is_running() => {
-                if let Err(err) = update_and_render(&mut app) {
+                if let Err(err) = update_and_render(&mut app, &window) {
                     log::error!("Failed to render: {err}");
                     control_flow.set_exit_with_code(1);
                 }
@@ -106,7 +108,7 @@ fn main_loop(mut app: App, event_loop: EventLoop<()>) {
                 }
                 WindowEvent::ModifiersChanged(state) => app.on_modifiers_changed(state),
                 WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                    log::debug!("Window closed. Shutting down...");
+                    log::debug!("window closed or destroyed");
                     control_flow.set_exit();
                 }
                 _ => (),
@@ -115,7 +117,7 @@ fn main_loop(mut app: App, event_loop: EventLoop<()>) {
                 // TODO: device events for controllers
             }
             Event::LoopDestroyed => {
-                log::debug!("Shutting down...");
+                log::info!("shutting down...");
                 control_flow.set_exit();
             }
             _ => (),
@@ -136,7 +138,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "hot_reload")]
     initialize_logger(); // Required to properly initialize logger with reload
 
-    main_loop(app, event_loop);
+    main_loop(app, event_loop, window);
 
     Ok(())
 }
