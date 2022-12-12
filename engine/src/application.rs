@@ -32,7 +32,7 @@ impl Config {
 
 #[derive(Debug)]
 #[must_use]
-pub struct App {
+pub struct Engine {
     application_name: String,
     window_title: String,
     config: Config,
@@ -50,14 +50,14 @@ pub struct App {
     renderer: Renderer,
 }
 
-impl Drop for App {
+impl Drop for Engine {
     fn drop(&mut self) {
         self.suspended = true;
     }
 }
 
-impl App {
-    pub fn create(application_name: &str, window: &Window) -> Result<Self> {
+impl Engine {
+    pub fn initialize(application_name: &str, window: &Window) -> Result<Self> {
         let target_fps = 60;
         // TODO finish create
         Ok(Self {

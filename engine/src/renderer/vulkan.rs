@@ -17,8 +17,7 @@ pub(crate) struct Context {
     _entry: ash::Entry,
     instance: ash::Instance,
     surface: Surface,
-    device_info: DeviceInfo,
-    device: ash::Device,
+    device: Device,
     #[cfg(debug_assertions)]
     debug: Debug,
 }
@@ -33,7 +32,7 @@ impl Drop for Context {
         // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
         //    the only way to construct a Context with all values initialized.
         unsafe {
-            self.device.destroy_device(None);
+            self.device.logical_device.destroy_device(None);
             self.surface
                 .loader
                 .destroy_surface(self.surface.handle, None);
@@ -49,7 +48,10 @@ impl Drop for Context {
 
 impl fmt::Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Context {{ {} }}", todo!())
+        f.debug_struct("Context")
+            .field("surface", &self.surface)
+            .field("device", &self.device)
+            .finish_non_exhaustive()
     }
 }
 
@@ -63,13 +65,9 @@ impl RendererBackend for Context {
         #[cfg(debug_assertions)]
         let debug = Debug::new(&entry, &instance)?;
         let surface = Surface::create(&entry, &instance, window)?;
-        let device_info = Self::select_physical_device(&instance, &surface)?;
-        let device = Self::create_logical_device(
-            &instance,
-            device_info.physical_device,
-            &device_info.queue_family_indices,
-        )?;
-
+        let device = Device::create(&instance, &surface)?;
+        let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
+        let present_queue = device.queue_family(QueueFamily::Present)?;
         // let swapchain =
         //     Self::create_swapchain(&instance, &device, &physical_device, window, &surface)?;
         // let image_views = Self::create_image_views(&device, &swapchain)?;
@@ -146,7 +144,6 @@ impl RendererBackend for Context {
             _entry: entry,
             instance,
             surface,
-            device_info,
             device,
             #[cfg(debug_assertions)]
             debug,
@@ -215,34 +212,71 @@ impl Context {
         unsafe { entry.create_instance(&create_info, None) }
             .context("failed to create vulkan instance")
     }
+}
+
+#[derive(Clone)]
+#[must_use]
+struct Device {
+    physical_device: vk::PhysicalDevice,
+    logical_device: ash::Device,
+    queue_family_indices: QueueFamilyIndices,
+    info: DeviceInfo,
+}
+
+impl fmt::Debug for Device {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Device")
+            .field("queue_family_indices", &self.queue_family_indices)
+            .field("info", &self.info)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Device {
+    /// Select a preferred [vk::PhysicalDevice] and create a logical [ash::Device].
+    fn create(instance: &ash::Instance, surface: &Surface) -> Result<Self> {
+        let (physical_device, queue_family_indices, info) =
+            Self::select_physical_device(instance, surface)?;
+        let logical_device =
+            Self::create_logical_device(instance, physical_device, &queue_family_indices)?;
+        Ok(Self {
+            physical_device,
+            logical_device,
+            queue_family_indices,
+            info,
+        })
+    }
 
     /// Select a preferred [vk::PhysicalDevice].
-    fn select_physical_device(instance: &ash::Instance, surface: &Surface) -> Result<DeviceInfo> {
+    fn select_physical_device(
+        instance: &ash::Instance,
+        surface: &Surface,
+    ) -> Result<(vk::PhysicalDevice, QueueFamilyIndices, DeviceInfo)> {
         // Select physical device
-        // SAFETY: ??
+        // SAFETY: TODO
         let physical_devices = unsafe { instance.enumerate_physical_devices() }
             .context("failed to enumerate physical devices")?;
         if physical_devices.is_empty() {
             bail!("failed to find any devices with vulkan support");
         }
 
-        let mut device_infos = physical_devices
+        let mut devices = physical_devices
             .into_iter()
             .filter_map(|physical_device| {
-                let info = DeviceInfo::create(instance, physical_device, surface);
-                log::debug!("Device Information:\nName: {}\nRating: {}\n{:?}\nSwapchain Support: {}\nAnsiotropy Support: {}\nExtension Support: {}",
+                let (queue_family_indices, info) = DeviceInfo::query(instance, physical_device, surface);
+                log::debug!("Device Information:\nName: {}\nRating: {}\nQueue Family Indices: {:?}\nSwapchain Support: {}\nAnsiotropy Support: {}\nExtension Support: {}",
                     &info.name,
                     info.rating,
-                    &info.queue_family_indices,
+                    &queue_family_indices,
                     info.swapchain_support.is_some(),
                     info.sampler_anisotropy_support,
                     info.extension_support,
                 );
-                (info.rating > 0).then_some(info)
+                (info.rating > 0).then_some((physical_device, queue_family_indices, info))
             })
-            .collect::<Vec<DeviceInfo>>();
-        device_infos.sort_by_key(|device_info| device_info.rating);
-        let selected_device = device_infos
+            .collect::<Vec<(vk::PhysicalDevice, QueueFamilyIndices, DeviceInfo)>>();
+        devices.sort_by_key(|(_, _, info)| info.rating);
+        let selected_device = devices
             .pop()
             .context("failed to find a suitable physical device")?;
 
@@ -281,35 +315,46 @@ impl Context {
             .enabled_layer_names(&enabled_layer_names)
             .enabled_extension_names(&enabled_extension_names)
             .build();
+        // SAFETY: All create_info values are set correctly above with valid lifetimes.
         unsafe { instance.create_device(physical_device, &create_info, None) }
             .context("failed to create vulkan logical device")
     }
+
+    fn queue_family(&self, family: QueueFamily) -> Result<vk::Queue> {
+        Ok(unsafe {
+            self.logical_device.get_device_queue(
+                *self
+                    .queue_family_indices
+                    .get(&family)
+                    .context("failed to get queue family: {family:?}")?,
+                0,
+            )
+        })
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use]
 struct DeviceInfo {
     name: String,
-    physical_device: vk::PhysicalDevice,
     properties: vk::PhysicalDeviceProperties,
     features: vk::PhysicalDeviceFeatures,
     rating: u32,
-    queue_family_indices: QueueFamilyIndices,
     swapchain_support: Option<SwapchainSupport>,
     extension_support: bool,
     sampler_anisotropy_support: bool,
 }
 
 impl DeviceInfo {
-    /// Create device information for a [vk::PhysicalDevice] for rating suitability.
-    fn create(
+    /// Query [vk::PhysicalDevice] properties and generate a rating score.
+    fn query(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         surface: &Surface,
-    ) -> Self {
-        // SAFETY: ??
+    ) -> (QueueFamilyIndices, Self) {
+        // SAFETY: TODO
         let properties = unsafe { instance.get_physical_device_properties(physical_device) };
-        // SAFETY: ??
+        // SAFETY: TODO
         let features = unsafe { instance.get_physical_device_features(physical_device) };
         let queue_family_indices = QueueFamily::query(instance, physical_device, surface);
         let swapchain_support = SwapchainSupport::query(physical_device, surface)
@@ -343,22 +388,26 @@ impl DeviceInfo {
             .to_string_lossy()
             .to_string();
         let extension_support = Self::supports_required_extensions(instance, physical_device);
-        if !extension_support || !QueueFamily::is_complete(&queue_family_indices) {
+        if !extension_support
+            || swapchain_support.is_none()
+            || !QueueFamily::is_complete(&queue_family_indices)
+        {
             log::warn!("Device `{name}` does not meet minimum device requirements");
             rating = 0;
         }
 
-        Self {
-            name,
-            physical_device,
-            properties,
-            features,
-            rating,
+        (
             queue_family_indices,
-            swapchain_support,
-            extension_support,
-            sampler_anisotropy_support: features.sampler_anisotropy == 1,
-        }
+            Self {
+                name,
+                properties,
+                features,
+                rating,
+                swapchain_support,
+                extension_support,
+                sampler_anisotropy_support: features.sampler_anisotropy == 1,
+            },
+        )
     }
 
     /// Whether a physical device supports the required extensions for this platform.
@@ -366,7 +415,7 @@ impl DeviceInfo {
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
     ) -> bool {
-        // SAFETY: ??
+        // SAFETY: TODO
         let device_extensions =
             unsafe { instance.enumerate_device_extension_properties(physical_device) };
         let Ok(device_extensions) = device_extensions else {
@@ -382,12 +431,14 @@ impl DeviceInfo {
             .collect::<HashSet<_>>();
         platform::required_device_extensions()
             .iter()
+            // SAFETY: required_device_extensions are static strings provided by Ash and are valid
+            // CStrs.
             .map(|&extension| unsafe { CStr::from_ptr(extension) })
             .all(|extension| extension_names.contains(extension))
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug, Clone)]
 #[must_use]
 struct SwapchainSupport {
     capabilities: vk::SurfaceCapabilitiesKHR,
@@ -397,7 +448,7 @@ struct SwapchainSupport {
 
 impl SwapchainSupport {
     fn query(physical_device: vk::PhysicalDevice, surface: &Surface) -> Result<Self> {
-        // SAFETY: ??
+        // SAFETY: TODO
         let capabilities = unsafe {
             surface
                 .loader
@@ -405,7 +456,7 @@ impl SwapchainSupport {
         }
         .context("Failed to query for surface capabilities.")?;
 
-        // SAFETY: ??
+        // SAFETY: TODO
         let formats = unsafe {
             surface
                 .loader
@@ -413,7 +464,7 @@ impl SwapchainSupport {
         }
         .context("Failed to query for surface formats.")?;
 
-        // SAFETY: ??
+        // SAFETY: TODO
         let present_modes = unsafe {
             surface
                 .loader
@@ -447,7 +498,7 @@ impl QueueFamily {
         physical_device: vk::PhysicalDevice,
         surface: &Surface,
     ) -> QueueFamilyIndices {
-        // SAFETY: ??
+        // SAFETY: TODO
         let queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
@@ -457,7 +508,7 @@ impl QueueFamily {
             let queue_index = index as u32;
             let mut current_transfer_score = 0;
 
-            // SAFETY: ??
+            // SAFETY: TODO
             let has_surface_support = unsafe {
                 surface.loader.get_physical_device_surface_support(
                     physical_device,
@@ -508,6 +559,7 @@ impl QueueFamily {
                 .enumerate()
                 .map(|(queue_index, _)| queue_index as u32)
                 .find(|&queue_index| {
+                    // SAFETY: TODO
                     unsafe {
                         surface.loader.get_physical_device_surface_support(
                             physical_device,
@@ -537,14 +589,25 @@ mod surface {
     use super::platform;
     use anyhow::Result;
     use ash::{extensions::khr, vk};
+    use std::fmt;
     use winit::{dpi::PhysicalSize, window::Window};
 
+    #[derive(Clone)]
     #[must_use]
     pub(crate) struct Surface {
         pub(crate) handle: vk::SurfaceKHR,
         pub(crate) loader: khr::Surface,
         pub(crate) width: u32,
         pub(crate) height: u32,
+    }
+
+    impl fmt::Debug for Surface {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("Surface")
+                .field("width", &self.width)
+                .field("height", &self.height)
+                .finish_non_exhaustive()
+        }
     }
 
     impl Surface {
@@ -567,6 +630,7 @@ mod surface {
     }
 }
 
+#[derive(Clone)]
 #[cfg(debug_assertions)]
 struct Debug {
     utils: ext::DebugUtils,
@@ -704,7 +768,7 @@ mod platform {
         layer.set_presents_with_transaction(false);
         layer.remove_all_animations();
 
-        // SAFETY: ??
+        // SAFETY: TODO
         let wnd: cocoa_id = unsafe { mem::transmute(window.ns_window()) };
         let view = unsafe { wnd.contentView() };
         unsafe { layer.set_contents_scale(view.backingScaleFactor()) };

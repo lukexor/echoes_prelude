@@ -1,14 +1,25 @@
 use anyhow::Result;
-#[cfg(opengl)]
-use opengl::Context;
-#[cfg(vulkan)]
-use vulkan::Context;
+use cfg_if::cfg_if;
 use winit::{dpi::PhysicalSize, window::Window};
 
-#[cfg(opengl)]
-mod opengl;
-#[cfg(vulkan)]
-mod vulkan;
+cfg_if! {
+    if #[cfg(feature = "vulkan")] {
+        mod vulkan;
+        use vulkan::Context;
+    } else if #[cfg(feature = "opengl")] {
+        mod opengl;
+        use opengl::Context;
+    } else {
+        #[derive(Debug)]
+        struct Context;
+        impl RendererBackend for Context {
+            fn initialize(application_name: &str, window: &Window) -> Result<Self> { Ok(Self) }
+            fn on_resized(&mut self, width: u32, height: u32) {}
+            fn draw_frame(&mut self) -> Result<()> { Ok(()) }
+        }
+        compile_error!("must select a valid renderer feature: `vulkan` or `opengl`");
+    }
+}
 
 pub trait RendererBackend: Sized {
     fn initialize(application_name: &str, window: &Window) -> Result<Self>;

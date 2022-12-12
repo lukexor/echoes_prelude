@@ -1,13 +1,14 @@
 [package]
-name = "echoes_prelude_lib"
+name = "pix-engine"
 authors = ["Luke Petherbridge <me@lukeworks.tech>"]
-categories = ["games"]
-description = "The hot-reloadable library crate for echoes_prelude."
-keywords = ["game"]
+categories = ["game-development", "game-engines", "graphics", "gui", "rendering"]
+description = "A cross-platform, hot-reloadable graphics/game engine for simple games, visualizations, and graphics applications."
+keywords = ["game", "engine", "graphics", "ui", "gui", "rendering"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/lukexor/echos-prelude.git"
 version = "0.1.0"
 edition = "2021"
+exclude = ["/assets"]
 build = "build.rs"
 
 [package.metadata]
@@ -16,15 +17,21 @@ msrv = "1.65.0"
 [lib]
 crate-type = ["rlib", "dylib"]
 
+[features]
+default = []
+vulkan = ["dep:ash"]
+opengl = []
+
 [dependencies]
 anyhow = { workspace = true }
 log = { workspace = true }
+cfg-if = "1.0.0"
 derive_more = "0.99.17"
 env_logger = { workspace = true }
 png = "0.17.6"
 tobj = "3.2.3"
-ash = { version = "0.37.1", features = ["linked"] }
 winit = { workspace = true }
+ash = { version = "0.37.1", features = ["linked"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 metal = "0.24.0"

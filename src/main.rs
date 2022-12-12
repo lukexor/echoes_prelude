@@ -44,20 +44,20 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[cfg(not(feature = "hot_reload"))]
-use echoes_prelude_lib::*;
 #[cfg(feature = "hot_reload")]
-use hot_echoes_prelude_lib::*;
+use hot_pix_engine::*;
+#[cfg(not(feature = "hot_reload"))]
+use pix_engine::*;
 
 #[cfg(feature = "hot_reload")]
 #[hot_lib_reloader::hot_module(
-    dylib = "echoes_prelude_lib",
+    dylib = "pix_engine",
     // TODO: See if there's a way to make this optional
     lib_dir = concat!(env!("CARGO_TARGET_DIR"), "/debug")
 )]
-mod hot_echoes_prelude_lib {
-    pub(crate) use echoes_prelude_lib::*;
-    hot_functions_from_file!("lib/src/lib.rs");
+mod hot_pix_engine {
+    pub(crate) use pix_engine::*;
+    hot_functions_from_file!("engine/src/lib.rs");
 
     #[lib_change_subscription]
     pub(crate) fn _subscribe() -> hot_lib_reloader::LibReloadObserver {}
@@ -75,7 +75,7 @@ fn create_window(event_loop: &EventLoop<()>) -> Result<Window> {
         .build(event_loop)?)
 }
 
-fn main_loop(mut app: App, event_loop: EventLoop<()>, window: Window) {
+fn main_loop(mut engine: Engine, event_loop: EventLoop<()>, window: Window) {
     log::info!("application started");
 
     event_loop.run(move |event, _window_target, control_flow| {
@@ -83,14 +83,14 @@ fn main_loop(mut app: App, event_loop: EventLoop<()>, window: Window) {
 
         log::trace!("Received event: {event:?}");
         match event {
-            Event::MainEventsCleared if app.is_running() => {
-                if let Err(err) = update_and_render(&mut app, &window) {
+            Event::MainEventsCleared if engine.is_running() => {
+                if let Err(err) = update_and_render(&mut engine, &window) {
                     log::error!("Failed to render: {err}");
                     control_flow.set_exit_with_code(1);
                 }
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(size) => app.on_resized(size.width, size.height),
+                WindowEvent::Resized(size) => engine.on_resized(size.width, size.height),
                 WindowEvent::KeyboardInput { input, .. } => {
                     #[cfg(debug_assertions)]
                     if matches!(
@@ -99,14 +99,16 @@ fn main_loop(mut app: App, event_loop: EventLoop<()>, window: Window) {
                     ) {
                         control_flow.set_exit();
                     }
-                    app.on_key_input(input);
+                    engine.on_key_input(input);
                 }
-                WindowEvent::MouseInput { state, button, .. } => app.on_mouse_input(state, button),
-                WindowEvent::MouseWheel { delta, phase, .. } => app.on_mouse_wheel(delta, phase),
+                WindowEvent::MouseInput { state, button, .. } => {
+                    engine.on_mouse_input(state, button);
+                }
+                WindowEvent::MouseWheel { delta, phase, .. } => engine.on_mouse_wheel(delta, phase),
                 WindowEvent::CursorMoved { position, .. } => {
-                    app.on_mouse_motion(position.x, position.y);
+                    engine.on_mouse_motion(position.x as f32, position.y as f32);
                 }
-                WindowEvent::ModifiersChanged(state) => app.on_modifiers_changed(state),
+                WindowEvent::ModifiersChanged(state) => engine.on_modifiers_changed(state),
                 WindowEvent::CloseRequested | WindowEvent::Destroyed => {
                     log::debug!("window closed or destroyed");
                     control_flow.set_exit();
@@ -133,12 +135,12 @@ fn main() -> Result<()> {
     let event_loop = EventLoop::new();
     let window = create_window(&event_loop)?;
 
-    // App
-    let app = App::create(APPLICATION_NAME, &window)?;
+    // Engine
+    let engine = Engine::initialize(APPLICATION_NAME, &window)?;
     #[cfg(feature = "hot_reload")]
     initialize_logger(); // Required to properly initialize logger with reload
 
-    main_loop(app, event_loop, window);
+    main_loop(engine, event_loop, window);
 
     Ok(())
 }

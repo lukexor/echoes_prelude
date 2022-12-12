@@ -8,18 +8,19 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/lukexor/echos-prelude.git"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
 
 [package.metadata]
 msrv = "1.65.0"
 
 [features]
-default = []
+default = ["vulkan"]
 hot_reload = ["dep:hot-lib-reloader"]
+vulkan = ["pix-engine/vulkan"]
+opengl = ["pix-engine/opengl"]
 
 [dependencies]
 anyhow = { workspace = true }
-echoes_prelude_lib = { path = "lib" }
+pix-engine = { path = "engine" }
 env_logger = { workspace = true }
 hot-lib-reloader = { version = "0.6.4", optional = true }
 log = { workspace = true }
@@ -32,7 +33,7 @@ opt-level = 1
 [workspace]
 resolver = "2"
 members = [
-    "lib"
+    "engine"
 ]
 
 [workspace.dependencies]
