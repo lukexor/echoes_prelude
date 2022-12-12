@@ -81,11 +81,11 @@ fn main_loop(mut engine: Engine, event_loop: EventLoop<()>, window: Window) {
     event_loop.run(move |event, _window_target, control_flow| {
         control_flow.set_poll();
 
-        log::trace!("Received event: {event:?}");
+        log::trace!("received event: {event:?}");
         match event {
             Event::MainEventsCleared if engine.is_running() => {
                 if let Err(err) = update_and_render(&mut engine, &window) {
-                    log::error!("Failed to render: {err}");
+                    log::error!("failed to render: {err}");
                     control_flow.set_exit_with_code(1);
                 }
             }
