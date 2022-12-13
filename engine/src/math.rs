@@ -3,6 +3,26 @@ use std::ops::{
     SubAssign,
 };
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(C)]
+#[must_use]
+pub struct Vertex {
+    pub pos: Vector<3>,
+    pub color: Vector<3>,
+    pub texcoords: Vector<2>,
+}
+
+impl Vertex {
+    /// Create a new `Vertex` instance.
+    pub fn new(pos: Vector<3>, color: Vector<3>, texcoord: Vector<2>) -> Self {
+        Self {
+            pos,
+            color,
+            texcoords: texcoord,
+        }
+    }
+}
+
 /// Constructs a new [Vector].
 #[macro_export]
 macro_rules! vector {
@@ -19,6 +39,11 @@ macro_rules! vector {
 #[must_use]
 #[repr(transparent)]
 pub struct Vector<const N: usize = 2>([f32; N]);
+
+pub type Vec1 = Vector<1>;
+pub type Vec2 = Vector<2>;
+pub type Vec3 = Vector<3>;
+pub type Vec4 = Vector<4>;
 
 impl<const N: usize> Default for Vector<N> {
     fn default() -> Self {
@@ -538,6 +563,8 @@ impl<const N: usize> Neg for &Vector<N> {
 #[must_use]
 #[repr(transparent)]
 pub struct Matrix<const N: usize = 4, const M: usize = 4>([[f32; M]; N]);
+
+pub type Mat4 = Matrix<4, 4>;
 
 impl<const N: usize, const M: usize> Default for Matrix<N, M> {
     fn default() -> Self {
