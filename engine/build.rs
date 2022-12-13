@@ -1,7 +1,8 @@
 use std::{
     env,
     ffi::OsStr,
-    fs, io,
+    fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -24,6 +25,7 @@ fn main() -> io::Result<()> {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("valid OUT_DIR"));
     println!("cargo:rustc-env=OUT_DIR={}", out_dir.display());
+
     let shader_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/shaders");
     let shaders = find_shaders(&shader_dir)?;
     for shader in &shaders {
@@ -34,11 +36,20 @@ fn main() -> io::Result<()> {
             .expect("valid shader filename")
             .to_string_lossy();
         let shader_out = out_dir.join(format!("{filename}.spv",));
-        Command::new("glslc")
+        let output = Command::new("glslc")
             .arg(shader)
             .arg("-o")
             .arg(shader_out)
-            .status()?;
+            .output()?;
+        if !output.status.success() {
+            io::stdout()
+                .write_all(&output.stdout)
+                .expect("write to stdout");
+            io::stderr()
+                .write_all(&output.stderr)
+                .expect("write to stderr");
+            panic!("failed to compile shaders");
+        }
     }
 
     Ok(())

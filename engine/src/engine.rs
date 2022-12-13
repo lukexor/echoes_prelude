@@ -48,9 +48,7 @@ pub struct Engine {
 
     fps_counter: usize,
     fps_timer: Duration,
-
     suspended: bool,
-    resized: bool,
 
     renderer: Renderer,
 }
@@ -78,7 +76,6 @@ impl Engine {
             fps_timer: Duration::default(),
 
             suspended: false,
-            resized: false,
 
             renderer: Renderer::initialize(application_name, window)?,
         })
@@ -90,11 +87,11 @@ impl Engine {
     }
 
     pub fn on_resized(&mut self, width: u32, height: u32) {
+        log::debug!("resized event: {width}x{height}");
         if width == 0 || height == 0 {
             self.suspended = true;
         } else {
             self.suspended = false;
-            self.resized = true;
         }
         self.renderer.on_resized(width, height);
     }

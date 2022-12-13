@@ -39,7 +39,6 @@ impl Drop for Context {
                 .expect("failed to wait for device idle");
 
             self.destroy_swapchain();
-
             self.device.logical_device.destroy_device(None);
             self.surface
                 .loader
@@ -78,9 +77,7 @@ impl RendererBackend for Context {
         let present_queue = device.queue_family(QueueFamily::Present)?;
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
-
-        // msaa_samples
-        // render pass
+        // let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
         // ubo_layout
         // graphics_pipeline
         // command_pools
@@ -118,7 +115,7 @@ impl RendererBackend for Context {
         self.resized = Some((width, height));
     }
 
-    /// Draw a frame to the windows surface.
+    /// Draw a frame to the [Window] surface.
     fn draw_frame(&mut self) -> Result<()> {
         if let Some((width, height)) = self.resized.take() {
             self.recreate_swapchain(width, height)?;
@@ -181,6 +178,36 @@ impl Context {
             .context("failed to create vulkan instance")
     }
 
+    fn create_render_pass(
+        instance: &ash::Instance,
+        device: &Device,
+        format: vk::Format,
+    ) -> Result<vk::RenderPass> {
+        let color_attachment = vk::AttachmentDescription::builder()
+            .format(format)
+            .samples(device.info.msaa_samples)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build();
+        // let depth_attachment = vk::AttachmentDescription::builder()
+        //     .format()
+        //     .samples(device.info.msaa_samples)
+        //     .load_op(vk::AttachmentLoadOp::CLEAR)
+        //     .store_op(vk::AttachmentStoreOp::DONT_CARE)
+        //     .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+        //     .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+        //     .initial_layout(vk::ImageLayout::UNDEFINED)
+        //     .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+        //     .build();
+
+        todo!()
+    }
+
+    /// Destroys the current swapchain and re-creates it with a new width/height.
     fn recreate_swapchain(&mut self, width: u32, height: u32) -> Result<()> {
         // SAFETY: TODO
         unsafe { self.device.logical_device.device_wait_idle() }
@@ -194,6 +221,8 @@ impl Context {
         Ok(())
     }
 
+    /// Destroys the current [`vk::SwapchainKHR`] and associated [`vk::ImageView`]s. Used to clean
+    /// up Vulkan when dropped and to re-create swapchain on window resize.
     // SAFETY: TODO
     unsafe fn destroy_swapchain(&mut self) {
         self.swapchain.image_views.iter().for_each(|&image_view| {
@@ -283,7 +312,7 @@ mod device {
     }
 
     impl Device {
-        /// Select a preferred [vk::PhysicalDevice] and create a logical [ash::Device].
+        /// Select a preferred [`vk::PhysicalDevice`] and create a logical [ash::Device].
         pub(crate) fn create(instance: &ash::Instance, surface: &Surface) -> Result<Self> {
             log::debug!("selecting and creating vulkan device");
             let (physical_device, queue_family_indices, info) =
@@ -311,7 +340,7 @@ mod device {
             })
         }
 
-        /// Select a preferred [vk::PhysicalDevice].
+        /// Select a preferred [`vk::PhysicalDevice`].
         fn select_physical_device(
             instance: &ash::Instance,
             surface: &Surface,
@@ -400,7 +429,7 @@ mod device {
     }
 
     impl DeviceInfo {
-        /// Query [vk::PhysicalDevice] properties and generate a rating score.
+        /// Query [`vk::PhysicalDevice`] properties and generate a rating score.
         fn query(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
@@ -417,9 +446,7 @@ mod device {
             let msaa_samples = Self::get_max_sample_count(properties, &mut rating);
             let queue_family_indices = QueueFamily::query(instance, physical_device, surface);
             let swapchain_support = SwapchainSupport::query(physical_device, surface)
-                .map_err(|err| {
-                    log::error!("{err}");
-                })
+                .map_err(|err| log::error!("{err}"))
                 .ok();
 
             // Bonus if graphics + present are the same queue
@@ -565,6 +592,10 @@ mod device {
             }
             .context("Failed to query for surface present mode.")?;
 
+            if formats.is_empty() || present_modes.is_empty() {
+                bail!("no available swapchain formats or present_modes");
+            }
+
             Ok(Self {
                 capabilities,
                 formats,
@@ -585,7 +616,7 @@ mod device {
     type QueueFamilyIndices = HashMap<QueueFamily, u32>;
 
     impl QueueFamily {
-        /// Find desired [vk::Queue] families from a [vk::PhysicalDevice].
+        /// Find desired [vk::Queue] families from a [`vk::PhysicalDevice`].
         fn query(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
@@ -719,8 +750,7 @@ mod swapchain {
                 .formats
                 .iter()
                 .find(|surface_format| {
-                    // TODO: or B8G8R8A8_SRGB?
-                    surface_format.format == vk::Format::B8G8R8A8_UNORM
+                    surface_format.format == vk::Format::B8G8R8A8_SRGB
                         && surface_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
                 })
                 .or_else(|| swapchain_support.formats.first())
@@ -857,7 +887,7 @@ mod platform {
     };
     use winit::window::Window;
 
-    /// Return a list of enabled Vulkan [Instance] extensions.
+    /// Return a list of enabled Vulkan [ash::Instance] extensions for macOS.
     #[cfg(target_os = "macos")]
     pub(crate) fn enabled_extension_names() -> Vec<*const i8> {
         vec![
@@ -870,7 +900,7 @@ mod platform {
         ]
     }
 
-    /// Return a list of enabled Vulkan [Instance] extensions.
+    /// Return a list of enabled Vulkan [ash::Instance] extensions for Linux.
     #[cfg(all(unix, not(target_os = "macos"),))]
     pub(crate) fn enabled_extension_names() -> Vec<*const i8> {
         vec![
@@ -881,7 +911,7 @@ mod platform {
         ]
     }
 
-    /// Return a list of enabled Vulkan [Instance] extensions.
+    /// Return a list of enabled Vulkan [ash::Instance] extensions for Windows.
     #[cfg(windows)]
     pub(crate) fn enabled_extension_names() -> Vec<*const i8> {
         vec![
@@ -892,19 +922,19 @@ mod platform {
         ]
     }
 
-    /// Return a set of [vk::InstanceCreateFlags].
+    /// Return a set of [`vk::InstanceCreateFlags`] for macOS.
     #[cfg(target_os = "macos")]
     pub(crate) fn instance_create_flags() -> vk::InstanceCreateFlags {
         vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
     }
 
-    /// Return a set of [vk::InstanceCreateFlags].
+    /// Return a set of [`vk::InstanceCreateFlags`] for all platforms other than macOS.
     #[cfg(not(target_os = "macos"))]
     pub(crate) fn instance_create_flags() -> vk::InstanceCreateFlags {
         vk::InstanceCreateFlags::default()
     }
 
-    /// Create a [vk::SurfaceKHR] instance for the current [Window].
+    /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for macOS.
     #[cfg(target_os = "macos")]
     pub(crate) fn create_surface(
         entry: &Entry,
@@ -920,7 +950,7 @@ mod platform {
         use std::mem;
         use winit::platform::macos::WindowExtMacOS;
 
-        log::debug!("creating macos metal surface");
+        log::debug!("creating macOS metal surface");
 
         let layer = MetalLayer::new();
         layer.set_edge_antialiasing_mask(0);
@@ -945,7 +975,7 @@ mod platform {
             .context("failed to create vulkan surface")
     }
 
-    /// Create a [vk::SurfaceKHR] instance for the current [Window].
+    /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for Linux.
     #[cfg(all(unix, not(target_os = "macos"),))]
     pub(crate) fn create_surface(
         entry: &Entry,
@@ -955,7 +985,7 @@ mod platform {
         use std::ptr;
         use winit::platform::unix::WindowExtUnix;
 
-        log::debug!("creating linux xlib surface");
+        log::debug!("creating Linux XLIB surface");
 
         let x11_display = window
             .xlib_display()
@@ -971,7 +1001,7 @@ mod platform {
             .context("failed to create vulkan surface")
     }
 
-    /// Create a [vk::SurfaceKHR] instance for the current [Window].
+    /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for Windows.
     #[cfg(windows)]
     pub(crate) fn create_surface(
         entry: &Entry,
@@ -996,7 +1026,7 @@ mod platform {
             .context("failed to create vulkan surface")
     }
 
-    /// Return a list of required device extensions.
+    /// Return a list of required [`vk::PhysicalDevice`] extensions for macOS.
     #[cfg(target_os = "macos")]
     pub(crate) fn required_device_extensions() -> Vec<*const i8> {
         vec![
@@ -1005,7 +1035,8 @@ mod platform {
         ]
     }
 
-    /// Return a list of required device extensions.
+    /// Return a list of required [`vk::PhysicalDevice`] extensions for all platforms other than
+    /// macOS.
     #[cfg(not(target_os = "macos"))]
     pub(crate) fn required_device_extensions() -> Vec<*const i8> {
         vec![khr::Swapchain::name().as_ptr()]
