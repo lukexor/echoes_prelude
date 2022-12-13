@@ -7,9 +7,10 @@ use std::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::renderer::vulkan::image::Image;
 use debug::{Debug, VALIDATION_LAYER_NAME};
 use device::{Device, QueueFamily};
-use pipeline::GraphicsPipeline;
+use pipeline::Pipeline;
 use surface::Surface;
 use swapchain::Swapchain;
 
@@ -20,7 +21,10 @@ pub(crate) struct Context {
     device: Device,
     swapchain: Swapchain,
     render_pass: vk::RenderPass,
-    graphics_pipeline: GraphicsPipeline,
+    color_image: Image,
+    depth_image: Image,
+    pipeline: Pipeline,
+    framebuffers: Vec<vk::Framebuffer>,
     #[cfg(debug_assertions)]
     debug: Debug,
     resized: Option<(u32, u32)>,
@@ -37,15 +41,14 @@ impl Drop for Context {
         //    the only way to construct a Context with all values initialized.
         #[allow(clippy::expect_used)]
         unsafe {
-            let device = &self.device.logical_device;
-            device
+            self.device
+                .logical_device
                 .device_wait_idle()
                 .expect("failed to wait for device idle");
 
-            device.destroy_pipeline(self.graphics_pipeline.pipeline, None);
-            device.destroy_pipeline_layout(self.graphics_pipeline.layout, None);
-            device.destroy_render_pass(self.render_pass, None);
-            self.swapchain.destroy(device);
+            self.destroy_swapchain();
+
+            let device = &self.device.logical_device;
             device.destroy_device(None);
             self.surface
                 .loader
@@ -85,13 +88,30 @@ impl RendererBackend for Context {
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
-        let graphics_pipeline = GraphicsPipeline::create(&device, swapchain.extent, render_pass)?;
         // ubo_layout
-        // graphics_pipeline
+        let pipeline = Pipeline::create(&device, swapchain.extent, render_pass)?;
+        let color_image = Image::create_color(
+            &instance,
+            &device,
+            &swapchain,
+            #[cfg(debug_assertions)]
+            &debug,
+        )?;
+        let depth_image = Image::create_depth(
+            &instance,
+            &device,
+            &swapchain,
+            #[cfg(debug_assertions)]
+            &debug,
+        )?;
+        let framebuffers = Self::create_framebuffers(
+            &device,
+            &swapchain,
+            render_pass,
+            color_image.view,
+            depth_image.view,
+        )?;
         // command_pools
-        // color_image
-        // depth_image
-        // framebuffers
         // texture_image
         // texture_image_view
         // texture_sampler
@@ -104,7 +124,7 @@ impl RendererBackend for Context {
         // command_buffers
         // sync
 
-        log::info!("initialized vulkan renderer successfully");
+        log::info!("initialized vulkan renderer backend successfully");
 
         Ok(Context {
             _entry: entry,
@@ -113,7 +133,10 @@ impl RendererBackend for Context {
             device,
             swapchain,
             render_pass,
-            graphics_pipeline,
+            color_image,
+            depth_image,
+            pipeline,
+            framebuffers,
             #[cfg(debug_assertions)]
             debug,
             resized: None,
@@ -188,6 +211,7 @@ impl Context {
             .context("failed to create vulkan instance")
     }
 
+    /// Create a [`vk::RenderPass`] instance.
     fn create_render_pass(
         instance: &ash::Instance,
         device: &Device,
@@ -207,11 +231,7 @@ impl Context {
             .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             .build();
         let depth_stencil_attachment = vk::AttachmentDescription::builder()
-            .format(Self::get_depth_format(
-                instance,
-                device,
-                vk::ImageTiling::OPTIMAL,
-            )?)
+            .format(device.get_depth_format(instance, vk::ImageTiling::OPTIMAL)?)
             .samples(device.info.msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
@@ -295,33 +315,36 @@ impl Context {
         Ok(render_pass)
     }
 
-    fn get_depth_format(
-        instance: &ash::Instance,
+    /// Create a list of [vk::Framebuffer`]s.
+    fn create_framebuffers(
         device: &Device,
-        tiling: vk::ImageTiling,
-    ) -> Result<vk::Format> {
-        let candidates = [
-            vk::Format::D32_SFLOAT,
-            vk::Format::D32_SFLOAT_S8_UINT,
-            vk::Format::D24_UNORM_S8_UINT,
-        ];
-        let features = vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT;
-        candidates
+        swapchain: &Swapchain,
+        render_pass: vk::RenderPass,
+        color_attachment: vk::ImageView,
+        depth_attachment: vk::ImageView,
+    ) -> Result<Vec<vk::Framebuffer>> {
+        swapchain
+            .image_views
             .iter()
-            .find(|&&format| {
-                let properties = unsafe {
-                    instance.get_physical_device_format_properties(device.physical_device, format)
-                };
-                match tiling {
-                    vk::ImageTiling::LINEAR => properties.linear_tiling_features.contains(features),
-                    vk::ImageTiling::OPTIMAL => {
-                        properties.optimal_tiling_features.contains(features)
-                    }
-                    _ => false,
+            .map(|&image_view| {
+                let attachments = [color_attachment, depth_attachment, image_view];
+                let framebuffer_create_info = vk::FramebufferCreateInfo::builder()
+                    .render_pass(render_pass)
+                    .attachments(&attachments)
+                    .width(swapchain.extent.width)
+                    .height(swapchain.extent.height)
+                    .layers(1)
+                    .build();
+                // SAFETY: TODO
+                unsafe {
+                    device
+                        .logical_device
+                        .create_framebuffer(&framebuffer_create_info, None)
                 }
+                .context("failed to create vulkan framebuffer")
             })
-            .copied()
-            .context("failed to find supported depth format!")
+            .collect::<Result<Vec<_>>>()
+            .context("failed to create vulkan image buffers")
     }
 
     /// Destroys the current swapchain and re-creates it with a new width/height.
@@ -329,13 +352,66 @@ impl Context {
         // SAFETY: TODO
         unsafe { self.device.logical_device.device_wait_idle() }
             .context("failed to wait for device idle")?;
-
         // SAFETY: TODO
-        unsafe { self.swapchain.destroy(&self.device.logical_device) };
+        unsafe { self.destroy_swapchain() };
+
         self.swapchain =
             Swapchain::create(&self.instance, &self.device, &self.surface, width, height)?;
+        self.render_pass =
+            Self::create_render_pass(&self.instance, &self.device, self.swapchain.format)?;
+        self.pipeline = Pipeline::create(&self.device, self.swapchain.extent, self.render_pass)?;
+        self.color_image = Image::create_color(
+            &self.instance,
+            &self.device,
+            &self.swapchain,
+            #[cfg(debug_assertions)]
+            &self.debug,
+        )?;
+        self.depth_image = Image::create_depth(
+            &self.instance,
+            &self.device,
+            &self.swapchain,
+            #[cfg(debug_assertions)]
+            &self.debug,
+        )?;
+        self.framebuffers = Self::create_framebuffers(
+            &self.device,
+            &self.swapchain,
+            self.render_pass,
+            self.color_image.view,
+            self.depth_image.view,
+        )?;
+        // uniform buffers
+        // descriptor pool
+        // descriptor sets
+        // command buffers
+        // resize images_in_flight
 
         Ok(())
+    }
+
+    /// Destroys the current [`vk::SwapchainKHR`] and associated [`vk::ImageView`]s. Used to clean
+    /// up Vulkan when dropped and to re-create swapchain on window resize.
+    unsafe fn destroy_swapchain(&mut self) {
+        let device = &self.device.logical_device;
+
+        for image in [&self.color_image, &self.depth_image] {
+            device.destroy_image_view(image.view, None);
+            device.free_memory(image.memory, None);
+            device.destroy_image(image.handle, None);
+        }
+        self.framebuffers
+            .iter()
+            .for_each(|&framebuffer| device.destroy_framebuffer(framebuffer, None));
+        device.destroy_pipeline(self.pipeline.handle, None);
+        device.destroy_pipeline_layout(self.pipeline.layout, None);
+        device.destroy_render_pass(self.render_pass, None);
+        self.swapchain.image_views.iter().for_each(|&image_view| {
+            device.destroy_image_view(image_view, None);
+        });
+        self.swapchain
+            .loader
+            .destroy_swapchain(self.swapchain.handle, None);
     }
 }
 
@@ -417,12 +493,15 @@ mod device {
     impl Device {
         /// Select a preferred [`vk::PhysicalDevice`] and create a logical [ash::Device].
         pub(crate) fn create(instance: &ash::Instance, surface: &Surface) -> Result<Self> {
-            log::debug!("selecting and creating vulkan device");
+            log::debug!("creating vulkan device");
+
             let (physical_device, queue_family_indices, info) =
                 Self::select_physical_device(instance, surface)?;
             let logical_device =
                 Self::create_logical_device(instance, physical_device, &queue_family_indices)?;
-            log::debug!("vulkan device selected and created successfully");
+
+            log::debug!("created vulkan device successfully");
+
             Ok(Self {
                 physical_device,
                 logical_device,
@@ -441,6 +520,55 @@ mod device {
                     0,
                 )
             })
+        }
+
+        pub(crate) fn get_depth_format(
+            &self,
+            instance: &ash::Instance,
+            tiling: vk::ImageTiling,
+        ) -> Result<vk::Format> {
+            let candidates = [
+                vk::Format::D32_SFLOAT,
+                vk::Format::D32_SFLOAT_S8_UINT,
+                vk::Format::D24_UNORM_S8_UINT,
+            ];
+            let features = vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT;
+            candidates
+                .iter()
+                .find(|&&format| {
+                    let properties = unsafe {
+                        instance.get_physical_device_format_properties(self.physical_device, format)
+                    };
+                    match tiling {
+                        vk::ImageTiling::LINEAR => {
+                            properties.linear_tiling_features.contains(features)
+                        }
+                        vk::ImageTiling::OPTIMAL => {
+                            properties.optimal_tiling_features.contains(features)
+                        }
+                        _ => false,
+                    }
+                })
+                .copied()
+                .context("failed to find supported depth format!")
+        }
+
+        pub(crate) fn memory_type_index(
+            &self,
+            instance: &ash::Instance,
+            properties: vk::MemoryPropertyFlags,
+            requirements: vk::MemoryRequirements,
+        ) -> Result<u32> {
+            // SAFETY: TODO
+            let memory =
+                unsafe { instance.get_physical_device_memory_properties(self.physical_device) };
+            (0..memory.memory_type_count)
+                .find(|&i| {
+                    let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
+                    let memory_type = memory.memory_types[i as usize];
+                    suitable && memory_type.property_flags.contains(properties)
+                })
+                .context("failed to find suitable vulkan memory type.")
         }
 
         /// Select a preferred [`vk::PhysicalDevice`].
@@ -968,7 +1096,7 @@ mod swapchain {
 
             // Get depth images
 
-            log::debug!("vulkan swapchain created successfully");
+            log::debug!("created vulkan swapchain successfully");
 
             Ok(Self {
                 loader: swapchain_loader,
@@ -979,16 +1107,6 @@ mod swapchain {
                 image_views,
                 max_frames_in_flight: min_image_count - 1,
             })
-        }
-
-        /// Destroys the current [`vk::SwapchainKHR`] and associated [`vk::ImageView`]s. Used to clean
-        /// up Vulkan when dropped and to re-create swapchain on window resize.
-        // SAFETY: TODO
-        pub(crate) unsafe fn destroy(&mut self, device: &ash::Device) {
-            self.image_views.iter().for_each(|&image_view| {
-                device.destroy_image_view(image_view, None);
-            });
-            self.loader.destroy_swapchain(self.handle, None);
         }
     }
 }
@@ -1002,12 +1120,12 @@ mod pipeline {
 
     #[derive(Clone)]
     #[must_use]
-    pub(crate) struct GraphicsPipeline {
-        pub(crate) pipeline: vk::Pipeline,
+    pub(crate) struct Pipeline {
+        pub(crate) handle: vk::Pipeline,
         pub(crate) layout: vk::PipelineLayout,
     }
 
-    impl GraphicsPipeline {
+    impl Pipeline {
         const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.vert.spv"));
         const FRAGMENT_SHADER: &[u8] =
             include_bytes!(concat!(env!("OUT_DIR"), "/primary.frag.spv"));
@@ -1184,7 +1302,10 @@ mod pipeline {
 
             log::debug!("created vulkan graphics pipeline successfully");
 
-            Ok(Self { pipeline, layout })
+            Ok(Self {
+                handle: pipeline,
+                layout,
+            })
         }
 
         fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
@@ -1201,6 +1322,205 @@ mod pipeline {
                     .create_shader_module(&shader_module_info, None)
             }
             .context("failed to create vulkan shader module")
+        }
+    }
+}
+
+mod image {
+    #[cfg(debug_assertions)]
+    use super::debug::Debug;
+    use super::{device::Device, swapchain::Swapchain};
+    use anyhow::{Context, Result};
+    use ash::vk::{self, Handle};
+    use std::ffi::CString;
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct Image {
+        pub(crate) handle: vk::Image,
+        pub(crate) memory: vk::DeviceMemory,
+        pub(crate) view: vk::ImageView,
+    }
+
+    impl Image {
+        pub(crate) fn create_color(
+            instance: &ash::Instance,
+            device: &Device,
+            swapchain: &Swapchain,
+            #[cfg(debug_assertions)] debug: &Debug,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan color image");
+
+            // Image
+            let (image, memory) = Self::create_image(
+                "color",
+                instance,
+                device,
+                swapchain,
+                swapchain.format,
+                1,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                #[cfg(debug_assertions)]
+                debug,
+            )?;
+
+            // Image View
+            let view = Self::create_view(
+                device,
+                image,
+                swapchain.format,
+                vk::ImageAspectFlags::COLOR,
+                1,
+            )?;
+
+            log::debug!("created vulkan color image successfully");
+
+            Ok(Self {
+                handle: image,
+                memory,
+                view,
+            })
+        }
+
+        pub(crate) fn create_depth(
+            instance: &ash::Instance,
+            device: &Device,
+            swapchain: &Swapchain,
+            #[cfg(debug_assertions)] debug: &Debug,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan depth image");
+
+            let format = device.get_depth_format(instance, vk::ImageTiling::OPTIMAL)?;
+
+            // Image
+            let (image, memory) = Self::create_image(
+                "depth",
+                instance,
+                device,
+                swapchain,
+                format,
+                1,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                #[cfg(debug_assertions)]
+                debug,
+            )?;
+
+            // Image View
+            let view = Self::create_view(device, image, format, vk::ImageAspectFlags::DEPTH, 1)?;
+
+            log::debug!("created vulkan depth image successfully");
+
+            Ok(Self {
+                handle: image,
+                memory,
+                view,
+            })
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn create_image(
+            name: &str,
+            instance: &ash::Instance,
+            device: &Device,
+            swapchain: &Swapchain,
+            format: vk::Format,
+            mip_levels: u32,
+            tiling: vk::ImageTiling,
+            usage: vk::ImageUsageFlags,
+            properties: vk::MemoryPropertyFlags,
+            #[cfg(debug_assertions)] debug: &Debug,
+        ) -> Result<(vk::Image, vk::DeviceMemory)> {
+            // Image
+            let image_info = vk::ImageCreateInfo::builder()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D {
+                    width: swapchain.extent.width,
+                    height: swapchain.extent.height,
+                    depth: 1,
+                })
+                .mip_levels(mip_levels)
+                .array_layers(1)
+                .format(format)
+                .tiling(tiling)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(usage)
+                .samples(device.info.msaa_samples)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .build();
+
+            // SAFETY: TODO
+            let image = unsafe { device.logical_device.create_image(&image_info, None) }
+                .context("failed to create vulkan image")?;
+
+            // Debug Name
+
+            #[cfg(debug_assertions)]
+            let name = CString::new(name)?;
+            #[cfg(debug_assertions)]
+            let debug_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::IMAGE)
+                .object_name(&name)
+                .object_handle(image.as_raw())
+                .build();
+            #[cfg(debug_assertions)]
+            unsafe {
+                debug
+                    .utils
+                    .set_debug_utils_object_name(device.logical_device.handle(), &debug_info)
+            }
+            .context("failed to set debug utils object name")?;
+
+            // Memory
+
+            let requirements =
+                unsafe { device.logical_device.get_image_memory_requirements(image) };
+            let memory_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(requirements.size)
+                .memory_type_index(device.memory_type_index(instance, properties, requirements)?)
+                .build();
+            let memory = unsafe { device.logical_device.allocate_memory(&memory_info, None) }
+                .context("failed to allocate vulkan image memory")?;
+            // SAFETY: TODO
+            unsafe { device.logical_device.bind_image_memory(image, memory, 0) }
+                .context("failed to bind vulkan image memory")?;
+
+            Ok((image, memory))
+        }
+
+        fn create_view(
+            device: &Device,
+            image: vk::Image,
+            format: vk::Format,
+            aspects: vk::ImageAspectFlags,
+            mip_levels: u32,
+        ) -> Result<vk::ImageView> {
+            let view_create_info = vk::ImageViewCreateInfo::builder()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(format)
+                .subresource_range(
+                    vk::ImageSubresourceRange::builder()
+                        .aspect_mask(aspects)
+                        .base_mip_level(0)
+                        .level_count(mip_levels)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                )
+                .build();
+            // SAFETY: TODO
+            let view = unsafe {
+                device
+                    .logical_device
+                    .create_image_view(&view_create_info, None)
+            }
+            .context("failed to create vulkan image view")?;
+
+            Ok(view)
         }
     }
 }

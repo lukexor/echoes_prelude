@@ -3,7 +3,7 @@ use std::ops::{
     SubAssign,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C)]
 #[must_use]
 pub struct Vertex {
