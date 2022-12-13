@@ -390,8 +390,10 @@ mod device {
     pub(crate) struct DeviceInfo {
         pub(crate) name: String,
         pub(crate) properties: vk::PhysicalDeviceProperties,
+        pub(crate) memory_properties: vk::PhysicalDeviceMemoryProperties,
         pub(crate) features: vk::PhysicalDeviceFeatures,
         pub(crate) rating: u32,
+        pub(crate) msaa_samples: vk::SampleCountFlags,
         pub(crate) swapchain_support: Option<SwapchainSupport>,
         pub(crate) extension_support: bool,
         pub(crate) sampler_anisotropy_support: bool,
@@ -404,10 +406,15 @@ mod device {
             physical_device: vk::PhysicalDevice,
             surface: &Surface,
         ) -> (QueueFamilyIndices, Self) {
+            let mut rating = 10;
+
             // SAFETY: TODO
             let properties = unsafe { instance.get_physical_device_properties(physical_device) };
             // SAFETY: TODO
             let features = unsafe { instance.get_physical_device_features(physical_device) };
+            let memory_properties =
+                unsafe { instance.get_physical_device_memory_properties(physical_device) };
+            let msaa_samples = Self::get_max_sample_count(properties, &mut rating);
             let queue_family_indices = QueueFamily::query(instance, physical_device, surface);
             let swapchain_support = SwapchainSupport::query(physical_device, surface)
                 .map_err(|err| {
@@ -415,7 +422,6 @@ mod device {
                 })
                 .ok();
 
-            let mut rating = 10;
             // Bonus if graphics + present are the same queue
             if queue_family_indices.get(&QueueFamily::Graphics)
                 == queue_family_indices.get(&QueueFamily::Present)
@@ -453,13 +459,48 @@ mod device {
                 Self {
                     name,
                     properties,
+                    memory_properties,
                     features,
                     rating,
+                    msaa_samples,
                     swapchain_support,
                     extension_support,
                     sampler_anisotropy_support: features.sampler_anisotropy == 1,
                 },
             )
+        }
+
+        /// Return the maximum usable sample count for this device.
+        fn get_max_sample_count(
+            properties: vk::PhysicalDeviceProperties,
+            rating: &mut u32,
+        ) -> vk::SampleCountFlags {
+            let count = properties
+                .limits
+                .framebuffer_color_sample_counts
+                .min(properties.limits.framebuffer_depth_sample_counts);
+            if count.contains(vk::SampleCountFlags::TYPE_64) {
+                *rating += 64;
+                vk::SampleCountFlags::TYPE_64
+            } else if count.contains(vk::SampleCountFlags::TYPE_32) {
+                *rating += 32;
+                vk::SampleCountFlags::TYPE_32
+            } else if count.contains(vk::SampleCountFlags::TYPE_16) {
+                *rating += 16;
+                vk::SampleCountFlags::TYPE_16
+            } else if count.contains(vk::SampleCountFlags::TYPE_8) {
+                *rating += 8;
+                vk::SampleCountFlags::TYPE_8
+            } else if count.contains(vk::SampleCountFlags::TYPE_4) {
+                *rating += 4;
+                vk::SampleCountFlags::TYPE_4
+            } else if count.contains(vk::SampleCountFlags::TYPE_2) {
+                *rating += 2;
+                vk::SampleCountFlags::TYPE_2
+            } else {
+                *rating += 1;
+                vk::SampleCountFlags::TYPE_1
+            }
         }
 
         /// Whether a physical device supports the required extensions for this platform.
