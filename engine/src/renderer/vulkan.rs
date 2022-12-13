@@ -7,6 +7,7 @@ use std::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
+use self::command_pool::CommandPool;
 use crate::renderer::vulkan::image::Image;
 use debug::{Debug, VALIDATION_LAYER_NAME};
 use device::{Device, QueueFamily};
@@ -24,6 +25,7 @@ pub(crate) struct Context {
     color_image: Image,
     depth_image: Image,
     pipeline: Pipeline,
+    command_pools: Vec<CommandPool>,
     framebuffers: Vec<vk::Framebuffer>,
     #[cfg(debug_assertions)]
     debug: Debug,
@@ -49,6 +51,9 @@ impl Drop for Context {
             self.destroy_swapchain();
 
             let device = &self.device.logical_device;
+            self.command_pools
+                .iter()
+                .for_each(|command_pool| device.destroy_command_pool(command_pool.handle, None));
             device.destroy_device(None);
             self.surface
                 .loader
@@ -88,8 +93,10 @@ impl RendererBackend for Context {
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
+        // Self::create_descriptor_set_layout(&device, &mut data)?;
         // ubo_layout
         let pipeline = Pipeline::create(&device, swapchain.extent, render_pass)?;
+        let command_pools = Self::create_command_pools(&instance, &device, &swapchain)?;
         let color_image = Image::create_color(
             &instance,
             &device,
@@ -111,18 +118,17 @@ impl RendererBackend for Context {
             color_image.view,
             depth_image.view,
         )?;
-        // command_pools
-        // texture_image
-        // texture_image_view
-        // texture_sampler
-        // model
-        // vertex_buffer
-        // index_buffer
-        // uniform_buffers
-        // descriptor_pool
-        // descriptor_sets
-        // command_buffers
-        // sync
+        // Self::create_texture_image(&instance, &device, &mut data)?;
+        // Self::create_texture_image_view(&device, &mut data)?;
+        // Self::create_texture_sampler(&device, &mut data)?;
+        // Self::load_model(&mut data)?;
+        // Self::create_vertex_buffer(&instance, &device, &mut data)?;
+        // Self::create_index_buffer(&instance, &device, &mut data)?;
+        // Self::create_uniform_buffers(&instance, &device, &mut data)?;
+        // Self::create_descriptor_pool(&device, &mut data)?;
+        // Self::create_descriptor_sets(&device, &mut data)?;
+        // Self::create_command_buffers(&device, &mut data)?;
+        // Self::create_sync_objects(&device, &mut data)?;
 
         log::info!("initialized vulkan renderer backend successfully");
 
@@ -136,6 +142,7 @@ impl RendererBackend for Context {
             color_image,
             depth_image,
             pipeline,
+            command_pools,
             framebuffers,
             #[cfg(debug_assertions)]
             debug,
@@ -345,6 +352,25 @@ impl Context {
             })
             .collect::<Result<Vec<_>>>()
             .context("failed to create vulkan image buffers")
+    }
+
+    /// Create a list of [`CommandPool`]s.
+    fn create_command_pools(
+        instance: &ash::Instance,
+        device: &Device,
+        swapchain: &Swapchain,
+    ) -> Result<Vec<CommandPool>> {
+        let mut command_pools = Vec::with_capacity(swapchain.images.len() + 1);
+
+        // Global Pool
+        command_pools.push(CommandPool::create(device, QueueFamily::Graphics, 1)?);
+
+        // Per-framebuffer Pool
+        for _ in 0..swapchain.images.len() {
+            command_pools.push(CommandPool::create(device, QueueFamily::Graphics, 1)?);
+        }
+
+        Ok(command_pools)
     }
 
     /// Destroys the current swapchain and re-creates it with a new width/height.
@@ -1521,6 +1547,64 @@ mod image {
             .context("failed to create vulkan image view")?;
 
             Ok(view)
+        }
+    }
+}
+
+mod command_pool {
+    use super::device::{Device, QueueFamily};
+    use anyhow::{Context, Result};
+    use ash::vk;
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct CommandPool {
+        pub(crate) handle: vk::CommandPool,
+        pub(crate) buffers: Vec<vk::CommandBuffer>,
+    }
+
+    impl CommandPool {
+        pub(crate) fn create(
+            device: &Device,
+            queue_family: QueueFamily,
+            buffer_count: u32,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan command pool on queue family: {queue_family:?}");
+
+            let queue_index = device
+                .queue_family_indices
+                .get(&queue_family)
+                .context("{queue_family:?} queue family not found")?;
+
+            let pool_create_info = vk::CommandPoolCreateInfo::builder()
+                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+                .queue_family_index(*queue_index)
+                .build();
+            let pool = unsafe {
+                device
+                    .logical_device
+                    .create_command_pool(&pool_create_info, None)
+            }
+            .context("failed to create vulkan command pool")?;
+
+            let buffer_alloc_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(pool)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(buffer_count)
+                .build();
+            let buffers = unsafe {
+                device
+                    .logical_device
+                    .allocate_command_buffers(&buffer_alloc_info)
+            }
+            .context("failed to allocate vulkan command buffers")?;
+
+            log::debug!("created vulkan command pool successfully");
+
+            Ok(Self {
+                handle: pool,
+                buffers,
+            })
         }
     }
 }
