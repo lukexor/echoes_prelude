@@ -10,7 +10,7 @@ use std::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
-use self::device::Buffer;
+use self::{device::Buffer, sync::Syncs};
 use crate::math::UniformBufferObject;
 use command_pool::CommandPool;
 use debug::{Debug, VALIDATION_LAYER_NAME};
@@ -38,6 +38,7 @@ pub(crate) struct Context {
     pipeline: Pipeline,
     command_pools: Vec<CommandPool>,
     framebuffers: Vec<vk::Framebuffer>,
+    syncs: Syncs,
     #[cfg(debug_assertions)]
     debug: Debug,
     resized: Option<(u32, u32)>,
@@ -121,7 +122,7 @@ impl RendererBackend for Context {
         // Self::load_model(&mut data)?;
         // Self::create_vertex_buffer(&instance, &device, &mut data)?;
         // Self::create_index_buffer(&instance, &device, &mut data)?;
-        // Self::create_sync_objects(&device, &mut data)?;
+        let syncs = Syncs::create(&device.logical_device, &swapchain)?;
 
         log::info!("initialized vulkan renderer backend successfully");
 
@@ -142,6 +143,7 @@ impl RendererBackend for Context {
             color_image,
             depth_image,
             framebuffers,
+            syncs,
             #[cfg(debug_assertions)]
             debug,
             resized: None,
@@ -180,18 +182,7 @@ impl Drop for Context {
             }
 
             let device = &self.device.logical_device;
-            // self.data
-            //     .in_flight_fences
-            //     .iter()
-            //     .for_each(|&f| self.device.destroy_fence(f, None));
-            // self.data
-            //     .render_finished_semaphor
-            //     .iter()
-            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
-            // self.data
-            //     .image_available_semaphor
-            //     .iter()
-            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
+            self.syncs.destroy(device);
             // self.device.free_memory(self.data.index_buffer_memory, None);
             // self.device.destroy_buffer(self.data.index_buffer, None);
             // self.device
@@ -2450,6 +2441,87 @@ mod descriptor {
         pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
             device.destroy_descriptor_set_layout(self.set_layout, None);
             device.destroy_descriptor_pool(self.pool, None);
+        }
+    }
+}
+
+mod sync {
+    use super::{
+        device::{Buffer, Device, QueueFamily},
+        swapchain::Swapchain,
+    };
+    use crate::math::UniformBufferObject;
+    use anyhow::{Context, Result};
+    use ash::vk;
+    use std::mem::size_of;
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct Syncs {
+        images_available: Vec<vk::Semaphore>,
+        renders_finished: Vec<vk::Semaphore>,
+        in_flight_fences: Vec<vk::Fence>,
+        images_in_flight: Vec<vk::Fence>,
+    }
+
+    impl Syncs {
+        /// Create a `Sync` instance with [vk::Semaphore]s and [vk::Fence]s.
+        pub(crate) fn create(device: &ash::Device, swapchain: &Swapchain) -> Result<Self> {
+            let semaphor_create_info = vk::SemaphoreCreateInfo::builder();
+            let images_available = (0..swapchain.max_frames_in_flight)
+                .map(|_| {
+                    // SAFETY: TODO
+                    unsafe { device.create_semaphore(&semaphor_create_info, None) }
+                        .context("failed to create vulkan semaphor")
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let renders_finished = (0..swapchain.max_frames_in_flight)
+                .map(|_| {
+                    // SAFETY: TODO
+                    unsafe { device.create_semaphore(&semaphor_create_info, None) }
+                        .context("failed to create vulkan semaphor")
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            let fence_create_info =
+                vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+            let in_flight_fences = (0..swapchain.max_frames_in_flight)
+                .map(|_| {
+                    // SAFETY: TODO
+                    unsafe { device.create_fence(&fence_create_info, None) }
+                        .context("failed to create vulkan semaphor")
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            let images_in_flight = swapchain
+                .images
+                .iter()
+                .map(|_| vk::Fence::null())
+                .collect::<Vec<_>>();
+
+            Ok(Self {
+                images_available,
+                renders_finished,
+                in_flight_fences,
+                images_in_flight,
+            })
+        }
+
+        /// Destroy a `Sync` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            self.images_in_flight
+                .iter()
+                .for_each(|&fence| device.destroy_fence(fence, None));
+            self.in_flight_fences
+                .iter()
+                .for_each(|&fence| device.destroy_fence(fence, None));
+            self.renders_finished
+                .iter()
+                .for_each(|&fence| device.destroy_semaphore(fence, None));
+            self.images_available
+                .iter()
+                .for_each(|&fence| device.destroy_semaphore(fence, None));
         }
     }
 }
