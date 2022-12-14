@@ -23,6 +23,14 @@ impl Vertex {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+#[must_use]
+pub(crate) struct UniformBufferObject {
+    view: Mat4,
+    proj: Mat4,
+}
+
 /// Constructs a new [Vector].
 #[macro_export]
 macro_rules! vector {

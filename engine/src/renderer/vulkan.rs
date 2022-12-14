@@ -6,13 +6,17 @@ use ash::vk;
 use std::{
     ffi::{c_void, CStr, CString},
     fmt,
+    mem::size_of,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
-use self::command_pool::CommandPool;
-use crate::renderer::vulkan::image::Image;
+use self::device::Buffer;
+use crate::math::UniformBufferObject;
+use command_pool::CommandPool;
 use debug::{Debug, VALIDATION_LAYER_NAME};
+use descriptor::Descriptor;
 use device::{Device, QueueFamily};
+use image::Image;
 use pipeline::Pipeline;
 use surface::Surface;
 use swapchain::Swapchain;
@@ -27,8 +31,10 @@ pub(crate) struct Context {
     render_pass: vk::RenderPass,
     color_image: Image,
     depth_image: Image,
-    sampler: vk::Sampler,
+    uniform_buffers: Vec<Buffer>,
     textures: Vec<Image>,
+    sampler: vk::Sampler,
+    descriptor: Descriptor,
     pipeline: Pipeline,
     command_pools: Vec<CommandPool>,
     framebuffers: Vec<vk::Framebuffer>,
@@ -61,8 +67,35 @@ impl RendererBackend for Context {
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
-        let pipeline = Pipeline::create(&device, swapchain.extent, render_pass, &shaders)?;
+        let uniform_buffers = device.create_uniform_buffers(&instance, &swapchain)?;
+        let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
         let command_pools = Self::create_command_pools(&instance, &device, &swapchain)?;
+        // let present_queue = device.queue_family(QueueFamily::Present)?;
+        let texture = Image::create_texture(
+            "viking_room",
+            &instance,
+            &device,
+            &command_pools[0],
+            graphics_queue,
+            "assets/viking_room.png",
+            #[cfg(debug_assertions)]
+            &debug,
+        )?;
+        let sampler = Image::create_sampler(&device.logical_device, texture.mip_levels)?;
+        let descriptor = Descriptor::create(
+            &device.logical_device,
+            &swapchain,
+            &uniform_buffers,
+            texture.view,
+            sampler,
+        )?;
+        let pipeline = Pipeline::create(
+            &device,
+            swapchain.extent,
+            render_pass,
+            descriptor.set_layout,
+            &shaders,
+        )?;
         let color_image = Image::create_color(
             &instance,
             &device,
@@ -85,26 +118,9 @@ impl RendererBackend for Context {
             depth_image.view,
         )?;
 
-        let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
-        // let present_queue = device.queue_family(QueueFamily::Present)?;
-        let texture = Image::create_texture(
-            "viking_room",
-            &instance,
-            &device,
-            &command_pools[0],
-            graphics_queue,
-            "assets/viking_room.png",
-            #[cfg(debug_assertions)]
-            &debug,
-        )?;
-        let sampler = Image::create_sampler(&device.logical_device, texture.mip_levels)?;
         // Self::load_model(&mut data)?;
         // Self::create_vertex_buffer(&instance, &device, &mut data)?;
         // Self::create_index_buffer(&instance, &device, &mut data)?;
-        // Self::create_uniform_buffers(&instance, &device, &mut data)?;
-        // Self::create_descriptor_pool(&device, &mut data)?;
-        // Self::create_descriptor_sets(&device, &mut data)?;
-        // Self::create_command_buffers(&device, &mut data)?;
         // Self::create_sync_objects(&device, &mut data)?;
 
         log::info!("initialized vulkan renderer backend successfully");
@@ -117,12 +133,14 @@ impl RendererBackend for Context {
             device,
             swapchain,
             render_pass,
-            color_image,
-            depth_image,
+            uniform_buffers,
             textures: vec![texture],
             sampler,
-            pipeline,
             command_pools,
+            descriptor,
+            pipeline,
+            color_image,
+            depth_image,
             framebuffers,
             #[cfg(debug_assertions)]
             debug,
@@ -392,14 +410,24 @@ impl Context {
         device: &Device,
         swapchain: &Swapchain,
     ) -> Result<Vec<CommandPool>> {
+        // One global pool + one pool for each swapchain image
         let mut command_pools = Vec::with_capacity(swapchain.images.len() + 1);
+        let buffer_count = 1;
 
         // Global Pool
-        command_pools.push(CommandPool::create(device, QueueFamily::Graphics, 1)?);
+        command_pools.push(CommandPool::create(
+            device,
+            QueueFamily::Graphics,
+            buffer_count,
+        )?);
 
         // Per-framebuffer Pool
         for _ in 0..swapchain.images.len() {
-            command_pools.push(CommandPool::create(device, QueueFamily::Graphics, 1)?);
+            command_pools.push(CommandPool::create(
+                device,
+                QueueFamily::Graphics,
+                buffer_count,
+            )?);
         }
 
         Ok(command_pools)
@@ -414,10 +442,21 @@ impl Context {
             Swapchain::create(&self.instance, &self.device, &self.surface, width, height)?;
         self.render_pass =
             Self::create_render_pass(&self.instance, &self.device, self.swapchain.format)?;
+        self.uniform_buffers = self
+            .device
+            .create_uniform_buffers(&self.instance, &self.swapchain)?;
+        self.descriptor = Descriptor::create(
+            &self.device.logical_device,
+            &self.swapchain,
+            &self.uniform_buffers,
+            self.textures[0].view,
+            self.sampler,
+        )?;
         self.pipeline = Pipeline::create(
             &self.device,
             self.swapchain.extent,
             self.render_pass,
+            self.descriptor.set_layout,
             &self.shaders,
         )?;
         self.color_image = Image::create_color(
@@ -441,9 +480,6 @@ impl Context {
             self.color_image.view,
             self.depth_image.view,
         )?;
-        // uniform buffers
-        // descriptor pool
-        // descriptor sets
         // command buffers
         // resize images_in_flight
 
@@ -457,16 +493,10 @@ impl Context {
 
         let device = &self.device.logical_device;
 
-        // self.device
-        //     .destroy_descriptor_pool(self.data.descriptor_pool, None);
-        // self.data
-        //     .uniform_buffers_memory
-        //     .iter()
-        //     .for_each(|&m| self.device.free_memory(m, None));
-        // self.data
-        //     .uniform_buffers
-        //     .iter()
-        //     .for_each(|&b| self.device.destroy_buffer(b, None));
+        self.descriptor.destroy(device);
+        self.uniform_buffers
+            .iter()
+            .for_each(|uniform_buffer| uniform_buffer.destroy(device));
         [&self.color_image, &self.depth_image]
             .iter()
             .for_each(|image| image.destroy(device));
@@ -535,13 +565,15 @@ mod surface {
 }
 
 mod device {
-    use super::{platform, Surface, VALIDATION_LAYER_NAME};
+    use super::{platform, swapchain::Swapchain, Surface, VALIDATION_LAYER_NAME};
+    use crate::math::UniformBufferObject;
     use anyhow::{bail, Context as _, Result};
     use ash::vk;
     use std::{
         collections::{hash_map::Entry, HashMap, HashSet},
         ffi::CStr,
         fmt,
+        mem::size_of,
     };
 
     #[derive(Clone)]
@@ -666,7 +698,7 @@ mod device {
             size: vk::DeviceSize,
             usage: vk::BufferUsageFlags,
             properties: vk::MemoryPropertyFlags,
-        ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        ) -> Result<Buffer> {
             log::debug!("creating vulkan buffer");
 
             // Buffer
@@ -690,20 +722,41 @@ mod device {
 
             // Allocate
             // SAFETY: TODO
-            let buffer_memory = unsafe {
+            let memory = unsafe {
                 self.logical_device
                     .allocate_memory(&memory_allocate_info, None)
             }
             .context("failed to allocate vulkan buffer memory")?;
-            unsafe {
-                self.logical_device
-                    .bind_buffer_memory(buffer, buffer_memory, 0)
-            }
-            .context("failed to bind to vulkan buffer memory")?;
+            unsafe { self.logical_device.bind_buffer_memory(buffer, memory, 0) }
+                .context("failed to bind to vulkan buffer memory")?;
 
             log::debug!("created vulkan buffer successfully");
 
-            Ok((buffer, buffer_memory))
+            Ok(Buffer {
+                handle: buffer,
+                memory,
+            })
+        }
+
+        /// Create a `Buffer` instance for uniforms.
+        pub(crate) fn create_uniform_buffers(
+            &self,
+            instance: &ash::Instance,
+            swapchain: &Swapchain,
+        ) -> Result<Vec<Buffer>> {
+            let size = size_of::<UniformBufferObject>() as u64;
+            (0..swapchain.images.len())
+                .map(|_| {
+                    self.create_buffer(
+                        instance,
+                        size,
+                        vk::BufferUsageFlags::UNIFORM_BUFFER,
+                        vk::MemoryPropertyFlags::HOST_COHERENT
+                            | vk::MemoryPropertyFlags::HOST_VISIBLE,
+                    )
+                })
+                .collect::<Result<Vec<_>>>()
+                .context("failed to create vulkan uniform buffers")
         }
 
         /// Select a preferred [`vk::PhysicalDevice`].
@@ -778,6 +831,21 @@ mod device {
             // SAFETY: All create_info values are set correctly above with valid lifetimes.
             unsafe { instance.create_device(physical_device, &device_create_info, None) }
                 .context("failed to create vulkan logical device")
+        }
+    }
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct Buffer {
+        pub(crate) handle: vk::Buffer,
+        pub(crate) memory: vk::DeviceMemory,
+    }
+
+    impl Buffer {
+        /// Destroy a `Buffer` instance.
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.destroy_buffer(self.handle, None);
+            device.free_memory(self.memory, None);
         }
     }
 
@@ -1272,7 +1340,6 @@ mod pipeline {
     pub(crate) struct Pipeline {
         pub(crate) handle: vk::Pipeline,
         pub(crate) layout: vk::PipelineLayout,
-        pub(crate) descriptor_set_layout: vk::DescriptorSetLayout,
     }
 
     impl Pipeline {
@@ -1281,6 +1348,7 @@ mod pipeline {
             device: &Device,
             extent: vk::Extent2D,
             render_pass: vk::RenderPass,
+            descriptor_set_layout: vk::DescriptorSetLayout,
             shader: &Shaders,
         ) -> Result<Self> {
             log::debug!("creating vulkan graphics pipeline");
@@ -1396,31 +1464,6 @@ mod pipeline {
                 .size(4) // 1 * 4 byte float
                 .build();
 
-            // TODO: Should this go here and be destroyed when swapchain is, or is it independent?
-            // Descriptor Set Layout
-            let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX)
-                .build();
-
-            let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build();
-
-            let bindings = [ubo_binding, sampler_binding];
-            let descriptor_set_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
-                .bindings(&bindings)
-                .build();
-
-            let descriptor_set_layout =
-                unsafe { device.create_descriptor_set_layout(&descriptor_set_create_info, None) }
-                    .context("failed to create vulkan descriptor set layout")?;
-
             // Layout
             let set_layouts = [descriptor_set_layout];
             let push_constant_ranges = [vert_push_constant_ranges, frag_push_constant_ranges];
@@ -1473,14 +1516,12 @@ mod pipeline {
             Ok(Self {
                 handle: pipeline,
                 layout,
-                descriptor_set_layout,
             })
         }
 
         /// Destroy a `Pipeline` instance.
         // SAFETY: TODO
         pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             device.destroy_pipeline(self.handle, None);
             device.destroy_pipeline_layout(self.layout, None);
         }
@@ -1751,7 +1792,7 @@ mod image {
             let mip_levels = (info.width.max(info.height) as f32).log2().floor() as u32 + 1;
 
             // Staging Buffer
-            let (staging_buffer, staging_buffer_memory) = device.create_buffer(
+            let staging_buffer = device.create_buffer(
                 instance,
                 size,
                 vk::BufferUsageFlags::TRANSFER_SRC,
@@ -1763,11 +1804,11 @@ mod image {
             unsafe {
                 let memory = device
                     .logical_device
-                    .map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())
+                    .map_memory(staging_buffer.memory, 0, size, vk::MemoryMapFlags::empty())
                     .context("failed to map vulkan staging buffer memory")?;
                 // SAFETY: TODO
                 ptr::copy_nonoverlapping(pixels.as_ptr(), memory.cast(), pixels.len());
-                device.logical_device.unmap_memory(staging_buffer_memory);
+                device.logical_device.unmap_memory(staging_buffer.memory);
             };
 
             // Texture Image
@@ -1860,7 +1901,7 @@ mod image {
                 unsafe {
                     device.logical_device.cmd_copy_buffer_to_image(
                         command_buffer,
-                        staging_buffer,
+                        staging_buffer.handle,
                         image,
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                         &[region],
@@ -1899,10 +1940,7 @@ mod image {
             // Cleanup
             // SAFETY: TODO
             unsafe {
-                device.logical_device.destroy_buffer(staging_buffer, None);
-                device
-                    .logical_device
-                    .free_memory(staging_buffer_memory, None);
+                staging_buffer.destroy(&device.logical_device);
             }
 
             log::debug!("created vulkan texture named `{name}` successfully");
@@ -2153,6 +2191,7 @@ mod command_pool {
     pub(crate) struct CommandPool {
         pub(crate) handle: vk::CommandPool,
         pub(crate) buffers: Vec<vk::CommandBuffer>,
+        pub(crate) secondary_buffers: Vec<vk::CommandBuffer>,
     }
 
     impl CommandPool {
@@ -2198,6 +2237,7 @@ mod command_pool {
             Ok(Self {
                 handle: pool,
                 buffers,
+                secondary_buffers: vec![],
             })
         }
 
@@ -2264,6 +2304,152 @@ mod command_pool {
             log::debug!("finished single time vulkan command");
 
             Ok(())
+        }
+    }
+}
+
+mod descriptor {
+    use super::{
+        device::{Buffer, Device, QueueFamily},
+        swapchain::Swapchain,
+    };
+    use crate::math::UniformBufferObject;
+    use anyhow::{Context, Result};
+    use ash::vk;
+    use std::mem::size_of;
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct Descriptor {
+        pub(crate) pool: vk::DescriptorPool,
+        pub(crate) set_layout: vk::DescriptorSetLayout,
+        pub(crate) sets: Vec<vk::DescriptorSet>,
+    }
+
+    impl Descriptor {
+        /// Create a `Descriptor` instance with a [`vk::DescriptorPool`], [`vk::DescriptorSetLayout`] and list of [`vk::DescriptorSet`]s.
+        pub(crate) fn create(
+            device: &ash::Device,
+            swapchain: &Swapchain,
+            uniform_buffers: &[Buffer],
+            image_view: vk::ImageView,
+            sampler: vk::Sampler,
+        ) -> Result<Self> {
+            // Pool
+            log::debug!("creating vulkan descriptor pool");
+
+            let count = swapchain.images.len() as u32;
+
+            let ubo_size = vk::DescriptorPoolSize::builder()
+                .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(count)
+                .build();
+            let sampler_size = vk::DescriptorPoolSize::builder()
+                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(count)
+                .build();
+
+            let pool_sizes = [ubo_size, sampler_size];
+            let descriptor_pool_info = vk::DescriptorPoolCreateInfo::builder()
+                .pool_sizes(&pool_sizes)
+                .max_sets(count);
+
+            let pool = unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }
+                .context("failed to create vulkan descriptor pool")?;
+
+            log::debug!("created vulkan descriptor pool successfully");
+
+            // Set Layout
+            let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX)
+                .build();
+
+            let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build();
+
+            let bindings = [ubo_binding, sampler_binding];
+            let descriptor_set_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
+                .bindings(&bindings)
+                .build();
+
+            let set_layout =
+                unsafe { device.create_descriptor_set_layout(&descriptor_set_create_info, None) }
+                    .context("failed to create vulkan descriptor set layout")?;
+
+            log::debug!("creating vulkan descriptor sets");
+
+            // Allocate
+            let count = swapchain.images.len();
+            let set_layouts = vec![set_layout; count];
+            let descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
+                .descriptor_pool(pool)
+                .set_layouts(&set_layouts)
+                .build();
+
+            // SAFETY: TODO
+            let sets = unsafe { device.allocate_descriptor_sets(&descriptor_set_allocate_info) }
+                .context("failed to allocate vulkan descriptor sets")?;
+
+            // Update
+            for i in 0..count {
+                let descriptor_buffer_info = vk::DescriptorBufferInfo::builder()
+                    .buffer(uniform_buffers[i].handle)
+                    .offset(0)
+                    .range(size_of::<UniformBufferObject>() as u64)
+                    .build();
+
+                let buffer_info = [descriptor_buffer_info];
+                let ubo_write = vk::WriteDescriptorSet::builder()
+                    .dst_set(sets[i])
+                    .dst_binding(0) // points to shader.vert binding
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buffer_info)
+                    .build();
+
+                let descriptor_image_info = vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(image_view)
+                    .sampler(sampler)
+                    .build();
+
+                let image_info = [descriptor_image_info];
+                let sampler_write = vk::WriteDescriptorSet::builder()
+                    .dst_set(sets[i])
+                    .dst_binding(1)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&image_info)
+                    .build();
+
+                // SAFETY: TODO
+                let descriptor_copies: [vk::CopyDescriptorSet; 0] = [];
+                unsafe {
+                    device.update_descriptor_sets(&[ubo_write, sampler_write], &descriptor_copies);
+                };
+            }
+
+            log::debug!("created vulkan descriptor sets successfully");
+
+            Ok(Self {
+                pool,
+                set_layout,
+                sets,
+            })
+        }
+
+        /// Destroy a `Descriptor` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.destroy_descriptor_set_layout(self.set_layout, None);
+            device.destroy_descriptor_pool(self.pool, None);
         }
     }
 }
