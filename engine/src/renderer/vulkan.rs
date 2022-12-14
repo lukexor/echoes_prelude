@@ -27,6 +27,7 @@ pub(crate) struct Context {
     render_pass: vk::RenderPass,
     color_image: Image,
     depth_image: Image,
+    sampler: vk::Sampler,
     textures: Vec<Image>,
     pipeline: Pipeline,
     command_pools: Vec<CommandPool>,
@@ -86,7 +87,7 @@ impl RendererBackend for Context {
 
         let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
         // let present_queue = device.queue_family(QueueFamily::Present)?;
-        let textures = vec![Image::create_texture(
+        let texture = Image::create_texture(
             "viking_room",
             &instance,
             &device,
@@ -95,8 +96,8 @@ impl RendererBackend for Context {
             "assets/viking_room.png",
             #[cfg(debug_assertions)]
             &debug,
-        )?];
-        // Self::create_texture_sampler(&device, &mut data)?;
+        )?;
+        let sampler = Image::create_sampler(&device.logical_device, texture.mip_levels)?;
         // Self::load_model(&mut data)?;
         // Self::create_vertex_buffer(&instance, &device, &mut data)?;
         // Self::create_index_buffer(&instance, &device, &mut data)?;
@@ -118,7 +119,8 @@ impl RendererBackend for Context {
             render_pass,
             color_image,
             depth_image,
-            textures,
+            textures: vec![texture],
+            sampler,
             pipeline,
             command_pools,
             framebuffers,
@@ -177,9 +179,7 @@ impl Drop for Context {
             // self.device
             //     .free_memory(self.data.vertex_buffer_memory, None);
             // self.device.destroy_buffer(self.data.vertex_buffer, None);
-            // self.device.destroy_sampler(self.data.texture_sampler, None);
-            // self.device
-            //     .destroy_image_view(self.data.texture_image_view, None);
+            device.destroy_sampler(self.sampler, None);
             self.textures
                 .iter()
                 .for_each(|texture| texture.destroy(device));
@@ -1541,6 +1541,7 @@ mod image {
         pub(crate) handle: vk::Image,
         pub(crate) memory: vk::DeviceMemory,
         pub(crate) view: vk::ImageView,
+        pub(crate) mip_levels: u32,
     }
 
     impl Image {
@@ -1635,13 +1636,14 @@ mod image {
             log::debug!("creating vulkan color image");
 
             // Image
+            let mip_levels = 1;
             let (image, memory) = Self::create(
                 "color",
                 instance,
                 device,
                 swapchain.extent.width,
                 swapchain.extent.height,
-                1,
+                mip_levels,
                 device.info.msaa_samples,
                 swapchain.format,
                 vk::ImageTiling::OPTIMAL,
@@ -1657,7 +1659,7 @@ mod image {
                 image,
                 swapchain.format,
                 vk::ImageAspectFlags::COLOR,
-                1,
+                mip_levels,
             )?;
 
             log::debug!("created vulkan color image successfully");
@@ -1666,6 +1668,7 @@ mod image {
                 handle: image,
                 memory,
                 view,
+                mip_levels,
             })
         }
 
@@ -1681,13 +1684,14 @@ mod image {
             let format = device.get_depth_format(instance, vk::ImageTiling::OPTIMAL)?;
 
             // Image
+            let mip_levels = 1;
             let (image, memory) = Self::create(
                 "depth",
                 instance,
                 device,
                 swapchain.extent.width,
                 swapchain.extent.height,
-                1,
+                mip_levels,
                 device.info.msaa_samples,
                 format,
                 vk::ImageTiling::OPTIMAL,
@@ -1698,7 +1702,13 @@ mod image {
             )?;
 
             // Image View
-            let view = Self::create_view(device, image, format, vk::ImageAspectFlags::DEPTH, 1)?;
+            let view = Self::create_view(
+                device,
+                image,
+                format,
+                vk::ImageAspectFlags::DEPTH,
+                mip_levels,
+            )?;
 
             log::debug!("created vulkan depth image successfully");
 
@@ -1706,6 +1716,7 @@ mod image {
                 handle: image,
                 memory,
                 view,
+                mip_levels,
             })
         }
 
@@ -1900,6 +1911,7 @@ mod image {
                 handle: image,
                 memory,
                 view,
+                mip_levels,
             })
         }
 
@@ -2099,6 +2111,35 @@ mod image {
 
             Ok(())
         }
+
+        pub(crate) fn create_sampler(device: &ash::Device, mip_levels: u32) -> Result<vk::Sampler> {
+            log::debug!("creating vulkan sampler");
+
+            let sampler_create_info = vk::SamplerCreateInfo::builder()
+                .mag_filter(vk::Filter::LINEAR)
+                .min_filter(vk::Filter::LINEAR)
+                .address_mode_u(vk::SamplerAddressMode::REPEAT)
+                .address_mode_v(vk::SamplerAddressMode::REPEAT)
+                .address_mode_w(vk::SamplerAddressMode::REPEAT)
+                .anisotropy_enable(true)
+                .max_anisotropy(16.0)
+                .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
+                .unnormalized_coordinates(false)
+                .compare_enable(false)
+                .compare_op(vk::CompareOp::ALWAYS)
+                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                .min_lod(0.0) // Optional
+                .max_lod(mip_levels as f32)
+                .mip_lod_bias(0.0)
+                .build(); // Optional
+
+            let sampler = unsafe { device.create_sampler(&sampler_create_info, None) }
+                .context("failed to create vulkan sampler")?;
+
+            log::debug!("created vulkan sampler successfully");
+
+            Ok(sampler)
+        }
     }
 }
 
@@ -2225,20 +2266,6 @@ mod command_pool {
             Ok(())
         }
     }
-}
-
-mod texture {
-    #[cfg(debug_assertions)]
-    use super::debug::Debug;
-    use super::{command_pool::CommandPool, device::Device, image::Image};
-    use anyhow::{bail, Context, Result};
-    use ash::vk;
-    use std::{
-        fs::{self, File},
-        io::BufReader,
-        path::Path,
-        ptr,
-    };
 }
 
 mod vertex {
