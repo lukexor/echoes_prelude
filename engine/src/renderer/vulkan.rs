@@ -10,7 +10,7 @@ use std::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use self::command_pool::CommandPool;
-use crate::renderer::vulkan::{image::Image, texture::Texture};
+use crate::renderer::vulkan::image::Image;
 use debug::{Debug, VALIDATION_LAYER_NAME};
 use device::{Device, QueueFamily};
 use pipeline::Pipeline;
@@ -27,65 +27,13 @@ pub(crate) struct Context {
     render_pass: vk::RenderPass,
     color_image: Image,
     depth_image: Image,
+    textures: Vec<Image>,
     pipeline: Pipeline,
     command_pools: Vec<CommandPool>,
     framebuffers: Vec<vk::Framebuffer>,
-    texture: Texture,
     #[cfg(debug_assertions)]
     debug: Debug,
     resized: Option<(u32, u32)>,
-}
-
-impl Drop for Context {
-    /// Cleans up all Vulkan resources.
-    fn drop(&mut self) {
-        // NOTE: Drop-order is important!
-        //
-        // SAFETY:
-        //
-        // 1. Elements are destroyed in the correct order
-        // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
-        //    the only way to construct a Context with all values initialized.
-        #[allow(clippy::expect_used)]
-        unsafe {
-            if let Err(err) = self.destroy_swapchain() {
-                log::error!("{err}");
-                return;
-            }
-
-            let device = &self.device.logical_device;
-            // self.data
-            //     .in_flight_fences
-            //     .iter()
-            //     .for_each(|&f| self.device.destroy_fence(f, None));
-            // self.data
-            //     .render_finished_semaphor
-            //     .iter()
-            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
-            // self.data
-            //     .image_available_semaphor
-            //     .iter()
-            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
-            // self.device.free_memory(self.data.index_buffer_memory, None);
-            // self.device.destroy_buffer(self.data.index_buffer, None);
-            // self.device
-            //     .free_memory(self.data.vertex_buffer_memory, None);
-            // self.device.destroy_buffer(self.data.vertex_buffer, None);
-            // self.device.destroy_sampler(self.data.texture_sampler, None);
-            // self.device
-            //     .destroy_image_view(self.data.texture_image_view, None);
-            self.texture.destroy(device);
-            self.command_pools
-                .iter()
-                .for_each(|command_pool| command_pool.destroy(device));
-            device.destroy_device(None);
-            self.surface.destroy();
-            self.debug.destroy();
-            self.instance.destroy_instance(None);
-
-            log::info!("destroyed vulkan context");
-        };
-    }
 }
 
 impl fmt::Debug for Context {
@@ -138,7 +86,7 @@ impl RendererBackend for Context {
 
         let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
         // let present_queue = device.queue_family(QueueFamily::Present)?;
-        let texture = Texture::create(
+        let textures = vec![Image::create_texture(
             "viking_room",
             &instance,
             &device,
@@ -147,9 +95,7 @@ impl RendererBackend for Context {
             "assets/viking_room.png",
             #[cfg(debug_assertions)]
             &debug,
-        )?;
-        // Self::create_texture_image(&instance, &device, &mut data)?;
-        // Self::create_texture_image_view(&device, &mut data)?;
+        )?];
         // Self::create_texture_sampler(&device, &mut data)?;
         // Self::load_model(&mut data)?;
         // Self::create_vertex_buffer(&instance, &device, &mut data)?;
@@ -172,10 +118,10 @@ impl RendererBackend for Context {
             render_pass,
             color_image,
             depth_image,
+            textures,
             pipeline,
             command_pools,
             framebuffers,
-            texture,
             #[cfg(debug_assertions)]
             debug,
             resized: None,
@@ -193,6 +139,60 @@ impl RendererBackend for Context {
             self.recreate_swapchain(width, height)?;
         }
         Ok(())
+    }
+}
+
+impl Drop for Context {
+    /// Cleans up all Vulkan resources.
+    fn drop(&mut self) {
+        // NOTE: Drop-order is important!
+        //
+        // SAFETY:
+        //
+        // 1. Elements are destroyed in the correct order
+        // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
+        //    the only way to construct a Context with all values initialized.
+        #[allow(clippy::expect_used)]
+        unsafe {
+            if let Err(err) = self.destroy_swapchain() {
+                log::error!("{err}");
+                return;
+            }
+
+            let device = &self.device.logical_device;
+            // self.data
+            //     .in_flight_fences
+            //     .iter()
+            //     .for_each(|&f| self.device.destroy_fence(f, None));
+            // self.data
+            //     .render_finished_semaphor
+            //     .iter()
+            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
+            // self.data
+            //     .image_available_semaphor
+            //     .iter()
+            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
+            // self.device.free_memory(self.data.index_buffer_memory, None);
+            // self.device.destroy_buffer(self.data.index_buffer, None);
+            // self.device
+            //     .free_memory(self.data.vertex_buffer_memory, None);
+            // self.device.destroy_buffer(self.data.vertex_buffer, None);
+            // self.device.destroy_sampler(self.data.texture_sampler, None);
+            // self.device
+            //     .destroy_image_view(self.data.texture_image_view, None);
+            self.textures
+                .iter()
+                .for_each(|texture| texture.destroy(device));
+            self.command_pools
+                .iter()
+                .for_each(|command_pool| command_pool.destroy(device));
+            device.destroy_device(None);
+            self.surface.destroy();
+            self.debug.destroy();
+            self.instance.destroy_instance(None);
+
+            log::info!("destroyed vulkan context");
+        };
     }
 }
 
@@ -1530,10 +1530,10 @@ mod shader {
 mod image {
     #[cfg(debug_assertions)]
     use super::debug::Debug;
-    use super::{device::Device, swapchain::Swapchain};
-    use anyhow::{Context, Result};
+    use super::{command_pool::CommandPool, device::Device, swapchain::Swapchain};
+    use anyhow::{bail, Context, Result};
     use ash::vk::{self, Handle};
-    use std::ffi::CString;
+    use std::{ffi::CString, fs, io::BufReader, path::Path, ptr};
 
     #[derive(Clone)]
     #[must_use]
@@ -1709,189 +1709,8 @@ mod image {
             })
         }
 
-        /// Create a [`vk::ImageView`] instance.
-        pub(crate) fn create_view(
-            device: &Device,
-            image: vk::Image,
-            format: vk::Format,
-            aspects: vk::ImageAspectFlags,
-            mip_levels: u32,
-        ) -> Result<vk::ImageView> {
-            let view_create_info = vk::ImageViewCreateInfo::builder()
-                .image(image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(format)
-                .subresource_range(
-                    vk::ImageSubresourceRange::builder()
-                        .aspect_mask(aspects)
-                        .base_mip_level(0)
-                        .level_count(mip_levels)
-                        .base_array_layer(0)
-                        .layer_count(1)
-                        .build(),
-                )
-                .build();
-            // SAFETY: TODO
-            let view = unsafe {
-                device
-                    .logical_device
-                    .create_image_view(&view_create_info, None)
-            }
-            .context("failed to create vulkan image view")?;
-
-            Ok(view)
-        }
-    }
-}
-
-mod command_pool {
-    use super::device::{Device, QueueFamily};
-    use anyhow::{Context, Result};
-    use ash::vk;
-
-    #[derive(Clone)]
-    #[must_use]
-    pub(crate) struct CommandPool {
-        pub(crate) handle: vk::CommandPool,
-        pub(crate) buffers: Vec<vk::CommandBuffer>,
-    }
-
-    impl CommandPool {
-        /// Create a `CommandPool` instance containing a handle to a [`vk::CommandPool`] and a list
-        /// of [`vk::CommandBuffer`]s.
-        pub(crate) fn create(
-            device: &Device,
-            queue_family: QueueFamily,
-            buffer_count: u32,
-        ) -> Result<Self> {
-            log::debug!("creating vulkan command pool on queue family: {queue_family:?}");
-
-            let queue_index = device
-                .queue_family_indices
-                .get(&queue_family)
-                .context("{queue_family:?} queue family not found")?;
-
-            let pool_create_info = vk::CommandPoolCreateInfo::builder()
-                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-                .queue_family_index(*queue_index)
-                .build();
-            let pool = unsafe {
-                device
-                    .logical_device
-                    .create_command_pool(&pool_create_info, None)
-            }
-            .context("failed to create vulkan command pool")?;
-
-            let buffer_alloc_info = vk::CommandBufferAllocateInfo::builder()
-                .command_pool(pool)
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(buffer_count)
-                .build();
-            let buffers = unsafe {
-                device
-                    .logical_device
-                    .allocate_command_buffers(&buffer_alloc_info)
-            }
-            .context("failed to allocate vulkan command buffers")?;
-
-            log::debug!("created vulkan command pool successfully");
-
-            Ok(Self {
-                handle: pool,
-                buffers,
-            })
-        }
-
-        /// Destroy a `CommandPool` instance.
-        // SAFETY: TODO
-        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
-            device.destroy_command_pool(self.handle, None);
-        }
-
-        /// Creates a one-time [`vk::CommandBuffer`] instance to write commands to.
-        pub(crate) fn begin_one_time_command(
-            &self,
-            device: &ash::Device,
-        ) -> Result<vk::CommandBuffer> {
-            log::debug!("beginning single time vulkan command");
-
-            // Allocate
-            let command_allocate_info = vk::CommandBufferAllocateInfo::builder()
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_pool(self.handle)
-                .command_buffer_count(1)
-                .build();
-
-            let command_buffer = unsafe { device.allocate_command_buffers(&command_allocate_info) }
-                .context("failed to allocate vulkan command buffer")?[0];
-
-            // Commands
-            let command_begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-                .build();
-            unsafe { device.begin_command_buffer(command_buffer, &command_begin_info) }
-                .context("failed to begin vulkan command buffer")?;
-
-            Ok(command_buffer)
-        }
-
-        /// Finishes a one-time [`vk::CommandBuffer`] and submits it to the queue.
-        pub(crate) fn end_one_time_command(
-            &self,
-            device: &ash::Device,
-            command_buffer: vk::CommandBuffer,
-            queue: vk::Queue,
-        ) -> Result<()> {
-            unsafe { device.end_command_buffer(command_buffer) }
-                .context("failed to end vulkan command buffer")?;
-
-            // Submit
-            let command_buffers = [command_buffer];
-            let submit_infos = [vk::SubmitInfo::builder()
-                .command_buffers(&command_buffers)
-                .build()];
-
-            // SAFETY: TODO
-            unsafe {
-                device.queue_submit(queue, &submit_infos, vk::Fence::null())?;
-                device.queue_wait_idle(queue)?;
-            }
-
-            // Cleanup
-            unsafe {
-                device.free_command_buffers(self.handle, &command_buffers);
-            }
-
-            log::debug!("finished single time vulkan command");
-
-            Ok(())
-        }
-    }
-}
-
-mod texture {
-    #[cfg(debug_assertions)]
-    use super::debug::Debug;
-    use super::{command_pool::CommandPool, device::Device, image::Image};
-    use anyhow::{bail, Context, Result};
-    use ash::vk;
-    use std::{
-        fs::{self, File},
-        io::BufReader,
-        path::Path,
-        ptr,
-    };
-
-    #[derive(Clone)]
-    #[must_use]
-    pub(crate) struct Texture {
-        pub(crate) image: vk::Image,
-        pub(crate) memory: vk::DeviceMemory,
-    }
-
-    impl Texture {
-        /// Create a `Texture` instance containing an [vk::Image].
-        pub(crate) fn create(
+        /// Create a [vk::Image] instance to be used as a texture.
+        pub(crate) fn create_texture(
             name: &str,
             instance: &ash::Instance,
             device: &Device,
@@ -1905,7 +1724,7 @@ mod texture {
             // Load Texture
             let filename = filename.as_ref();
             let image = BufReader::new(
-                File::open(
+                fs::File::open(
                     fs::canonicalize(filename)
                         .with_context(|| format!("failed to find texture file: {filename:?}"))?,
                 )
@@ -2045,15 +1864,24 @@ mod texture {
             }
 
             // Mipmap
+            let format = vk::Format::R8G8B8A8_SRGB;
             Self::generate_mipmaps(
                 instance,
                 device,
                 command_pool,
                 graphics_queue,
                 image,
-                vk::Format::R8G8B8A8_SRGB,
+                format,
                 info.width,
                 info.height,
+                mip_levels,
+            )?;
+
+            let view = Self::create_view(
+                device,
+                image,
+                format,
+                vk::ImageAspectFlags::COLOR,
                 mip_levels,
             )?;
 
@@ -2068,14 +1896,44 @@ mod texture {
 
             log::debug!("created vulkan texture named `{name}` successfully");
 
-            Ok(Self { image, memory })
+            Ok(Self {
+                handle: image,
+                memory,
+                view,
+            })
         }
 
-        /// Destroy a `Texture` instance.
-        // SAFETY: TODO
-        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
-            device.free_memory(self.memory, None);
-            device.destroy_image(self.image, None);
+        /// Create a [`vk::ImageView`] instance.
+        pub(crate) fn create_view(
+            device: &Device,
+            image: vk::Image,
+            format: vk::Format,
+            aspects: vk::ImageAspectFlags,
+            mip_levels: u32,
+        ) -> Result<vk::ImageView> {
+            let view_create_info = vk::ImageViewCreateInfo::builder()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(format)
+                .subresource_range(
+                    vk::ImageSubresourceRange::builder()
+                        .aspect_mask(aspects)
+                        .base_mip_level(0)
+                        .level_count(mip_levels)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                )
+                .build();
+            // SAFETY: TODO
+            let view = unsafe {
+                device
+                    .logical_device
+                    .create_image_view(&view_create_info, None)
+            }
+            .context("failed to create vulkan image view")?;
+
+            Ok(view)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -2242,6 +2100,145 @@ mod texture {
             Ok(())
         }
     }
+}
+
+mod command_pool {
+    use super::device::{Device, QueueFamily};
+    use anyhow::{Context, Result};
+    use ash::vk;
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct CommandPool {
+        pub(crate) handle: vk::CommandPool,
+        pub(crate) buffers: Vec<vk::CommandBuffer>,
+    }
+
+    impl CommandPool {
+        /// Create a `CommandPool` instance containing a handle to a [`vk::CommandPool`] and a list
+        /// of [`vk::CommandBuffer`]s.
+        pub(crate) fn create(
+            device: &Device,
+            queue_family: QueueFamily,
+            buffer_count: u32,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan command pool on queue family: {queue_family:?}");
+
+            let queue_index = device
+                .queue_family_indices
+                .get(&queue_family)
+                .context("{queue_family:?} queue family not found")?;
+
+            let pool_create_info = vk::CommandPoolCreateInfo::builder()
+                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+                .queue_family_index(*queue_index)
+                .build();
+            let pool = unsafe {
+                device
+                    .logical_device
+                    .create_command_pool(&pool_create_info, None)
+            }
+            .context("failed to create vulkan command pool")?;
+
+            let buffer_alloc_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(pool)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(buffer_count)
+                .build();
+            let buffers = unsafe {
+                device
+                    .logical_device
+                    .allocate_command_buffers(&buffer_alloc_info)
+            }
+            .context("failed to allocate vulkan command buffers")?;
+
+            log::debug!("created vulkan command pool successfully");
+
+            Ok(Self {
+                handle: pool,
+                buffers,
+            })
+        }
+
+        /// Destroy a `CommandPool` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.destroy_command_pool(self.handle, None);
+        }
+
+        /// Creates a one-time [`vk::CommandBuffer`] instance to write commands to.
+        pub(crate) fn begin_one_time_command(
+            &self,
+            device: &ash::Device,
+        ) -> Result<vk::CommandBuffer> {
+            log::debug!("beginning single time vulkan command");
+
+            // Allocate
+            let command_allocate_info = vk::CommandBufferAllocateInfo::builder()
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_pool(self.handle)
+                .command_buffer_count(1)
+                .build();
+
+            let command_buffer = unsafe { device.allocate_command_buffers(&command_allocate_info) }
+                .context("failed to allocate vulkan command buffer")?[0];
+
+            // Commands
+            let command_begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+                .build();
+            unsafe { device.begin_command_buffer(command_buffer, &command_begin_info) }
+                .context("failed to begin vulkan command buffer")?;
+
+            Ok(command_buffer)
+        }
+
+        /// Finishes a one-time [`vk::CommandBuffer`] and submits it to the queue.
+        pub(crate) fn end_one_time_command(
+            &self,
+            device: &ash::Device,
+            command_buffer: vk::CommandBuffer,
+            queue: vk::Queue,
+        ) -> Result<()> {
+            unsafe { device.end_command_buffer(command_buffer) }
+                .context("failed to end vulkan command buffer")?;
+
+            // Submit
+            let command_buffers = [command_buffer];
+            let submit_infos = [vk::SubmitInfo::builder()
+                .command_buffers(&command_buffers)
+                .build()];
+
+            // SAFETY: TODO
+            unsafe {
+                device.queue_submit(queue, &submit_infos, vk::Fence::null())?;
+                device.queue_wait_idle(queue)?;
+            }
+
+            // Cleanup
+            unsafe {
+                device.free_command_buffers(self.handle, &command_buffers);
+            }
+
+            log::debug!("finished single time vulkan command");
+
+            Ok(())
+        }
+    }
+}
+
+mod texture {
+    #[cfg(debug_assertions)]
+    use super::debug::Debug;
+    use super::{command_pool::CommandPool, device::Device, image::Image};
+    use anyhow::{bail, Context, Result};
+    use ash::vk;
+    use std::{
+        fs::{self, File},
+        io::BufReader,
+        path::Path,
+        ptr,
+    };
 }
 
 mod vertex {
