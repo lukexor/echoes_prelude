@@ -1,6 +1,6 @@
 //! Core Engine logic.
 
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, Shaders};
 use anyhow::Result;
 use std::{
     env,
@@ -60,7 +60,7 @@ impl Drop for Engine {
 }
 
 impl Engine {
-    pub fn initialize(application_name: &str, window: &Window) -> Result<Self> {
+    pub fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self> {
         // TODO finish create
         let config = Config::new();
         Ok(Self {
@@ -77,7 +77,7 @@ impl Engine {
 
             suspended: false,
 
-            renderer: Renderer::initialize(application_name, window)?,
+            renderer: Renderer::initialize(application_name, window, shaders)?,
         })
     }
 

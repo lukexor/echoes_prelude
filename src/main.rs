@@ -46,6 +46,7 @@ use winit::{
 
 #[cfg(feature = "hot_reload")]
 use hot_pix_engine::*;
+use pix_engine::renderer::Shaders;
 #[cfg(not(feature = "hot_reload"))]
 use pix_engine::*;
 
@@ -67,6 +68,9 @@ const APPLICATION_NAME: &str = "Echoes: Prelude";
 // TODO: fullscreen?
 const WINDOW_WIDTH: u32 = 1440;
 const WINDOW_HEIGHT: u32 = 900;
+
+const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.vert.spv"));
+const FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.frag.spv"));
 
 fn create_window(event_loop: &EventLoop<()>) -> Result<Window> {
     Ok(WindowBuilder::new()
@@ -136,7 +140,11 @@ fn main() -> Result<()> {
     let window = create_window(&event_loop)?;
 
     // Engine
-    let engine = Engine::initialize(APPLICATION_NAME, &window)?;
+    let engine = Engine::initialize(
+        APPLICATION_NAME,
+        &window,
+        Shaders::new(VERTEX_SHADER, FRAGMENT_SHADER),
+    )?;
     #[cfg(feature = "hot_reload")]
     initialize_logger(); // Required to properly initialize logger with reload
 

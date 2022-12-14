@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/lukexor/echos-prelude.git"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [package.metadata]
 msrv = "1.65.0"

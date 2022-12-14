@@ -22,7 +22,7 @@ cfg_if! {
 }
 
 pub trait RendererBackend: Sized {
-    fn initialize(application_name: &str, window: &Window) -> Result<Self>;
+    fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self>;
     fn on_resized(&mut self, width: u32, height: u32);
     fn draw_frame(&mut self) -> Result<()>;
 }
@@ -35,10 +35,10 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn initialize(application_name: &str, window: &Window) -> Result<Self> {
+    pub fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self> {
         let PhysicalSize { width, height } = window.inner_size();
         Ok(Self {
-            context: Context::initialize(application_name, window)?,
+            context: Context::initialize(application_name, window, shaders)?,
             width,
             height,
         })
@@ -54,5 +54,21 @@ impl Renderer {
 
     pub fn draw_frame(&mut self) -> Result<()> {
         self.context.draw_frame()
+    }
+}
+
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct Shaders {
+    vertex: Vec<u8>,
+    fragment: Vec<u8>,
+}
+
+impl Shaders {
+    pub fn new(vertex: &[u8], fragment: &[u8]) -> Self {
+        Self {
+            vertex: vertex.to_vec(),
+            fragment: fragment.to_vec(),
+        }
     }
 }

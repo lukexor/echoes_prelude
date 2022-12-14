@@ -1,4 +1,6 @@
-use super::RendererBackend;
+#![allow(unused)]
+
+use super::{RendererBackend, Shaders};
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
 use std::{
@@ -8,7 +10,7 @@ use std::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use self::command_pool::CommandPool;
-use crate::renderer::vulkan::image::Image;
+use crate::renderer::vulkan::{image::Image, texture::Texture};
 use debug::{Debug, VALIDATION_LAYER_NAME};
 use device::{Device, QueueFamily};
 use pipeline::Pipeline;
@@ -17,6 +19,7 @@ use swapchain::Swapchain;
 
 pub(crate) struct Context {
     _entry: ash::Entry,
+    shaders: Shaders,
     instance: ash::Instance,
     surface: Surface,
     device: Device,
@@ -27,12 +30,14 @@ pub(crate) struct Context {
     pipeline: Pipeline,
     command_pools: Vec<CommandPool>,
     framebuffers: Vec<vk::Framebuffer>,
+    texture: Texture,
     #[cfg(debug_assertions)]
     debug: Debug,
     resized: Option<(u32, u32)>,
 }
 
 impl Drop for Context {
+    /// Cleans up all Vulkan resources.
     fn drop(&mut self) {
         // NOTE: Drop-order is important!
         //
@@ -43,24 +48,39 @@ impl Drop for Context {
         //    the only way to construct a Context with all values initialized.
         #[allow(clippy::expect_used)]
         unsafe {
-            self.device
-                .logical_device
-                .device_wait_idle()
-                .expect("failed to wait for device idle");
-
-            self.destroy_swapchain();
+            if let Err(err) = self.destroy_swapchain() {
+                log::error!("{err}");
+                return;
+            }
 
             let device = &self.device.logical_device;
+            // self.data
+            //     .in_flight_fences
+            //     .iter()
+            //     .for_each(|&f| self.device.destroy_fence(f, None));
+            // self.data
+            //     .render_finished_semaphor
+            //     .iter()
+            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
+            // self.data
+            //     .image_available_semaphor
+            //     .iter()
+            //     .for_each(|&f| self.device.destroy_semaphore(f, None));
+            // self.device.free_memory(self.data.index_buffer_memory, None);
+            // self.device.destroy_buffer(self.data.index_buffer, None);
+            // self.device
+            //     .free_memory(self.data.vertex_buffer_memory, None);
+            // self.device.destroy_buffer(self.data.vertex_buffer, None);
+            // self.device.destroy_sampler(self.data.texture_sampler, None);
+            // self.device
+            //     .destroy_image_view(self.data.texture_image_view, None);
+            self.texture.destroy(device);
             self.command_pools
                 .iter()
-                .for_each(|command_pool| device.destroy_command_pool(command_pool.handle, None));
+                .for_each(|command_pool| command_pool.destroy(device));
             device.destroy_device(None);
-            self.surface
-                .loader
-                .destroy_surface(self.surface.handle, None);
-            self.debug
-                .utils
-                .destroy_debug_utils_messenger(self.debug.messenger, None);
+            self.surface.destroy();
+            self.debug.destroy();
             self.instance.destroy_instance(None);
 
             log::info!("destroyed vulkan context");
@@ -78,8 +98,8 @@ impl fmt::Debug for Context {
 }
 
 impl RendererBackend for Context {
-    /// Initialize `Context`.
-    fn initialize(application_name: &str, window: &Window) -> Result<Self> {
+    /// Initialize Vulkan `Context`.
+    fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self> {
         log::info!("initializing vulkan renderer backend");
 
         let entry = ash::Entry::linked();
@@ -88,14 +108,11 @@ impl RendererBackend for Context {
         let debug = Debug::create(&entry, &instance)?;
         let surface = Surface::create(&entry, &instance, window)?;
         let device = Device::create(&instance, &surface)?;
-        let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
-        let present_queue = device.queue_family(QueueFamily::Present)?;
+
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
-        // Self::create_descriptor_set_layout(&device, &mut data)?;
-        // ubo_layout
-        let pipeline = Pipeline::create(&device, swapchain.extent, render_pass)?;
+        let pipeline = Pipeline::create(&device, swapchain.extent, render_pass, &shaders)?;
         let command_pools = Self::create_command_pools(&instance, &device, &swapchain)?;
         let color_image = Image::create_color(
             &instance,
@@ -118,6 +135,19 @@ impl RendererBackend for Context {
             color_image.view,
             depth_image.view,
         )?;
+
+        let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
+        // let present_queue = device.queue_family(QueueFamily::Present)?;
+        let texture = Texture::create(
+            "viking_room",
+            &instance,
+            &device,
+            &command_pools[0],
+            graphics_queue,
+            "assets/viking_room.png",
+            #[cfg(debug_assertions)]
+            &debug,
+        )?;
         // Self::create_texture_image(&instance, &device, &mut data)?;
         // Self::create_texture_image_view(&device, &mut data)?;
         // Self::create_texture_sampler(&device, &mut data)?;
@@ -133,6 +163,7 @@ impl RendererBackend for Context {
         log::info!("initialized vulkan renderer backend successfully");
 
         Ok(Context {
+            shaders,
             _entry: entry,
             instance,
             surface,
@@ -144,6 +175,7 @@ impl RendererBackend for Context {
             pipeline,
             command_pools,
             framebuffers,
+            texture,
             #[cfg(debug_assertions)]
             debug,
             resized: None,
@@ -376,16 +408,18 @@ impl Context {
     /// Destroys the current swapchain and re-creates it with a new width/height.
     fn recreate_swapchain(&mut self, width: u32, height: u32) -> Result<()> {
         // SAFETY: TODO
-        unsafe { self.device.logical_device.device_wait_idle() }
-            .context("failed to wait for device idle")?;
-        // SAFETY: TODO
-        unsafe { self.destroy_swapchain() };
+        unsafe { self.destroy_swapchain()? };
 
         self.swapchain =
             Swapchain::create(&self.instance, &self.device, &self.surface, width, height)?;
         self.render_pass =
             Self::create_render_pass(&self.instance, &self.device, self.swapchain.format)?;
-        self.pipeline = Pipeline::create(&self.device, self.swapchain.extent, self.render_pass)?;
+        self.pipeline = Pipeline::create(
+            &self.device,
+            self.swapchain.extent,
+            self.render_pass,
+            &self.shaders,
+        )?;
         self.color_image = Image::create_color(
             &self.instance,
             &self.device,
@@ -418,26 +452,32 @@ impl Context {
 
     /// Destroys the current [`vk::SwapchainKHR`] and associated [`vk::ImageView`]s. Used to clean
     /// up Vulkan when dropped and to re-create swapchain on window resize.
-    unsafe fn destroy_swapchain(&mut self) {
+    unsafe fn destroy_swapchain(&mut self) -> Result<()> {
+        self.device.wait_idle()?;
+
         let device = &self.device.logical_device;
 
-        for image in [&self.color_image, &self.depth_image] {
-            device.destroy_image_view(image.view, None);
-            device.free_memory(image.memory, None);
-            device.destroy_image(image.handle, None);
-        }
+        // self.device
+        //     .destroy_descriptor_pool(self.data.descriptor_pool, None);
+        // self.data
+        //     .uniform_buffers_memory
+        //     .iter()
+        //     .for_each(|&m| self.device.free_memory(m, None));
+        // self.data
+        //     .uniform_buffers
+        //     .iter()
+        //     .for_each(|&b| self.device.destroy_buffer(b, None));
+        [&self.color_image, &self.depth_image]
+            .iter()
+            .for_each(|image| image.destroy(device));
         self.framebuffers
             .iter()
             .for_each(|&framebuffer| device.destroy_framebuffer(framebuffer, None));
-        device.destroy_pipeline(self.pipeline.handle, None);
-        device.destroy_pipeline_layout(self.pipeline.layout, None);
+        self.pipeline.destroy(device);
         device.destroy_render_pass(self.render_pass, None);
-        self.swapchain.image_views.iter().for_each(|&image_view| {
-            device.destroy_image_view(image_view, None);
-        });
-        self.swapchain
-            .loader
-            .destroy_swapchain(self.swapchain.handle, None);
+        self.swapchain.destroy(device);
+
+        Ok(())
     }
 }
 
@@ -467,7 +507,7 @@ mod surface {
     }
 
     impl Surface {
-        /// Create a platform-agnostic surface instance.
+        /// Create a platform-agnostic `Surface` instance.
         pub(crate) fn create(
             entry: &ash::Entry,
             instance: &ash::Instance,
@@ -484,6 +524,12 @@ mod surface {
                 width,
                 height,
             })
+        }
+
+        /// Destroy a `Surface` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self) {
+            self.loader.destroy_surface(self.handle, None);
         }
     }
 }
@@ -536,6 +582,14 @@ mod device {
             })
         }
 
+        /// Waits for the [ash::Device] to be idle.
+        pub(crate) fn wait_idle(&self) -> Result<()> {
+            // SAFETY: TODO
+            unsafe { self.logical_device.device_wait_idle() }
+                .context("failed to wait for device idle")
+        }
+
+        /// Get a [vk::Queue] handle to a given [`QueueFamily`].
         pub(crate) fn queue_family(&self, family: QueueFamily) -> Result<vk::Queue> {
             Ok(unsafe {
                 self.logical_device.get_device_queue(
@@ -548,6 +602,7 @@ mod device {
             })
         }
 
+        /// Get a preferred depth [vk::Format] with the given [`vk::ImageTiling`].
         pub(crate) fn get_depth_format(
             &self,
             instance: &ash::Instance,
@@ -562,9 +617,7 @@ mod device {
             candidates
                 .iter()
                 .find(|&&format| {
-                    let properties = unsafe {
-                        instance.get_physical_device_format_properties(self.physical_device, format)
-                    };
+                    let properties = self.format_properties(instance, format);
                     match tiling {
                         vk::ImageTiling::LINEAR => {
                             properties.linear_tiling_features.contains(features)
@@ -579,22 +632,78 @@ mod device {
                 .context("failed to find supported depth format!")
         }
 
+        /// Get the [`vk::MemoryType`] index with the desired [`vk::MemoryPropertyFlags`] and
+        /// [`vk::MemoryRequirements`].
         pub(crate) fn memory_type_index(
             &self,
-            instance: &ash::Instance,
             properties: vk::MemoryPropertyFlags,
             requirements: vk::MemoryRequirements,
         ) -> Result<u32> {
-            // SAFETY: TODO
-            let memory =
-                unsafe { instance.get_physical_device_memory_properties(self.physical_device) };
+            let memory = self.info.memory_properties;
             (0..memory.memory_type_count)
-                .find(|&i| {
-                    let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
-                    let memory_type = memory.memory_types[i as usize];
+                .find(|&index| {
+                    let suitable = (requirements.memory_type_bits & (1 << index)) != 0;
+                    let memory_type = memory.memory_types[index as usize];
                     suitable && memory_type.property_flags.contains(properties)
                 })
                 .context("failed to find suitable vulkan memory type.")
+        }
+
+        /// Get supported [`vk::FormatProperties`] for the [`vk::PhysicalDevice`].
+        pub(crate) fn format_properties(
+            &self,
+            instance: &ash::Instance,
+            format: vk::Format,
+        ) -> vk::FormatProperties {
+            // SAFETY: TODO
+            unsafe { instance.get_physical_device_format_properties(self.physical_device, format) }
+        }
+
+        /// Creates a [vk::Buffer] with associated [vk::DeviceMemory] for the given parameters.
+        pub(crate) fn create_buffer(
+            &self,
+            instance: &ash::Instance,
+            size: vk::DeviceSize,
+            usage: vk::BufferUsageFlags,
+            properties: vk::MemoryPropertyFlags,
+        ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+            log::debug!("creating vulkan buffer");
+
+            // Buffer
+            let buffer_create_info = vk::BufferCreateInfo::builder()
+                .size(size)
+                .usage(usage)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            // SAFETY: TODO
+            let buffer = unsafe {
+                self.logical_device
+                    .create_buffer(&buffer_create_info, None)?
+            };
+
+            // Memory
+            // SAFETY: TODO
+            let requirements =
+                unsafe { self.logical_device.get_buffer_memory_requirements(buffer) };
+            let memory_allocate_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(requirements.size)
+                .memory_type_index(self.memory_type_index(properties, requirements)?);
+
+            // Allocate
+            // SAFETY: TODO
+            let buffer_memory = unsafe {
+                self.logical_device
+                    .allocate_memory(&memory_allocate_info, None)
+            }
+            .context("failed to allocate vulkan buffer memory")?;
+            unsafe {
+                self.logical_device
+                    .bind_buffer_memory(buffer, buffer_memory, 0)
+            }
+            .context("failed to bind to vulkan buffer memory")?;
+
+            log::debug!("created vulkan buffer successfully");
+
+            Ok((buffer, buffer_memory))
         }
 
         /// Select a preferred [`vk::PhysicalDevice`].
@@ -633,7 +742,7 @@ mod device {
             Ok(selected_device)
         }
 
-        /// Create a logical [vk::Device].
+        /// Create a logical [vk::Device] instance.
         fn create_logical_device(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
@@ -697,10 +806,10 @@ mod device {
 
             // SAFETY: TODO
             let properties = unsafe { instance.get_physical_device_properties(physical_device) };
-            // SAFETY: TODO
             let features = unsafe { instance.get_physical_device_features(physical_device) };
             let memory_properties =
                 unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
             let msaa_samples = Self::get_max_sample_count(properties, &mut rating);
             let queue_family_indices = QueueFamily::query(instance, physical_device, surface);
             let swapchain_support = SwapchainSupport::query(physical_device, surface)
@@ -755,7 +864,7 @@ mod device {
             )
         }
 
-        /// Return the maximum usable sample count for this device.
+        /// Return the maximum usable sample count for multisampling for a [`vk::PhysicalDevice`].
         fn get_max_sample_count(
             properties: vk::PhysicalDeviceProperties,
             rating: &mut u32,
@@ -788,7 +897,7 @@ mod device {
             }
         }
 
-        /// Whether a physical device supports the required extensions for this platform.
+        /// Whether a [`vk::PhysicalDevice`] supports the required device extensions for this platform.
         fn supports_required_extensions(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
@@ -825,6 +934,7 @@ mod device {
     }
 
     impl SwapchainSupport {
+        /// Queries a [`vk::PhysicalDevice`] for [`vk::SwapchainKHR`] extension support.
         fn query(physical_device: vk::PhysicalDevice, surface: &Surface) -> Result<Self> {
             // SAFETY: TODO
             let capabilities = unsafe {
@@ -874,7 +984,7 @@ mod device {
     type QueueFamilyIndices = HashMap<QueueFamily, u32>;
 
     impl QueueFamily {
-        /// Find desired [vk::Queue] families from a [`vk::PhysicalDevice`].
+        /// Queries for desired [vk::Queue] families from a [`vk::PhysicalDevice`].
         fn query(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
@@ -960,6 +1070,7 @@ mod device {
             queue_family_indices
         }
 
+        /// Whether the `QueueFamilyIndices` contains all of the desired queues.
         fn is_complete(indices: &QueueFamilyIndices) -> bool {
             indices.contains_key(&Self::Graphics)
                 && indices.contains_key(&Self::Present)
@@ -990,6 +1101,9 @@ mod swapchain {
     }
 
     impl Swapchain {
+        /// Create a `Swapchain` instance containing a handle to [`vk::SwapchainKHR`],
+        /// [vk::Format], [`vk::Extent2D`] and the associated swapchain [vk::Image]s and
+        /// [`vk::ImageView`]s.
         pub(crate) fn create(
             instance: &ash::Instance,
             device: &Device,
@@ -1134,12 +1248,21 @@ mod swapchain {
                 max_frames_in_flight: min_image_count - 1,
             })
         }
+
+        /// Destroy a `Swapchain` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            self.image_views.iter().for_each(|&image_view| {
+                device.destroy_image_view(image_view, None);
+            });
+            self.loader.destroy_swapchain(self.handle, None);
+        }
     }
 }
 
 mod pipeline {
     use super::device::Device;
-    use crate::math::Vertex;
+    use crate::{math::Vertex, renderer::Shaders};
     use anyhow::{bail, Context, Result};
     use ash::vk;
     use std::ffi::CString;
@@ -1149,23 +1272,25 @@ mod pipeline {
     pub(crate) struct Pipeline {
         pub(crate) handle: vk::Pipeline,
         pub(crate) layout: vk::PipelineLayout,
+        pub(crate) descriptor_set_layout: vk::DescriptorSetLayout,
     }
 
     impl Pipeline {
-        const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.vert.spv"));
-        const FRAGMENT_SHADER: &[u8] =
-            include_bytes!(concat!(env!("OUT_DIR"), "/primary.frag.spv"));
-
+        /// Create a `Pipeline` instancing containing a handle to [vk::Pipeline].
         pub(crate) fn create(
             device: &Device,
             extent: vk::Extent2D,
             render_pass: vk::RenderPass,
+            shader: &Shaders,
         ) -> Result<Self> {
             log::debug!("creating vulkan graphics pipeline");
 
+            let device_info = &device.info;
+            let device = &device.logical_device;
+
             // Shader Stages
-            let vertex_shader_module = Self::create_shader_module(device, Self::VERTEX_SHADER)?;
-            let fragment_shader_module = Self::create_shader_module(device, Self::FRAGMENT_SHADER)?;
+            let vertex_shader_module = shader.vertex_shader_module(device)?;
+            let fragment_shader_module = shader.fragment_shader_module(device)?;
 
             let shader_entry_name = CString::new("main")?;
             let shader_stages = [
@@ -1230,7 +1355,7 @@ mod pipeline {
                 .sample_shading_enable(true)
                 // Closer to 1 is smoother
                 .min_sample_shading(0.2)
-                .rasterization_samples(device.info.msaa_samples)
+                .rasterization_samples(device_info.msaa_samples)
                 .build();
 
             // Depth Stencil State
@@ -1271,20 +1396,41 @@ mod pipeline {
                 .size(4) // 1 * 4 byte float
                 .build();
 
+            // TODO: Should this go here and be destroyed when swapchain is, or is it independent?
+            // Descriptor Set Layout
+            let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX)
+                .build();
+
+            let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build();
+
+            let bindings = [ubo_binding, sampler_binding];
+            let descriptor_set_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
+                .bindings(&bindings)
+                .build();
+
+            let descriptor_set_layout =
+                unsafe { device.create_descriptor_set_layout(&descriptor_set_create_info, None) }
+                    .context("failed to create vulkan descriptor set layout")?;
+
             // Layout
-            // let set_layouts = [descriptor_set_layout];
+            let set_layouts = [descriptor_set_layout];
             let push_constant_ranges = [vert_push_constant_ranges, frag_push_constant_ranges];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
-                // .set_layouts(&set_layouts)
+                .set_layouts(&set_layouts)
                 .push_constant_ranges(&push_constant_ranges)
                 .build();
             // SAFETY: TODO
-            let layout = unsafe {
-                device
-                    .logical_device
-                    .create_pipeline_layout(&layout_info, None)
-            }
-            .context("failed to create vulkan graphics pipeline layout")?;
+            let layout = unsafe { device.create_pipeline_layout(&layout_info, None) }
+                .context("failed to create vulkan graphics pipeline layout")?;
 
             // Create
             let pipeline_create_info = vk::GraphicsPipelineCreateInfo::builder()
@@ -1303,7 +1449,7 @@ mod pipeline {
 
             // SAFETY: TODO
             let pipeline = unsafe {
-                device.logical_device.create_graphics_pipelines(
+                device.create_graphics_pipelines(
                     vk::PipelineCache::null(),
                     &[pipeline_create_info],
                     None,
@@ -1318,12 +1464,8 @@ mod pipeline {
             // Cleanup
             // SAFETY: TODO
             unsafe {
-                device
-                    .logical_device
-                    .destroy_shader_module(vertex_shader_module, None);
-                device
-                    .logical_device
-                    .destroy_shader_module(fragment_shader_module, None);
+                device.destroy_shader_module(vertex_shader_module, None);
+                device.destroy_shader_module(fragment_shader_module, None);
             }
 
             log::debug!("created vulkan graphics pipeline successfully");
@@ -1331,10 +1473,47 @@ mod pipeline {
             Ok(Self {
                 handle: pipeline,
                 layout,
+                descriptor_set_layout,
             })
         }
 
-        fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
+        /// Destroy a `Pipeline` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            device.destroy_pipeline(self.handle, None);
+            device.destroy_pipeline_layout(self.layout, None);
+        }
+    }
+}
+
+mod shader {
+    use crate::renderer::Shaders;
+    use anyhow::{bail, Context, Result};
+    use ash::vk;
+
+    impl Shaders {
+        /// Create a Vertex [`vk::ShaderModule`] instance.
+        pub(crate) fn vertex_shader_module(
+            &self,
+            device: &ash::Device,
+        ) -> Result<vk::ShaderModule> {
+            Self::create_shader_module(device, &self.vertex)
+        }
+
+        /// Create a Fragment [`vk::ShaderModule`] instance.
+        pub(crate) fn fragment_shader_module(
+            &self,
+            device: &ash::Device,
+        ) -> Result<vk::ShaderModule> {
+            Self::create_shader_module(device, &self.fragment)
+        }
+
+        /// Create a [`vk::ShaderModule`] instance from bytecode.
+        pub(crate) fn create_shader_module(
+            device: &ash::Device,
+            bytecode: &[u8],
+        ) -> Result<vk::ShaderModule> {
             let bytecode = bytecode.to_vec();
             // SAFETY: We check for prefix/suffix below and bail if not aligned correctly.
             let (prefix, code, suffix) = unsafe { bytecode.align_to::<u32>() };
@@ -1342,12 +1521,8 @@ mod pipeline {
                 bail!("shader bytecode is not properly aligned.");
             }
             let shader_module_info = vk::ShaderModuleCreateInfo::builder().code(code);
-            unsafe {
-                device
-                    .logical_device
-                    .create_shader_module(&shader_module_info, None)
-            }
-            .context("failed to create vulkan shader module")
+            unsafe { device.create_shader_module(&shader_module_info, None) }
+                .context("failed to create vulkan shader module")
         }
     }
 }
@@ -1369,92 +1544,17 @@ mod image {
     }
 
     impl Image {
-        pub(crate) fn create_color(
-            instance: &ash::Instance,
-            device: &Device,
-            swapchain: &Swapchain,
-            #[cfg(debug_assertions)] debug: &Debug,
-        ) -> Result<Self> {
-            log::debug!("creating vulkan color image");
-
-            // Image
-            let (image, memory) = Self::create_image(
-                "color",
-                instance,
-                device,
-                swapchain,
-                swapchain.format,
-                1,
-                vk::ImageTiling::OPTIMAL,
-                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                #[cfg(debug_assertions)]
-                debug,
-            )?;
-
-            // Image View
-            let view = Self::create_view(
-                device,
-                image,
-                swapchain.format,
-                vk::ImageAspectFlags::COLOR,
-                1,
-            )?;
-
-            log::debug!("created vulkan color image successfully");
-
-            Ok(Self {
-                handle: image,
-                memory,
-                view,
-            })
-        }
-
-        pub(crate) fn create_depth(
-            instance: &ash::Instance,
-            device: &Device,
-            swapchain: &Swapchain,
-            #[cfg(debug_assertions)] debug: &Debug,
-        ) -> Result<Self> {
-            log::debug!("creating vulkan depth image");
-
-            let format = device.get_depth_format(instance, vk::ImageTiling::OPTIMAL)?;
-
-            // Image
-            let (image, memory) = Self::create_image(
-                "depth",
-                instance,
-                device,
-                swapchain,
-                format,
-                1,
-                vk::ImageTiling::OPTIMAL,
-                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                #[cfg(debug_assertions)]
-                debug,
-            )?;
-
-            // Image View
-            let view = Self::create_view(device, image, format, vk::ImageAspectFlags::DEPTH, 1)?;
-
-            log::debug!("created vulkan depth image successfully");
-
-            Ok(Self {
-                handle: image,
-                memory,
-                view,
-            })
-        }
-
+        /// Create an `Image` instance with a [vk::Image] handle and associated [`vk::DeviceMemory`] with the given parameters.
         #[allow(clippy::too_many_arguments)]
-        fn create_image(
+        pub(crate) fn create(
             name: &str,
             instance: &ash::Instance,
             device: &Device,
-            swapchain: &Swapchain,
-            format: vk::Format,
+            width: u32,
+            height: u32,
             mip_levels: u32,
+            samples: vk::SampleCountFlags,
+            format: vk::Format,
             tiling: vk::ImageTiling,
             usage: vk::ImageUsageFlags,
             properties: vk::MemoryPropertyFlags,
@@ -1464,8 +1564,8 @@ mod image {
             let image_info = vk::ImageCreateInfo::builder()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(vk::Extent3D {
-                    width: swapchain.extent.width,
-                    height: swapchain.extent.height,
+                    width,
+                    height,
                     depth: 1,
                 })
                 .mip_levels(mip_levels)
@@ -1474,7 +1574,7 @@ mod image {
                 .tiling(tiling)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
                 .usage(usage)
-                .samples(device.info.msaa_samples)
+                .samples(samples)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .build();
 
@@ -1506,7 +1606,7 @@ mod image {
                 unsafe { device.logical_device.get_image_memory_requirements(image) };
             let memory_info = vk::MemoryAllocateInfo::builder()
                 .allocation_size(requirements.size)
-                .memory_type_index(device.memory_type_index(instance, properties, requirements)?)
+                .memory_type_index(device.memory_type_index(properties, requirements)?)
                 .build();
             let memory = unsafe { device.logical_device.allocate_memory(&memory_info, None) }
                 .context("failed to allocate vulkan image memory")?;
@@ -1517,7 +1617,100 @@ mod image {
             Ok((image, memory))
         }
 
-        fn create_view(
+        /// Destroy an `Image` intance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.destroy_image_view(self.view, None);
+            device.free_memory(self.memory, None);
+            device.destroy_image(self.handle, None);
+        }
+
+        /// Create a [vk::Image] instance to be used as a [`vk::ImageUsageFlags::COLOR_ATTACHMENT`].
+        pub(crate) fn create_color(
+            instance: &ash::Instance,
+            device: &Device,
+            swapchain: &Swapchain,
+            #[cfg(debug_assertions)] debug: &Debug,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan color image");
+
+            // Image
+            let (image, memory) = Self::create(
+                "color",
+                instance,
+                device,
+                swapchain.extent.width,
+                swapchain.extent.height,
+                1,
+                device.info.msaa_samples,
+                swapchain.format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                #[cfg(debug_assertions)]
+                debug,
+            )?;
+
+            // Image View
+            let view = Self::create_view(
+                device,
+                image,
+                swapchain.format,
+                vk::ImageAspectFlags::COLOR,
+                1,
+            )?;
+
+            log::debug!("created vulkan color image successfully");
+
+            Ok(Self {
+                handle: image,
+                memory,
+                view,
+            })
+        }
+
+        /// Create a [vk::Image] instance to be used as a [`vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT`].
+        pub(crate) fn create_depth(
+            instance: &ash::Instance,
+            device: &Device,
+            swapchain: &Swapchain,
+            #[cfg(debug_assertions)] debug: &Debug,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan depth image");
+
+            let format = device.get_depth_format(instance, vk::ImageTiling::OPTIMAL)?;
+
+            // Image
+            let (image, memory) = Self::create(
+                "depth",
+                instance,
+                device,
+                swapchain.extent.width,
+                swapchain.extent.height,
+                1,
+                device.info.msaa_samples,
+                format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                #[cfg(debug_assertions)]
+                debug,
+            )?;
+
+            // Image View
+            let view = Self::create_view(device, image, format, vk::ImageAspectFlags::DEPTH, 1)?;
+
+            log::debug!("created vulkan depth image successfully");
+
+            Ok(Self {
+                handle: image,
+                memory,
+                view,
+            })
+        }
+
+        /// Create a [`vk::ImageView`] instance.
+        pub(crate) fn create_view(
             device: &Device,
             image: vk::Image,
             format: vk::Format,
@@ -1564,6 +1757,8 @@ mod command_pool {
     }
 
     impl CommandPool {
+        /// Create a `CommandPool` instance containing a handle to a [`vk::CommandPool`] and a list
+        /// of [`vk::CommandBuffer`]s.
         pub(crate) fn create(
             device: &Device,
             queue_family: QueueFamily,
@@ -1606,6 +1801,569 @@ mod command_pool {
                 buffers,
             })
         }
+
+        /// Destroy a `CommandPool` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.destroy_command_pool(self.handle, None);
+        }
+
+        /// Creates a one-time [`vk::CommandBuffer`] instance to write commands to.
+        pub(crate) fn begin_one_time_command(
+            &self,
+            device: &ash::Device,
+        ) -> Result<vk::CommandBuffer> {
+            log::debug!("beginning single time vulkan command");
+
+            // Allocate
+            let command_allocate_info = vk::CommandBufferAllocateInfo::builder()
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_pool(self.handle)
+                .command_buffer_count(1)
+                .build();
+
+            let command_buffer = unsafe { device.allocate_command_buffers(&command_allocate_info) }
+                .context("failed to allocate vulkan command buffer")?[0];
+
+            // Commands
+            let command_begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+                .build();
+            unsafe { device.begin_command_buffer(command_buffer, &command_begin_info) }
+                .context("failed to begin vulkan command buffer")?;
+
+            Ok(command_buffer)
+        }
+
+        /// Finishes a one-time [`vk::CommandBuffer`] and submits it to the queue.
+        pub(crate) fn end_one_time_command(
+            &self,
+            device: &ash::Device,
+            command_buffer: vk::CommandBuffer,
+            queue: vk::Queue,
+        ) -> Result<()> {
+            unsafe { device.end_command_buffer(command_buffer) }
+                .context("failed to end vulkan command buffer")?;
+
+            // Submit
+            let command_buffers = [command_buffer];
+            let submit_infos = [vk::SubmitInfo::builder()
+                .command_buffers(&command_buffers)
+                .build()];
+
+            // SAFETY: TODO
+            unsafe {
+                device.queue_submit(queue, &submit_infos, vk::Fence::null())?;
+                device.queue_wait_idle(queue)?;
+            }
+
+            // Cleanup
+            unsafe {
+                device.free_command_buffers(self.handle, &command_buffers);
+            }
+
+            log::debug!("finished single time vulkan command");
+
+            Ok(())
+        }
+    }
+}
+
+mod texture {
+    #[cfg(debug_assertions)]
+    use super::debug::Debug;
+    use super::{command_pool::CommandPool, device::Device, image::Image};
+    use anyhow::{bail, Context, Result};
+    use ash::vk;
+    use std::{
+        fs::{self, File},
+        io::BufReader,
+        path::Path,
+        ptr,
+    };
+
+    #[derive(Clone)]
+    #[must_use]
+    pub(crate) struct Texture {
+        pub(crate) image: vk::Image,
+        pub(crate) memory: vk::DeviceMemory,
+    }
+
+    impl Texture {
+        /// Create a `Texture` instance containing an [vk::Image].
+        pub(crate) fn create(
+            name: &str,
+            instance: &ash::Instance,
+            device: &Device,
+            command_pool: &CommandPool,
+            graphics_queue: vk::Queue,
+            filename: impl AsRef<Path>,
+            #[cfg(debug_assertions)] debug: &Debug,
+        ) -> Result<Self> {
+            log::debug!("creating vulkan texture named `{name}`");
+
+            // Load Texture
+            let filename = filename.as_ref();
+            let image = BufReader::new(
+                File::open(
+                    fs::canonicalize(filename)
+                        .with_context(|| format!("failed to find texture file: {filename:?}"))?,
+                )
+                .with_context(|| format!("failed to open texture file: {filename:?}"))?,
+            );
+
+            let decoder = png::Decoder::new(image);
+            let mut reader = decoder.read_info()?;
+            let mut pixels = vec![0; reader.output_buffer_size()];
+            let info = reader.next_frame(&mut pixels)?;
+            let size = info.buffer_size() as u64;
+
+            let mip_levels = (info.width.max(info.height) as f32).log2().floor() as u32 + 1;
+
+            // Staging Buffer
+            let (staging_buffer, staging_buffer_memory) = device.create_buffer(
+                instance,
+                size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+            )?;
+
+            // Copy Staging
+            // SAFETY: TODO
+            unsafe {
+                let memory = device
+                    .logical_device
+                    .map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())
+                    .context("failed to map vulkan staging buffer memory")?;
+                // SAFETY: TODO
+                ptr::copy_nonoverlapping(pixels.as_ptr(), memory.cast(), pixels.len());
+                device.logical_device.unmap_memory(staging_buffer_memory);
+            };
+
+            // Texture Image
+            let (image, memory) = Image::create(
+                name,
+                instance,
+                device,
+                info.width,
+                info.height,
+                mip_levels,
+                vk::SampleCountFlags::TYPE_1,
+                vk::Format::R8G8B8A8_SRGB,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                #[cfg(debug_assertions)]
+                debug,
+            )?;
+
+            // Transition
+            {
+                let command_buffer = command_pool.begin_one_time_command(&device.logical_device)?;
+                let image_barriers = [vk::ImageMemoryBarrier::builder()
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .image(image)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::builder()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(mip_levels)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .build(),
+                    )
+                    .src_access_mask(vk::AccessFlags::empty())
+                    .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                    .build()];
+                let memory_barriers: [vk::MemoryBarrier; 0] = [];
+                let buffer_barriers: [vk::BufferMemoryBarrier; 0] = [];
+
+                // SAFETY: TODO
+                unsafe {
+                    device.logical_device.cmd_pipeline_barrier(
+                        command_buffer,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::DependencyFlags::empty(),
+                        &memory_barriers,
+                        &buffer_barriers,
+                        &image_barriers,
+                    );
+                };
+                command_pool.end_one_time_command(
+                    &device.logical_device,
+                    command_buffer,
+                    graphics_queue,
+                )?;
+            }
+
+            // Copy
+            {
+                let command_buffer = command_pool.begin_one_time_command(&device.logical_device)?;
+
+                let subresource = vk::ImageSubresourceLayers::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build();
+
+                let region = vk::BufferImageCopy::builder()
+                    .buffer_offset(0)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(subresource)
+                    .image_offset(vk::Offset3D::default())
+                    .image_extent(vk::Extent3D {
+                        width: info.width,
+                        height: info.height,
+                        depth: 1,
+                    })
+                    .build();
+
+                // SAFETY: TODO
+                unsafe {
+                    device.logical_device.cmd_copy_buffer_to_image(
+                        command_buffer,
+                        staging_buffer,
+                        image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &[region],
+                    );
+                }
+
+                command_pool.end_one_time_command(
+                    &device.logical_device,
+                    command_buffer,
+                    graphics_queue,
+                )?;
+            }
+
+            // Mipmap
+            Self::generate_mipmaps(
+                instance,
+                device,
+                command_pool,
+                graphics_queue,
+                image,
+                vk::Format::R8G8B8A8_SRGB,
+                info.width,
+                info.height,
+                mip_levels,
+            )?;
+
+            // Cleanup
+            // SAFETY: TODO
+            unsafe {
+                device.logical_device.destroy_buffer(staging_buffer, None);
+                device
+                    .logical_device
+                    .free_memory(staging_buffer_memory, None);
+            }
+
+            log::debug!("created vulkan texture named `{name}` successfully");
+
+            Ok(Self { image, memory })
+        }
+
+        /// Destroy a `Texture` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+            device.free_memory(self.memory, None);
+            device.destroy_image(self.image, None);
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn generate_mipmaps(
+            instance: &ash::Instance,
+            device: &Device,
+            command_pool: &CommandPool,
+            graphics_queue: vk::Queue,
+            image: vk::Image,
+            format: vk::Format,
+            width: u32,
+            height: u32,
+            mip_levels: u32,
+        ) -> Result<()> {
+            // Check Support
+            let properties = device.format_properties(instance, format);
+            if !properties
+                .optimal_tiling_features
+                .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
+            {
+                bail!("vulkan device does not support linear blitting!");
+            }
+
+            // Mipmap
+            let command_buffer = command_pool.begin_one_time_command(&device.logical_device)?;
+
+            let mut barrier = vk::ImageMemoryBarrier::builder()
+                .image(image)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .subresource_range(
+                    vk::ImageSubresourceRange::builder()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .level_count(1)
+                        .build(),
+                )
+                .build();
+            let memory_barriers: [vk::MemoryBarrier; 0] = [];
+            let buffer_barriers: [vk::BufferMemoryBarrier; 0] = [];
+
+            let mut mip_width = width as i32;
+            let mut mip_height = height as i32;
+
+            for i in 1..mip_levels {
+                barrier.subresource_range.base_mip_level = i - 1;
+                barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+                barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+                barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+                barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
+
+                let barriers = [barrier];
+                // SAFETY: TODO
+                unsafe {
+                    device.logical_device.cmd_pipeline_barrier(
+                        command_buffer,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::DependencyFlags::empty(),
+                        &memory_barriers,
+                        &buffer_barriers,
+                        &barriers,
+                    );
+                }
+
+                let blits = [vk::ImageBlit::builder()
+                    .src_offsets([
+                        vk::Offset3D::default(),
+                        vk::Offset3D {
+                            x: mip_width,
+                            y: mip_height,
+                            z: 1,
+                        },
+                    ])
+                    .src_subresource(
+                        vk::ImageSubresourceLayers::builder()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(i - 1)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .build(),
+                    )
+                    .dst_offsets([
+                        vk::Offset3D::default(),
+                        vk::Offset3D {
+                            x: (mip_width / 2).max(1),
+                            y: (mip_height / 2).max(1),
+                            z: 1,
+                        },
+                    ])
+                    .dst_subresource(
+                        vk::ImageSubresourceLayers::builder()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(i)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .build(),
+                    )
+                    .build()];
+
+                // SAFETY: TODO
+                unsafe {
+                    device.logical_device.cmd_blit_image(
+                        command_buffer,
+                        image,
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &blits,
+                        vk::Filter::LINEAR,
+                    );
+                }
+
+                barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+                barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+                barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
+                barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+                let barriers = [barrier];
+                // SAFETY: TODO
+                unsafe {
+                    device.logical_device.cmd_pipeline_barrier(
+                        command_buffer,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::FRAGMENT_SHADER,
+                        vk::DependencyFlags::empty(),
+                        &memory_barriers,
+                        &buffer_barriers,
+                        &barriers,
+                    );
+                }
+
+                mip_width = (mip_width / 2).max(1);
+                mip_height = (mip_height / 2).max(1);
+            }
+
+            barrier.subresource_range.base_mip_level = mip_levels - 1;
+            barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+            barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+
+            let barriers = [barrier];
+            // SAFETY: TODO
+            unsafe {
+                device.logical_device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &memory_barriers,
+                    &buffer_barriers,
+                    &barriers,
+                );
+            }
+
+            command_pool.end_one_time_command(
+                &device.logical_device,
+                command_buffer,
+                graphics_queue,
+            )?;
+
+            Ok(())
+        }
+    }
+}
+
+mod vertex {
+    use crate::math::{Vec3, Vertex};
+    use ash::vk;
+    use std::mem::size_of;
+
+    impl Vertex {
+        /// Return the [`vk::VertexInputBindingDescription`] for the `Vertex` struct.
+        pub(crate) fn binding_description() -> vk::VertexInputBindingDescription {
+            vk::VertexInputBindingDescription::builder()
+                .binding(0)
+                .stride(size_of::<Vertex>() as u32)
+                .input_rate(vk::VertexInputRate::VERTEX)
+                .build()
+        }
+
+        /// Return the list of [`vk::VertexInputAttributeDescription`]s for the `Vertex` struct.
+        pub(crate) fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
+            let pos = vk::VertexInputAttributeDescription::builder()
+                .binding(0)
+                .location(0) // points to shader.vert location
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(0)
+                .build();
+            let color = vk::VertexInputAttributeDescription::builder()
+                .binding(0)
+                .location(1) // points to shader.vert location
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(size_of::<Vec3>() as u32)
+                .build();
+            let texcoord = vk::VertexInputAttributeDescription::builder()
+                .binding(0)
+                .location(2) // points to shader.vert location
+                .format(vk::Format::R32G32_SFLOAT)
+                .offset((size_of::<Vec3>() + size_of::<Vec3>()) as u32)
+                .build();
+            [pos, color, texcoord]
+        }
+    }
+}
+
+mod debug {
+    use anyhow::Result;
+    use ash::{extensions::ext, vk};
+    use std::ffi::{c_void, CStr};
+
+    // SAFETY: This static string has been verified as a valid CStr.
+    pub(crate) const VALIDATION_LAYER_NAME: &CStr =
+        unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
+
+    #[derive(Clone)]
+    #[cfg(debug_assertions)]
+    pub(crate) struct Debug {
+        pub(crate) utils: ext::DebugUtils,
+        pub(crate) messenger: vk::DebugUtilsMessengerEXT,
+    }
+
+    #[cfg(debug_assertions)]
+    impl Debug {
+        /// Create a `Debug` instance with [`ext::DebugUtils`] and [`vk::DebugUtilsMessengerEXT`].
+        pub(crate) fn create(entry: &ash::Entry, instance: &ash::Instance) -> Result<Self> {
+            log::debug!("creating vulkan debug utils");
+            let utils = ext::DebugUtils::new(entry, instance);
+            let debug_create_info = Self::build_debug_create_info();
+            // SAFETY: All create_info values are set correctly above with valid lifetimes.
+            let messenger =
+                unsafe { utils.create_debug_utils_messenger(&debug_create_info, None)? };
+            log::debug!("vulkan debug utils created successfully");
+            Ok(Self { utils, messenger })
+        }
+
+        /// Destroy a `Debug` instance.
+        // SAFETY: TODO
+        pub(crate) unsafe fn destroy(&self) {
+            self.utils
+                .destroy_debug_utils_messenger(self.messenger, None);
+        }
+
+        /// Build [`vk::DebugUtilsMessengerCreateInfoEXT`] with desired message severity and
+        /// message types..
+        pub(crate) fn build_debug_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
+            vk::DebugUtilsMessengerCreateInfoEXT::builder()
+                .message_severity(
+                    vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                        | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
+                        | vk::DebugUtilsMessageSeverityFlagsEXT::INFO
+                        | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
+                )
+                .message_type(
+                    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+                        | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
+                        | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
+                )
+                .pfn_user_callback(Some(debug_callback))
+                .build()
+        }
+    }
+
+    /// Callback function used by [`ext::DebugUtils`] when validation layers are enabled.
+    extern "system" fn debug_callback(
+        severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+        msg_type: vk::DebugUtilsMessageTypeFlagsEXT,
+        data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+        _: *mut c_void,
+    ) -> vk::Bool32 {
+        let msg_type = match msg_type {
+            vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
+            vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
+            vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
+            _ => "[Unknown]",
+        };
+        // SAFETY: This message is provided by Vulkan and is a valid CStr.
+        let message = unsafe { CStr::from_ptr((*data).p_message) }.to_string_lossy();
+        match severity {
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => log::error!("{msg_type} {message}"),
+            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => log::warn!("{msg_type} {message}"),
+            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => log::info!("{msg_type} {message}"),
+            vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::trace!("{msg_type} {message}"),
+            _ => log::debug!("{msg_type} {message}"),
+        };
+        vk::FALSE
     }
 }
 
@@ -1770,118 +2528,5 @@ mod platform {
     #[cfg(not(target_os = "macos"))]
     pub(crate) fn required_device_extensions() -> Vec<*const i8> {
         vec![khr::Swapchain::name().as_ptr()]
-    }
-}
-
-mod vertex {
-    use crate::math::{Vec3, Vertex};
-    use ash::vk;
-    use std::mem::size_of;
-
-    impl Vertex {
-        pub(crate) fn binding_description() -> vk::VertexInputBindingDescription {
-            vk::VertexInputBindingDescription::builder()
-                .binding(0)
-                .stride(size_of::<Vertex>() as u32)
-                .input_rate(vk::VertexInputRate::VERTEX)
-                .build()
-        }
-
-        pub(crate) fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
-            let pos = vk::VertexInputAttributeDescription::builder()
-                .binding(0)
-                .location(0) // points to shader.vert location
-                .format(vk::Format::R32G32B32_SFLOAT)
-                .offset(0)
-                .build();
-            let color = vk::VertexInputAttributeDescription::builder()
-                .binding(0)
-                .location(1) // points to shader.vert location
-                .format(vk::Format::R32G32B32_SFLOAT)
-                .offset(size_of::<Vec3>() as u32)
-                .build();
-            let texcoord = vk::VertexInputAttributeDescription::builder()
-                .binding(0)
-                .location(2) // points to shader.vert location
-                .format(vk::Format::R32G32_SFLOAT)
-                .offset((size_of::<Vec3>() + size_of::<Vec3>()) as u32)
-                .build();
-            [pos, color, texcoord]
-        }
-    }
-}
-
-mod debug {
-    use anyhow::Result;
-    use ash::{extensions::ext, vk};
-    use std::ffi::{c_void, CStr};
-
-    // SAFETY: This static string has been verified as a valid CStr.
-    pub(crate) const VALIDATION_LAYER_NAME: &CStr =
-        unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
-
-    #[derive(Clone)]
-    #[cfg(debug_assertions)]
-    pub(crate) struct Debug {
-        pub(crate) utils: ext::DebugUtils,
-        pub(crate) messenger: vk::DebugUtilsMessengerEXT,
-    }
-
-    #[cfg(debug_assertions)]
-    impl Debug {
-        /// Create a `Debug` instance with [ext::DebugUtils] and [vk::DebugUtilsMessengerEXT].
-        pub(crate) fn create(entry: &ash::Entry, instance: &ash::Instance) -> Result<Self> {
-            log::debug!("creating vulkan debug utils");
-            let utils = ext::DebugUtils::new(entry, instance);
-            let debug_create_info = Self::build_debug_create_info();
-            // SAFETY: All create_info values are set correctly above with valid lifetimes.
-            let messenger =
-                unsafe { utils.create_debug_utils_messenger(&debug_create_info, None)? };
-            log::debug!("vulkan debug utils created successfully");
-            Ok(Self { utils, messenger })
-        }
-
-        /// Build [vk::DebugUtilsMessengerCreateInfoEXT].
-        pub(crate) fn build_debug_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
-            vk::DebugUtilsMessengerCreateInfoEXT::builder()
-                .message_severity(
-                    vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::INFO
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
-                )
-                .message_type(
-                    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                        | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
-                        | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
-                )
-                .pfn_user_callback(Some(debug_callback))
-                .build()
-        }
-    }
-
-    /// Callback function used in Debug Utils.
-    extern "system" fn debug_callback(
-        severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-        msg_type: vk::DebugUtilsMessageTypeFlagsEXT,
-        data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-        _: *mut c_void,
-    ) -> vk::Bool32 {
-        let msg_type = match msg_type {
-            vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-            vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-            vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
-            _ => "[Unknown]",
-        };
-        // SAFETY: This message is provided by Vulkan and is a valid CStr.
-        let message = unsafe { CStr::from_ptr((*data).p_message) }.to_string_lossy();
-        match severity {
-            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => log::error!("{msg_type} {message}"),
-            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => log::warn!("{msg_type} {message}"),
-            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => log::info!("{msg_type} {message}"),
-            vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::trace!("{msg_type} {message}"),
-            _ => log::debug!("{msg_type} {message}"),
-        };
-        vk::FALSE
     }
 }
