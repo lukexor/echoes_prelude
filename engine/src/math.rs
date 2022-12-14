@@ -1,24 +1,41 @@
-use std::ops::{
-    Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
-    SubAssign,
+use std::{
+    hash::{Hash, Hasher},
+    ops::{
+        Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
+        SubAssign,
+    },
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C)]
 #[must_use]
 pub struct Vertex {
-    pub pos: Vector<3>,
+    pub position: Vector<3>,
     pub color: Vector<3>,
-    pub texcoords: Vector<2>,
+    pub texcoord: Vector<2>,
 }
 
 impl Vertex {
     /// Create a new `Vertex` instance.
     pub fn new(pos: Vector<3>, color: Vector<3>, texcoord: Vector<2>) -> Self {
         Self {
-            pos,
+            position: pos,
             color,
-            texcoords: texcoord,
+            texcoord,
+        }
+    }
+}
+
+impl Hash for Vertex {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for p in &self.position {
+            p.to_bits().hash(state);
+        }
+        for c in &self.color {
+            c.to_bits().hash(state);
+        }
+        for t in &self.texcoord {
+            t.to_bits().hash(state);
         }
     }
 }
@@ -26,9 +43,9 @@ impl Vertex {
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 #[must_use]
-pub(crate) struct UniformBufferObject {
-    view: Mat4,
-    proj: Mat4,
+pub struct UniformBufferObject {
+    pub view: Mat4,
+    pub proj: Mat4,
 }
 
 /// Constructs a new [Vector].
@@ -363,6 +380,14 @@ impl<const N: usize> PartialEq for Vector<N> {
 }
 
 impl<const N: usize> Eq for Vector<N> {}
+
+impl<const N: usize> Hash for Vector<N> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for v in &self.0 {
+            v.to_bits().hash(state);
+        }
+    }
+}
 
 impl<const N: usize> Add for Vector<N> {
     type Output = Vector<N>;
