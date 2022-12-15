@@ -1,5 +1,6 @@
 use anyhow::Result;
 use cfg_if::cfg_if;
+use std::time::Duration;
 use winit::{dpi::PhysicalSize, window::Window};
 
 cfg_if! {
@@ -22,9 +23,12 @@ cfg_if! {
 }
 
 pub trait RendererBackend: Sized {
+    // TODO: instead of just shaders, have this be generic platform state?
     fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self>;
+    fn shutdown(&mut self) -> Result<()>;
     fn on_resized(&mut self, width: u32, height: u32);
-    fn draw_frame(&mut self) -> Result<()>;
+    fn begin_frame(&mut self, delta_time: Duration) -> Result<()>;
+    fn end_frame(&mut self, delta_time: Duration) -> Result<()>;
 }
 
 #[derive(Debug)]
@@ -44,6 +48,10 @@ impl Renderer {
         })
     }
 
+    pub fn shutdown(&mut self) {
+        todo!()
+    }
+
     pub fn on_resized(&mut self, width: u32, height: u32) {
         if self.width != width || self.height != height {
             self.width = width;
@@ -52,9 +60,19 @@ impl Renderer {
         }
     }
 
-    pub fn draw_frame(&mut self) -> Result<()> {
-        self.context.draw_frame()
+    pub fn draw_frame(&mut self, render_state: RenderState) -> Result<()> {
+        self.context.begin_frame(render_state.delta_time)?;
+
+        self.context.end_frame(render_state.delta_time)?;
+
+        Ok(())
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+#[must_use]
+pub struct RenderState {
+    pub(crate) delta_time: Duration,
 }
 
 #[derive(Debug, Clone)]

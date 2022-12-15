@@ -337,14 +337,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "echoes_engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ash",
+ "cfg-if 1.0.0",
+ "cocoa",
+ "derive_more",
+ "env_logger",
+ "log",
+ "metal",
+ "objc",
+ "png",
+ "tobj",
+ "winapi 0.3.9",
+ "winit",
+]
+
+[[package]]
 name = "echoes_prelude"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "echoes_engine",
  "env_logger",
  "hot-lib-reloader",
  "log",
- "pix-engine",
  "winit",
 ]
 
@@ -1030,25 +1049,6 @@ name = "percent-encoding"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
-
-[[package]]
-name = "pix-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ash",
- "cfg-if 1.0.0",
- "cocoa",
- "derive_more",
- "env_logger",
- "log",
- "metal",
- "objc",
- "png",
- "tobj",
- "winapi 0.3.9",
- "winit",
-]
 
 [[package]]
 name = "pkg-config"

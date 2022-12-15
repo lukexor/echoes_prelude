@@ -44,20 +44,20 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[cfg(feature = "hot_reload")]
-use hot_pix_engine::*;
-use pix_engine::renderer::Shaders;
+use echoes_engine::renderer::Shaders;
 #[cfg(not(feature = "hot_reload"))]
-use pix_engine::*;
+use echoes_engine::*;
+#[cfg(feature = "hot_reload")]
+use hot_echoes_engine::*;
 
 #[cfg(feature = "hot_reload")]
 #[hot_lib_reloader::hot_module(
-    dylib = "pix_engine",
+    dylib = "echoes_engine",
     // TODO: See if there's a way to make this optional
     lib_dir = concat!(env!("CARGO_TARGET_DIR"), "/debug")
 )]
-mod hot_pix_engine {
-    pub(crate) use pix_engine::*;
+mod hot_echoes_engine {
+    pub(crate) use echoes_engine::*;
     hot_functions_from_file!("engine/src/lib.rs");
 
     #[lib_change_subscription]

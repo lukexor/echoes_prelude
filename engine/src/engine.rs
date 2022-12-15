@@ -1,6 +1,6 @@
 //! Core Engine logic.
 
-use crate::renderer::{Renderer, Shaders};
+use crate::renderer::{RenderState, Renderer, Shaders};
 use anyhow::Result;
 use std::{
     env,
@@ -135,14 +135,14 @@ impl Engine {
         Ok(())
     }
 
-    pub fn update(&mut self, _delta: Duration) -> Result<()> {
+    pub fn update(&mut self, _delta_time: Duration) -> Result<()> {
         // TODO: update
         Ok(())
     }
 
-    pub fn render(&mut self, _delta: Duration) -> Result<()> {
+    pub fn render(&mut self, delta_time: Duration) -> Result<()> {
         // TODO: render
-        self.renderer.draw_frame()?;
+        self.renderer.draw_frame(RenderState { delta_time })?;
         Ok(())
     }
 

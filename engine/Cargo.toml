@@ -1,5 +1,5 @@
 [package]
-name = "pix-engine"
+name = "echoes_engine"
 authors = ["Luke Petherbridge <me@lukeworks.tech>"]
 categories = ["game-development", "game-engines", "graphics", "gui", "rendering"]
 description = "A cross-platform, hot-reloadable graphics/game engine for simple games, visualizations, and graphics applications."

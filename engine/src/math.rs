@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C)]
 #[must_use]
 pub struct Vertex {
@@ -25,6 +25,15 @@ impl Vertex {
         }
     }
 }
+
+impl PartialEq for Vertex {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.position == rhs.position && self.color == rhs.color && self.texcoord == rhs.texcoord
+    }
+}
+
+// NOTE: This is acceptable since NaN and Infinity in Vertex values is not valid.
+impl Eq for Vertex {}
 
 impl Hash for Vertex {
     fn hash<H: Hasher>(&self, state: &mut H) {

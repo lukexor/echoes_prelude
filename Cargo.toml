@@ -16,12 +16,12 @@ msrv = "1.65.0"
 [features]
 default = ["vulkan"]
 hot_reload = ["dep:hot-lib-reloader"]
-vulkan = ["pix-engine/vulkan"]
-opengl = ["pix-engine/opengl"]
+vulkan = ["echoes_engine/vulkan"]
+opengl = ["echoes_engine/opengl"]
 
 [dependencies]
 anyhow = { workspace = true }
-pix-engine = { path = "engine" }
+echoes_engine = { path = "engine" }
 env_logger = { workspace = true }
 hot-lib-reloader = { version = "0.6.4", optional = true }
 log = { workspace = true }
