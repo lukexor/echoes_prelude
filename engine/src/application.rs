@@ -1,9 +1,12 @@
-//! Application logic.
+//! Core Engine logic.
 
-use crate::renderer::Renderer;
+use crate::{
+    config::Config,
+    renderer::{RenderState, Renderer, Shaders},
+};
 use anyhow::Result;
 use std::{
-    env,
+    borrow::Cow,
     fmt::Write,
     thread,
     time::{Duration, Instant},
@@ -16,66 +19,41 @@ use winit::{
     window::Window,
 };
 
-#[derive(Debug, Default, Copy, Clone)]
-#[must_use]
-pub struct Config {
-    limit_frame_rate: bool,
-}
-
-impl Config {
-    pub fn new() -> Self {
-        Self {
-            limit_frame_rate: env::var("LIMIT_FPS").is_ok(),
-        }
-    }
-}
-
 #[derive(Debug)]
 #[must_use]
-pub struct Engine {
-    application_name: String,
+pub struct Application {
+    name: Cow<'static, str>,
     window_title: String,
     config: Config,
-
-    start_time: Instant,
     last_frame_time: Instant,
     target_frame_rate: Duration,
-
     fps_counter: usize,
     fps_timer: Duration,
-
     suspended: bool,
-    resized: bool,
-
     renderer: Renderer,
 }
 
-impl Drop for Engine {
+impl Drop for Application {
     fn drop(&mut self) {
         self.suspended = true;
     }
 }
 
-impl Engine {
-    pub fn initialize(application_name: &str, window: &Window) -> Result<Self> {
-        let target_fps = 60;
-        // TODO finish create
+impl Application {
+    pub fn initialize(name: Cow<'static, str>, window: &Window, shaders: Shaders) -> Result<Self> {
+        let config = Config::new();
+        let renderer = Renderer::initialize(name.as_ref(), window, shaders)?;
+        let window_title = name.clone().to_string();
         Ok(Self {
-            application_name: application_name.to_string(),
-            window_title: application_name.to_string(),
-            config: Config::new(),
-
-            start_time: Instant::now(),
+            name,
+            window_title,
+            config,
             last_frame_time: Instant::now(),
-            target_frame_rate: Duration::from_secs(1) / target_fps,
-
+            target_frame_rate: Duration::from_secs(1) / config.target_fps,
             fps_counter: 0,
             fps_timer: Duration::default(),
-
             suspended: false,
-            resized: false,
-
-            renderer: Renderer::initialize(application_name, window)?,
+            renderer,
         })
     }
 
@@ -85,11 +63,11 @@ impl Engine {
     }
 
     pub fn on_resized(&mut self, width: u32, height: u32) {
+        log::debug!("resized event: {width}x{height}");
         if width == 0 || height == 0 {
             self.suspended = true;
         } else {
             self.suspended = false;
-            self.resized = true;
         }
         self.renderer.on_resized(width, height);
     }
@@ -121,7 +99,7 @@ impl Engine {
             let _ = write!(
                 self.window_title,
                 "{} - FPS: {}",
-                self.application_name, self.fps_counter
+                self.name, self.fps_counter
             );
             window.set_title(&self.window_title);
             self.fps_timer -= one_second;
@@ -133,14 +111,14 @@ impl Engine {
         Ok(())
     }
 
-    pub fn update(&mut self, _delta: Duration) -> Result<()> {
+    pub fn update(&mut self, _delta_time: Duration) -> Result<()> {
         // TODO: update
         Ok(())
     }
 
-    pub fn render(&mut self, _delta: Duration) -> Result<()> {
+    pub fn render(&mut self, delta_time: Duration) -> Result<()> {
         // TODO: render
-        self.renderer.draw_frame()?;
+        self.renderer.draw_frame(RenderState { delta_time })?;
         Ok(())
     }
 
@@ -181,11 +159,11 @@ impl Engine {
         // TODO: process mouse wheel
     }
 
-    pub fn on_mouse_motion(&mut self, _x: f64, _y: f64) {
+    pub fn on_mouse_motion(&mut self, _x: f32, _y: f32) {
         // TODO: process mouse wheel
     }
 
-    pub fn on_axis_motion(&mut self, _axis: u32, _value: f64) {
+    pub fn on_axis_motion(&mut self, _axis: u32, _value: f32) {
         // TODO: process axis motion
     }
 

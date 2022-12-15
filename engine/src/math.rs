@@ -1,50 +1,24 @@
-use std::{
-    hash::{Hash, Hasher},
-    ops::{
-        Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
-        SubAssign,
-    },
+use std::ops::{
+    Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
+    SubAssign,
 };
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
 #[must_use]
 pub struct Vertex {
-    pub position: Vector<3>,
-    pub color: Vector<3>,
-    pub texcoord: Vector<2>,
+    pub position: Vec3,
+    pub color: Vec3,
+    pub texcoord: Vec2,
 }
 
 impl Vertex {
     /// Create a new `Vertex` instance.
-    pub fn new(pos: Vector<3>, color: Vector<3>, texcoord: Vector<2>) -> Self {
+    pub fn new(position: Vec3, color: Vec3, texcoord: Vec2) -> Self {
         Self {
-            position: pos,
+            position,
             color,
             texcoord,
-        }
-    }
-}
-
-impl PartialEq for Vertex {
-    fn eq(&self, rhs: &Self) -> bool {
-        self.position == rhs.position && self.color == rhs.color && self.texcoord == rhs.texcoord
-    }
-}
-
-// NOTE: This is acceptable since NaN and Infinity in Vertex values is not valid.
-impl Eq for Vertex {}
-
-impl Hash for Vertex {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for p in &self.position {
-            p.to_bits().hash(state);
-        }
-        for c in &self.color {
-            c.to_bits().hash(state);
-        }
-        for t in &self.texcoord {
-            t.to_bits().hash(state);
         }
     }
 }
@@ -54,7 +28,7 @@ impl Hash for Vertex {
 #[must_use]
 pub struct UniformBufferObject {
     pub view: Mat4,
-    pub proj: Mat4,
+    pub projection: Mat4,
 }
 
 /// Constructs a new [Vector].
@@ -69,7 +43,7 @@ macro_rules! vector {
 }
 
 /// A N-dimensional `Vector`.
-#[derive(Debug, Copy, Clone, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
 #[must_use]
 #[repr(transparent)]
 pub struct Vector<const N: usize = 2>([f32; N]);
@@ -191,13 +165,13 @@ impl Vector<3> {
     /// Create a 3D unit `Vector` pointing forward.
     #[inline]
     pub fn forward() -> Self {
-        Self([1.0, 0.0, -1.0])
+        Self([0.0, 0.0, -1.0])
     }
 
     /// Create a 3D unit `Vector` pointing backward.
     #[inline]
     pub fn backward() -> Self {
-        Self([1.0, 0.0, 1.0])
+        Self([0.0, 0.0, 1.0])
     }
 
     /// Return the `x` coordinate.
@@ -341,7 +315,9 @@ impl<const N: usize> Vector<N> {
     /// Normalize the `Vector` into a unit `Vector`.
     pub fn normalize(&mut self) {
         let magnitude = self.magnitude();
-        self.iter_mut().for_each(|val| *val /= magnitude);
+        if magnitude != 0.0 {
+            self.iter_mut().for_each(|val| *val *= magnitude.recip());
+        }
     }
 
     /// Create a normalized copy of the `Vector`.
@@ -377,24 +353,6 @@ impl<const N: usize> IntoIterator for &Vector<N> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
-    }
-}
-
-impl<const N: usize> PartialEq for Vector<N> {
-    fn eq(&self, rhs: &Self) -> bool {
-        self.iter()
-            .zip(rhs.iter())
-            .all(|(a, b)| (a - b) < f32::EPSILON)
-    }
-}
-
-impl<const N: usize> Eq for Vector<N> {}
-
-impl<const N: usize> Hash for Vector<N> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for v in &self.0 {
-            v.to_bits().hash(state);
-        }
     }
 }
 
@@ -999,7 +957,7 @@ impl Mul<Matrix<4, 4>> for Vector<4> {
 impl<const N: usize, const M: usize> Matrix<N, M> {
     /// Construct an identity `Matrix`.
     #[inline]
-    fn identity() -> Self {
+    pub fn identity() -> Self {
         assert_eq!(N, M, "matrix is not symmetrical");
         let mut matrix = Self::default();
         for i in (0..(N * M)).step_by(N + 1) {

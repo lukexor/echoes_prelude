@@ -25,6 +25,7 @@ echoes_engine = { path = "engine" }
 env_logger = { workspace = true }
 hot-lib-reloader = { version = "0.6.4", optional = true }
 log = { workspace = true }
+tokio = { version = "1.23.0", features = ["full"] }
 winit = { workspace = true }
 
 [profile.dev]
@@ -39,6 +40,6 @@ members = [
 
 [workspace.dependencies]
 anyhow = "1.0.66"
-log = "0.4.7"
 env_logger = "0.10.0"
+log = "0.4.7"
 winit = "0.27.5"

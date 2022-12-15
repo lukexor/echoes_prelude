@@ -470,15 +470,15 @@ impl Context {
             vector!(0.0, 0.0, 1.0),
         );
         let vk::Extent2D { width, height } = self.swapchain.extent;
-        let mut proj = Matrix::perspective(
+        let mut projection = Matrix::perspective(
             Radians(45.0f32.to_radians()),
             width as f32 / height as f32,
             0.1,
             10.0,
         );
-        proj[5] *= -1.0; // Y-axis is inverted in Vulkan
+        projection[5] *= -1.0; // Y-axis is inverted in Vulkan
 
-        let ubo = UniformBufferObject { view, proj };
+        let ubo = UniformBufferObject { view, projection };
 
         // Copy
         let uniform_buffer_memory = self.uniform_buffers[image_index].memory;
@@ -3059,12 +3059,7 @@ mod sync {
 mod model {
     use crate::{math::Vertex, vector};
     use anyhow::{Context, Result};
-    use std::{
-        collections::{hash_map, HashMap},
-        fs,
-        io::BufReader,
-        path::Path,
-    };
+    use std::{fs, io::BufReader, path::Path};
 
     #[derive(Clone, Debug)]
     #[must_use]
@@ -3099,17 +3094,19 @@ mod model {
             )?;
 
             // Vertices / Indices
-            let mut unique_vertices = HashMap::with_capacity(1024);
-
-            let mut vertices = Vec::with_capacity(1024);
-            let mut indices = Vec::with_capacity(1024);
-            for model in &models {
-                for index in &model.mesh.indices {
-                    let position_offset = (3 * index) as usize;
-                    let texcoord_offset = (2 * index) as usize;
+            let mut vertices = vec![];
+            let mut indices = vec![];
+            for mut model in models.into_iter() {
+                let vertices_len = model.mesh.positions.len() / 3;
+                vertices.reserve(vertices_len);
+                indices.reserve(model.mesh.indices.len());
+                for index in 0..vertices_len {
+                    let position_offset = index * 3;
+                    let texcoord_offset = index * 2;
 
                     let position = &model.mesh.positions;
                     let texcoords = &model.mesh.texcoords;
+
                     let vertex = Vertex::new(
                         vector!(
                             position[position_offset],
@@ -3122,17 +3119,9 @@ mod model {
                             1.0 - texcoords[texcoord_offset + 1],
                         ),
                     );
-
-                    match unique_vertices.entry(vertex) {
-                        hash_map::Entry::Occupied(entry) => indices.push(*entry.get() as u32),
-                        hash_map::Entry::Vacant(entry) => {
-                            let index = vertices.len();
-                            entry.insert(index);
-                            vertices.push(vertex);
-                            indices.push(index as u32);
-                        }
-                    }
+                    vertices.push(vertex);
                 }
+                indices.append(&mut model.mesh.indices);
             }
 
             log::debug!("loaded model named `{name}` succesfully");
@@ -3165,17 +3154,17 @@ mod vertex {
         pub(crate) fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
             let pos = vk::VertexInputAttributeDescription::builder()
                 .binding(0)
-                .location(0) // points to shader.vert location
+                .location(0) // points to vertex shader location
                 .format(vk::Format::R32G32B32_SFLOAT)
                 .offset(0);
             let color = vk::VertexInputAttributeDescription::builder()
                 .binding(0)
-                .location(1) // points to shader.vert location
+                .location(1) // points to vertex shader location
                 .format(vk::Format::R32G32B32_SFLOAT)
                 .offset(size_of::<Vec3>() as u32);
             let texcoord = vk::VertexInputAttributeDescription::builder()
                 .binding(0)
-                .location(2) // points to shader.vert location
+                .location(2) // points to vertex shader location
                 .format(vk::Format::R32G32_SFLOAT)
                 .offset((size_of::<Vec3>() + size_of::<Vec3>()) as u32);
             [pos.build(), color.build(), texcoord.build()]

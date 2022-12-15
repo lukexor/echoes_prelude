@@ -40,7 +40,8 @@
 pub mod logger;
 #[macro_use]
 pub mod profiling;
-pub mod engine;
+pub mod application;
+pub mod config;
 pub mod event;
 pub mod input;
 pub mod math;
@@ -49,7 +50,7 @@ pub mod renderer;
 
 // pub use is required for `hot_lib_reloader`
 pub use anyhow::Result;
-pub use engine::Engine;
+pub use application::Application;
 pub use winit::window::Window;
 
 #[no_mangle]
@@ -59,11 +60,11 @@ pub fn initialize_logger() {
 }
 
 #[no_mangle]
-pub fn update_and_render(engine: &mut Engine, window: &Window) -> Result<()> {
-    engine.update_and_render(window)
+pub fn update_and_render(application: &mut Application, window: &Window) -> Result<()> {
+    application.update_and_render(window)
 }
 
 #[no_mangle]
-pub fn audio_samples(engine: &mut Engine) -> Result<Vec<f32>> {
-    engine.audio_samples()
+pub fn audio_samples(application: &mut Application) -> Result<Vec<f32>> {
+    application.audio_samples()
 }

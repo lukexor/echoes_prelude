@@ -72,16 +72,35 @@ const WINDOW_HEIGHT: u32 = 900;
 const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.vert.spv"));
 const FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.frag.spv"));
 
-fn create_window(event_loop: &EventLoop<()>) -> Result<Window> {
-    Ok(WindowBuilder::new()
+#[tokio::main]
+async fn main() -> Result<()> {
+    logger::initialize()?;
+    #[cfg(feature = "hot_reload")]
+    initialize_logger(); // Required to properly initialize logger with hot_reload
+
+    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
+
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
         .with_title(APPLICATION_NAME)
         .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
-        .build(event_loop)?)
+        .build(&event_loop)?;
+
+    let application = Application::initialize(
+        APPLICATION_NAME.into(),
+        &window,
+        Shaders::new(VERTEX_SHADER, FRAGMENT_SHADER),
+    )?;
+
+    main_loop(application, event_loop, window).await;
+
+    Ok(())
 }
 
-fn main_loop(mut engine: Engine, event_loop: EventLoop<()>, window: Window) {
+async fn main_loop(mut engine: Application, event_loop: EventLoop<()>, window: Window) {
     log::info!("application started");
 
+    // TODO: Need custom event loop to make it async
     event_loop.run(move |event, _window_target, control_flow| {
         control_flow.set_poll();
 
@@ -129,26 +148,4 @@ fn main_loop(mut engine: Engine, event_loop: EventLoop<()>, window: Window) {
             _ => (),
         }
     });
-}
-
-fn main() -> Result<()> {
-    logger::initialize()?;
-
-    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
-
-    let event_loop = EventLoop::new();
-    let window = create_window(&event_loop)?;
-
-    // Engine
-    let engine = Engine::initialize(
-        APPLICATION_NAME,
-        &window,
-        Shaders::new(VERTEX_SHADER, FRAGMENT_SHADER),
-    )?;
-    #[cfg(feature = "hot_reload")]
-    initialize_logger(); // Required to properly initialize logger with reload
-
-    main_loop(engine, event_loop, window);
-
-    Ok(())
 }
