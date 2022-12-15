@@ -2,7 +2,7 @@
 
 use crate::{
     config::Config,
-    renderer::{RenderState, Renderer, Shaders},
+    renderer::{RenderState, Renderer, RendererConfig},
 };
 use anyhow::Result;
 use std::{
@@ -40,9 +40,13 @@ impl Drop for Application {
 }
 
 impl Application {
-    pub fn initialize(name: Cow<'static, str>, window: &Window, shaders: Shaders) -> Result<Self> {
+    pub fn initialize(
+        name: Cow<'static, str>,
+        window: &Window,
+        renderer_config: RendererConfig,
+    ) -> Result<Self> {
         let config = Config::new();
-        let renderer = Renderer::initialize(name.as_ref(), window, shaders)?;
+        let renderer = Renderer::initialize(name.as_ref(), window, renderer_config)?;
         let window_title = name.clone().to_string();
         Ok(Self {
             name,

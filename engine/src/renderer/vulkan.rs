@@ -1,4 +1,4 @@
-use super::{RendererBackend, Shaders};
+use super::{RendererBackend, RendererConfig};
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
 use std::{
@@ -32,7 +32,7 @@ pub(crate) struct Context {
     width: u32,
     height: u32,
     resized: bool,
-    shaders: Shaders,
+    config: RendererConfig,
 
     _entry: ash::Entry,
     instance: ash::Instance,
@@ -75,7 +75,7 @@ impl fmt::Debug for Context {
 
 impl RendererBackend for Context {
     /// Initialize Vulkan `Context`.
-    fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self> {
+    fn initialize(application_name: &str, window: &Window, config: RendererConfig) -> Result<Self> {
         log::info!("initializing vulkan renderer backend");
 
         let entry = ash::Entry::linked();
@@ -116,7 +116,7 @@ impl RendererBackend for Context {
             swapchain.extent,
             render_pass,
             descriptor.set_layout,
-            &shaders,
+            &config,
         )?;
 
         let color_image = Image::create_color(
@@ -156,7 +156,7 @@ impl RendererBackend for Context {
             width,
             height,
             resized: false,
-            shaders,
+            config,
 
             _entry: entry,
             instance,
@@ -237,7 +237,7 @@ impl RendererBackend for Context {
         let in_flight_fence = self.syncs.in_flight_fences[self.frame];
 
         self.device
-            .wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
+            .wait_for_fences(slice::from_ref(&in_flight_fence), true, u64::MAX)?;
 
         // SAFETY: TODO
         let result = self.swapchain.acquire_next_image(
@@ -257,7 +257,7 @@ impl RendererBackend for Context {
         let image_in_flight = self.syncs.images_in_flight[image_index];
         if image_in_flight != vk::Fence::null() {
             self.device
-                .wait_for_fences(&[image_in_flight], true, u64::MAX)?;
+                .wait_for_fences(slice::from_ref(&image_in_flight), true, u64::MAX)?;
         }
 
         self.syncs.images_in_flight[image_index] = in_flight_fence;
@@ -277,7 +277,8 @@ impl RendererBackend for Context {
             .signal_semaphores(&signal_semaphores);
 
         let graphics_queue = self.device.queue_family(QueueFamily::Graphics)?;
-        self.device.reset_fences(&[in_flight_fence])?;
+        self.device
+            .reset_fences(slice::from_ref(&in_flight_fence))?;
         self.device.queue_submit(
             graphics_queue,
             slice::from_ref(&submit_info),
@@ -352,7 +353,7 @@ impl Context {
                 stencil: 0,
             },
         };
-        let clear_values = &[color_clear_value, depth_clear_value];
+        let clear_values = [color_clear_value, depth_clear_value];
         let render_pass_info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.render_pass)
             .framebuffer(self.framebuffers[image_index])
@@ -362,7 +363,7 @@ impl Context {
                     .extent(self.swapchain.extent)
                     .build(),
             )
-            .clear_values(clear_values);
+            .clear_values(&clear_values);
 
         self.device.logical_device.cmd_begin_render_pass(
             buffer,
@@ -373,7 +374,7 @@ impl Context {
         let secondary_command_buffer = self.update_secondary_command_buffer(image_index, 0)?;
         self.device
             .logical_device
-            .cmd_execute_commands(buffer, &[secondary_command_buffer]);
+            .cmd_execute_commands(buffer, slice::from_ref(&secondary_command_buffer));
 
         self.device.logical_device.cmd_end_render_pass(buffer);
 
@@ -427,7 +428,12 @@ impl Context {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.handle,
         );
-        device.cmd_bind_vertex_buffers(buffer, 0, &[self.vertex_buffer.handle], &[0]);
+        device.cmd_bind_vertex_buffers(
+            buffer,
+            0,
+            slice::from_ref(&self.vertex_buffer.handle),
+            slice::from_ref(&0),
+        );
         // Must match data.indices datatype
         device.cmd_bind_index_buffer(buffer, self.index_buffer.handle, 0, vk::IndexType::UINT32);
         device.cmd_bind_descriptor_sets(
@@ -435,7 +441,7 @@ impl Context {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.layout,
             0,
-            &[self.descriptor.sets[image_index]],
+            slice::from_ref(&self.descriptor.sets[image_index]),
             &[],
         );
         device.cmd_push_constants(
@@ -740,7 +746,7 @@ impl Context {
             self.swapchain.extent,
             self.render_pass,
             self.descriptor.set_layout,
-            &self.shaders,
+            &self.config,
         )?;
         self.color_image = Image::create_color(
             &self.device,
@@ -1900,7 +1906,7 @@ mod swapchain {
 
 mod pipeline {
     use super::device::Device;
-    use crate::{math::Vertex, renderer::Shaders};
+    use crate::{math::Vertex, renderer::RendererConfig};
     use anyhow::{Context, Result};
     use ash::vk;
     use std::{ffi::CString, slice};
@@ -1919,7 +1925,7 @@ mod pipeline {
             extent: vk::Extent2D,
             render_pass: vk::RenderPass,
             descriptor_set_layout: vk::DescriptorSetLayout,
-            shader: &Shaders,
+            config: &RendererConfig,
         ) -> Result<Self> {
             log::debug!("creating graphics pipeline");
 
@@ -1927,8 +1933,8 @@ mod pipeline {
             let device = &device.logical_device;
 
             // Shader Stages
-            let vertex_shader_module = shader.vertex_shader_module(device)?;
-            let fragment_shader_module = shader.fragment_shader_module(device)?;
+            let vertex_shader_module = config.shaders.vertex_shader_module(device)?;
+            let fragment_shader_module = config.shaders.fragment_shader_module(device)?;
 
             let shader_entry_name = CString::new("main")?;
             let shader_stages = [
@@ -1973,13 +1979,13 @@ mod pipeline {
 
             // Rasterization State
             let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
-                .depth_clamp_enable(false)
                 .rasterizer_discard_enable(false)
                 .polygon_mode(vk::PolygonMode::FILL)
                 .line_width(1.0)
                 // TODO: Disabled for now while rotating
                 // .cull_mode(vk::CullModeFlags::BACK)
                 .front_face(vk::FrontFace::COUNTER_CLOCKWISE) // Because Y-axis is inverted in Vulkan
+                .depth_clamp_enable(false)
                 .depth_bias_enable(false);
 
             // Multisample State
@@ -3111,7 +3117,7 @@ mod model {
                         vector!(
                             position[position_offset],
                             position[position_offset + 1],
-                            position[position_offset + 2]
+                            position[position_offset + 2],
                         ),
                         vector!(1.0, 1.0, 1.0),
                         vector!(

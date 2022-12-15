@@ -44,7 +44,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-use echoes_engine::renderer::Shaders;
+use echoes_engine::renderer::{RendererConfig, Shaders};
 #[cfg(not(feature = "hot_reload"))]
 use echoes_engine::*;
 #[cfg(feature = "hot_reload")]
@@ -89,7 +89,10 @@ async fn main() -> Result<()> {
     let application = Application::initialize(
         APPLICATION_NAME.into(),
         &window,
-        Shaders::new(VERTEX_SHADER, FRAGMENT_SHADER),
+        RendererConfig {
+            depth_stencil: false,
+            shaders: Shaders::new(VERTEX_SHADER, FRAGMENT_SHADER),
+        },
     )?;
 
     main_loop(application, event_loop, window).await;

@@ -24,7 +24,7 @@ cfg_if! {
 
 pub trait RendererBackend: Sized {
     // TODO: instead of just shaders, have this be generic platform state?
-    fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self>;
+    fn initialize(application_name: &str, window: &Window, config: RendererConfig) -> Result<Self>;
     fn shutdown(&mut self) -> Result<()>;
     fn on_resized(&mut self, width: u32, height: u32);
     fn begin_frame(&mut self, delta_time: Duration) -> Result<()>;
@@ -39,10 +39,14 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn initialize(application_name: &str, window: &Window, shaders: Shaders) -> Result<Self> {
+    pub fn initialize(
+        application_name: &str,
+        window: &Window,
+        config: RendererConfig,
+    ) -> Result<Self> {
         let PhysicalSize { width, height } = window.inner_size();
         Ok(Self {
-            context: Context::initialize(application_name, window, shaders)?,
+            context: Context::initialize(application_name, window, config)?,
             width,
             height,
         })
@@ -73,6 +77,15 @@ impl Renderer {
 #[must_use]
 pub struct RenderState {
     pub(crate) delta_time: Duration,
+}
+
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct RendererConfig {
+    // TODO: Make these fields private with a builder/constructor
+    pub depth_stencil: bool,
+    // TODO: make passing in shaders more generic
+    pub shaders: Shaders,
 }
 
 #[derive(Debug, Clone)]
