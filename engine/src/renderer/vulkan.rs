@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use super::{RendererBackend, Shaders};
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
@@ -28,34 +26,41 @@ use surface::Surface;
 use swapchain::Swapchain;
 use sync::Syncs;
 
-// TODO: Ensure field order matches initialize
 pub(crate) struct Context {
     start: Instant,
     frame: usize,
+    width: u32,
+    height: u32,
+    resized: bool,
     shaders: Shaders,
 
     _entry: ash::Entry,
     instance: ash::Instance,
+    #[cfg(debug_assertions)]
+    debug: Debug,
+
     surface: Surface,
     device: Device,
     swapchain: Swapchain,
     render_pass: vk::RenderPass,
-    color_image: Image,
-    depth_image: Image,
-    uniform_buffers: Vec<Buffer>,
-    vertex_buffer: Buffer,
-    index_buffer: Buffer,
+    command_pools: Vec<CommandPool>,
+
     textures: Vec<Image>,
-    models: Vec<Model>,
     sampler: vk::Sampler,
+
+    uniform_buffers: Vec<Buffer>,
     descriptor: Descriptor,
     pipeline: Pipeline,
-    command_pools: Vec<CommandPool>,
+
+    color_image: Image,
+    depth_image: Image,
     framebuffers: Vec<vk::Framebuffer>,
+
+    models: Vec<Model>,
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
+
     syncs: Syncs,
-    #[cfg(debug_assertions)]
-    debug: Debug,
-    resized: Option<(u32, u32)>,
 }
 
 impl fmt::Debug for Context {
@@ -76,16 +81,15 @@ impl RendererBackend for Context {
         let instance = Self::create_instance(application_name, &entry)?;
         #[cfg(debug_assertions)]
         let debug = Debug::create(&entry, &instance)?;
+
         let surface = Surface::create(&entry, &instance, window)?;
         let device = Device::create(&instance, &surface)?;
-
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
-        let uniform_buffers = device.create_uniform_buffers(&instance, &swapchain)?;
+        let command_pools = Self::create_command_pools(&device, &swapchain)?;
+
         let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
-        let command_pools = Self::create_command_pools(&instance, &device, &swapchain)?;
-        // let present_queue = device.queue_family(QueueFamily::Present)?;
         let texture = Image::create_texture(
             "viking_room",
             &instance,
@@ -97,6 +101,8 @@ impl RendererBackend for Context {
             &debug,
         )?;
         let sampler = Image::create_sampler(&device.logical_device, texture.mip_levels)?;
+
+        let uniform_buffers = device.create_uniform_buffers(&swapchain)?;
         let descriptor = Descriptor::create(
             &device.logical_device,
             &swapchain,
@@ -111,8 +117,8 @@ impl RendererBackend for Context {
             descriptor.set_layout,
             &shaders,
         )?;
+
         let color_image = Image::create_color(
-            &instance,
             &device,
             &swapchain,
             #[cfg(debug_assertions)]
@@ -134,20 +140,11 @@ impl RendererBackend for Context {
         )?;
 
         let model = Model::load("viking_room", "assets/viking_room.obj")?;
-        let vertex_buffer = device.create_vertex_buffer(
-            &instance,
-            &swapchain,
-            &command_pools[0],
-            graphics_queue,
-            &model.vertices,
-        )?;
-        let index_buffer = device.create_index_buffer(
-            &instance,
-            &swapchain,
-            &command_pools[0],
-            graphics_queue,
-            &model.indices,
-        )?;
+        let vertex_buffer =
+            device.create_vertex_buffer(&command_pools[0], graphics_queue, &model.vertices)?;
+        let index_buffer =
+            device.create_index_buffer(&command_pools[0], graphics_queue, &model.indices)?;
+
         let syncs = Syncs::create(&device.logical_device, &swapchain)?;
 
         log::info!("initialized vulkan renderer backend successfully");
@@ -155,37 +152,47 @@ impl RendererBackend for Context {
         Ok(Context {
             start: Instant::now(),
             frame: 0,
-
+            width,
+            height,
+            resized: false,
             shaders,
+
             _entry: entry,
             instance,
+            #[cfg(debug_assertions)]
+            debug,
+
             surface,
             device,
             swapchain,
             render_pass,
-            uniform_buffers,
-            vertex_buffer,
-            index_buffer,
-            textures: vec![texture],
-            models: vec![model],
-            sampler,
             command_pools,
+
+            textures: vec![texture],
+            sampler,
+
+            uniform_buffers,
             descriptor,
             pipeline,
+
             color_image,
             depth_image,
             framebuffers,
+
+            models: vec![model],
+            vertex_buffer,
+            index_buffer,
+
             syncs,
-            #[cfg(debug_assertions)]
-            debug,
-            resized: None,
         })
     }
 
     /// Handle window resized event.
     fn on_resized(&mut self, width: u32, height: u32) {
-        log::debug!("received resized event. pending swapchain recreation.");
-        self.resized = Some((width, height));
+        log::debug!("received resized event {width}x{height}. pending swapchain recreation.");
+        self.width = width;
+        self.height = height;
+        self.resized = true;
     }
 
     /// Draw a frame to the [Window] surface.
@@ -193,42 +200,28 @@ impl RendererBackend for Context {
         let in_flight_fence = self.syncs.in_flight_fences[self.frame];
 
         // TODO: Move unsafe vulkan operations with context to helper functions
-        unsafe {
-            self.device
-                .logical_device
-                .wait_for_fences(&[in_flight_fence], true, u64::MAX)
-        }
-        .context("failed to wait for in_flight_fence")?;
+        self.device
+            .wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
 
         // SAFETY: TODO
-        let result = unsafe {
-            self.swapchain.loader.acquire_next_image(
-                self.swapchain.handle,
-                u64::MAX,
-                self.syncs.images_available[self.frame],
-                vk::Fence::null(),
-            )
-        };
+        let result = self.swapchain.acquire_next_image(
+            u64::MAX,
+            self.syncs.images_available[self.frame],
+            vk::Fence::null(),
+        );
         let image_index = match result {
             Ok((index, _)) => index as usize,
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                // TODO: recreate swapchain
-                log::warn!("ERROR_OUT_OF_DATE_KHR");
-                return Ok(());
-                // return self
-                //     .recreate_swapchain(self.swapchain.extent.width, self.swapchain.extent.height)
+                log::warn!("swapchain image out of date");
+                return self.recreate_swapchain(self.width, self.height);
             }
             Err(err) => bail!(err),
         };
 
         let image_in_flight = self.syncs.images_in_flight[image_index];
         if image_in_flight != vk::Fence::null() {
-            unsafe {
-                self.device
-                    .logical_device
-                    .wait_for_fences(&[image_in_flight], true, u64::MAX)
-            }
-            .context("failed to wait for image_in_flight fence")?;
+            self.device
+                .wait_for_fences(&[image_in_flight], true, u64::MAX)?;
         }
 
         self.syncs.images_in_flight[image_index] = in_flight_fence;
@@ -249,17 +242,9 @@ impl RendererBackend for Context {
             .build();
 
         let graphics_queue = self.device.queue_family(QueueFamily::Graphics)?;
-        // SAFETY: TODO
-        unsafe {
-            self.device
-                .logical_device
-                .reset_fences(&[in_flight_fence])?;
-            self.device.logical_device.queue_submit(
-                graphics_queue,
-                &[submit_info],
-                in_flight_fence,
-            )?;
-        }
+        self.device.reset_fences(&[in_flight_fence])?;
+        self.device
+            .queue_submit(graphics_queue, &[submit_info], in_flight_fence)?;
 
         let swapchains = [self.swapchain.handle];
         let image_indices = [image_index as u32];
@@ -270,19 +255,14 @@ impl RendererBackend for Context {
             .build();
 
         let present_queue = self.device.queue_family(QueueFamily::Present)?;
-        // SAFETY: TODO
-        let result_suboptimal = unsafe {
-            self.swapchain
-                .loader
-                .queue_present(present_queue, &present_info)
-        }
-        .context("failed to present queue")?;
-        if let Some((width, height)) = self.resized.take() {
-            self.recreate_swapchain(width, height)?;
-        } else if result_suboptimal {
-            // TODO: recreate swapchain
-            log::warn!("result is suboptimal");
-            // self.recreate_swapchain(self.swapchain.extent.width, self.swapchain.extent.height)?;
+        let result = self.swapchain.queue_present(present_queue, &present_info);
+        let requires_recreate = matches!(result, Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR));
+        if self.resized || requires_recreate {
+            log::warn!("swapchain is suboptimal for surface");
+            self.recreate_swapchain(self.width, self.height)?;
+            self.resized = false;
+        } else if let Err(err) = result {
+            bail!(err);
         }
 
         self.frame = (self.frame + 1) % self.swapchain.max_frames_in_flight;
@@ -711,11 +691,7 @@ impl Context {
     }
 
     /// Create a list of [`CommandPool`]s.
-    fn create_command_pools(
-        instance: &ash::Instance,
-        device: &Device,
-        swapchain: &Swapchain,
-    ) -> Result<Vec<CommandPool>> {
+    fn create_command_pools(device: &Device, swapchain: &Swapchain) -> Result<Vec<CommandPool>> {
         log::debug!("creating command pools");
 
         // One global pool + one pool for each swapchain image
@@ -745,18 +721,17 @@ impl Context {
 
     /// Destroys the current swapchain and re-creates it with a new width/height.
     fn recreate_swapchain(&mut self, width: u32, height: u32) -> Result<()> {
-        log::debug!("re-creating swapchain");
+        log::debug!("re-creating swapchain for {width}x{height}");
 
         // SAFETY: TODO
         unsafe { self.destroy_swapchain()? };
 
+        self.device.update(&self.surface)?;
         self.swapchain =
             Swapchain::create(&self.instance, &self.device, &self.surface, width, height)?;
         self.render_pass =
             Self::create_render_pass(&self.instance, &self.device, self.swapchain.format)?;
-        self.uniform_buffers = self
-            .device
-            .create_uniform_buffers(&self.instance, &self.swapchain)?;
+        self.uniform_buffers = self.device.create_uniform_buffers(&self.swapchain)?;
         self.descriptor = Descriptor::create(
             &self.device.logical_device,
             &self.swapchain,
@@ -772,7 +747,6 @@ impl Context {
             &self.shaders,
         )?;
         self.color_image = Image::create_color(
-            &self.instance,
             &self.device,
             &self.swapchain,
             #[cfg(debug_assertions)]
@@ -806,6 +780,8 @@ impl Context {
     unsafe fn destroy_swapchain(&mut self) -> Result<()> {
         log::debug!("destroying swapchain");
 
+        // TODO: Instead of pausing, and destroying and re-creating entirely, try to use the
+        // previous swapchain to recreate and then destroy it when it's finished being used.
         self.device.wait_idle()?;
 
         let device = &self.device.logical_device;
@@ -888,8 +864,7 @@ mod surface {
 
 mod device {
     use super::{
-        command_pool::CommandPool, image::Image, platform, swapchain::Swapchain, Surface,
-        VALIDATION_LAYER_NAME,
+        command_pool::CommandPool, platform, swapchain::Swapchain, Surface, VALIDATION_LAYER_NAME,
     };
     use crate::math::{UniformBufferObject, Vertex};
     use anyhow::{bail, Context as _, Result};
@@ -940,12 +915,57 @@ mod device {
             })
         }
 
+        /// Updates device capabilities if the window surface changes.
+        pub(crate) fn update(&mut self, surface: &Surface) -> Result<()> {
+            self.info.swapchain_support = SwapchainSupport::query(self.physical_device, surface)
+                .map_err(|err| log::error!("{err}"))
+                .ok();
+            Ok(())
+        }
+
         /// Waits for the [ash::Device] to be idle.
         pub(crate) fn wait_idle(&self) -> Result<()> {
-            log::debug!("waiting for device idle");
+            log::trace!("waiting for device idle");
             // SAFETY: TODO
             unsafe { self.logical_device.device_wait_idle() }
                 .context("failed to wait for device idle")
+        }
+
+        /// Waits for the given [vk::Fence]s to be signaled.
+        pub(crate) fn wait_for_fences(
+            &self,
+            fences: &[vk::Fence],
+            wait_all: bool,
+            timeout: u64,
+        ) -> Result<()> {
+            log::trace!("waiting for device fences");
+            // SAFETY: TODO
+            unsafe {
+                self.logical_device
+                    .wait_for_fences(fences, wait_all, timeout)
+            }
+            .context("failed to wait for device fence")
+        }
+
+        /// Resets the given [vk::Fence]s.
+        pub(crate) fn reset_fences(&self, fences: &[vk::Fence]) -> Result<()> {
+            log::trace!("resetting device fences");
+            // SAFETY: TODO
+            unsafe { self.logical_device.reset_fences(fences) }
+                .context("failed to reset device fences")
+        }
+
+        /// Submit commands to a [vk::Queue].
+        pub(crate) fn queue_submit(
+            &self,
+            queue: vk::Queue,
+            submits: &[vk::SubmitInfo],
+            fence: vk::Fence,
+        ) -> Result<()> {
+            log::trace!("submitting to device queue {queue:?}");
+            // SAFETY: TODO
+            unsafe { self.logical_device.queue_submit(queue, submits, fence) }
+                .context("failed to submit to device queue {queue:?}")
         }
 
         /// Get a [vk::Queue] handle to a given [`QueueFamily`].
@@ -1021,7 +1041,6 @@ mod device {
         /// Creates a [vk::Buffer] with associated [vk::DeviceMemory] for the given parameters.
         pub(crate) fn create_buffer(
             &self,
-            instance: &ash::Instance,
             size: vk::DeviceSize,
             usage: vk::BufferUsageFlags,
             properties: vk::MemoryPropertyFlags,
@@ -1066,18 +1085,13 @@ mod device {
         }
 
         /// Create a Uniform `Buffer` instance.
-        pub(crate) fn create_uniform_buffers(
-            &self,
-            instance: &ash::Instance,
-            swapchain: &Swapchain,
-        ) -> Result<Vec<Buffer>> {
+        pub(crate) fn create_uniform_buffers(&self, swapchain: &Swapchain) -> Result<Vec<Buffer>> {
             log::debug!("creating uniform buffers");
 
             let size = size_of::<UniformBufferObject>() as u64;
             let buffers = (0..swapchain.images.len())
                 .map(|_| {
                     self.create_buffer(
-                        instance,
                         size,
                         vk::BufferUsageFlags::UNIFORM_BUFFER,
                         vk::MemoryPropertyFlags::HOST_COHERENT
@@ -1095,8 +1109,6 @@ mod device {
         /// Create a [Vertex] `Buffer` instance.
         pub(crate) fn create_vertex_buffer(
             &self,
-            instance: &ash::Instance,
-            swapchain: &Swapchain,
             command_pool: &CommandPool,
             queue: vk::Queue,
             vertices: &[Vertex],
@@ -1108,7 +1120,6 @@ mod device {
 
             // Staging Buffer
             let staging_buffer = self.create_buffer(
-                instance,
                 size,
                 vk::BufferUsageFlags::TRANSFER_SRC,
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -1127,7 +1138,6 @@ mod device {
 
             // Buffer
             let buffer = self.create_buffer(
-                instance,
                 size,
                 vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -1158,8 +1168,6 @@ mod device {
         /// Create an Index `Buffer` instance.
         pub(crate) fn create_index_buffer(
             &self,
-            instance: &ash::Instance,
-            swapchain: &Swapchain,
             command_pool: &CommandPool,
             queue: vk::Queue,
             indices: &[u32],
@@ -1172,7 +1180,6 @@ mod device {
 
             // Staging Buffer
             let staging_buffer = self.create_buffer(
-                instance,
                 size,
                 vk::BufferUsageFlags::TRANSFER_SRC,
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -1191,7 +1198,6 @@ mod device {
 
             // Buffer
             let buffer = self.create_buffer(
-                instance,
                 size,
                 vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -1385,8 +1391,8 @@ mod device {
     impl Buffer {
         /// Destroy a `Buffer` instance.
         pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
-            device.destroy_buffer(self.handle, None);
             device.free_memory(self.memory, None);
+            device.destroy_buffer(self.handle, None);
         }
     }
 
@@ -1695,7 +1701,7 @@ mod swapchain {
         surface::Surface,
     };
     use anyhow::{bail, Context, Result};
-    use ash::{extensions::khr, vk};
+    use ash::{extensions::khr, prelude::VkResult, vk};
 
     #[derive(Clone)]
     #[must_use]
@@ -1747,6 +1753,8 @@ mod swapchain {
                 .unwrap_or(vk::PresentModeKHR::FIFO);
 
             // Select extent
+            // NOTE: current_extent.width equal to u32::MAX means that the swapchain image
+            // resolution can differ from the window resolution
             let capabilities = &swapchain_support.capabilities;
             let image_extent = if capabilities.current_extent.width == u32::MAX {
                 let vk::Extent2D {
@@ -1843,8 +1851,6 @@ mod swapchain {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            // Get depth images
-
             log::debug!("created swapchain successfully");
 
             Ok(Self {
@@ -1866,13 +1872,38 @@ mod swapchain {
             });
             self.loader.destroy_swapchain(self.handle, None);
         }
+
+        /// Acquire next [vk::SwapchainKHR] images index.
+        pub(crate) fn acquire_next_image(
+            &self,
+            timeout: u64,
+            semaphore: vk::Semaphore,
+            fence: vk::Fence,
+        ) -> VkResult<(u32, bool)> {
+            // SAFETY: TODO
+            unsafe {
+                self.loader
+                    .acquire_next_image(self.handle, timeout, semaphore, fence)
+            }
+        }
+
+        /// Present to a given [vk::Queue]. On success, returns whether swapchain is suboptimal for
+        /// the surface.
+        pub(crate) fn queue_present(
+            &self,
+            queue: vk::Queue,
+            present_info: &vk::PresentInfoKHR,
+        ) -> VkResult<bool> {
+            // SAFETY: TODO
+            unsafe { self.loader.queue_present(queue, present_info) }
+        }
     }
 }
 
 mod pipeline {
     use super::device::Device;
     use crate::{math::Vertex, renderer::Shaders};
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result};
     use ash::vk;
     use std::ffi::CString;
 
@@ -2071,7 +2102,7 @@ mod pipeline {
 }
 
 mod shader {
-    use crate::renderer::{vulkan::shader, Shaders};
+    use crate::renderer::Shaders;
     use anyhow::{bail, Context, Result};
     use ash::vk;
 
@@ -2139,7 +2170,6 @@ mod image {
         #[allow(clippy::too_many_arguments)]
         pub(crate) fn create(
             name: &str,
-            instance: &ash::Instance,
             device: &Device,
             width: u32,
             height: u32,
@@ -2222,7 +2252,6 @@ mod image {
 
         /// Create a [vk::Image] instance to be used as a [`vk::ImageUsageFlags::COLOR_ATTACHMENT`].
         pub(crate) fn create_color(
-            instance: &ash::Instance,
             device: &Device,
             swapchain: &Swapchain,
             #[cfg(debug_assertions)] debug: &Debug,
@@ -2233,7 +2262,6 @@ mod image {
             let mip_levels = 1;
             let (image, memory) = Self::create(
                 "color",
-                instance,
                 device,
                 swapchain.extent.width,
                 swapchain.extent.height,
@@ -2281,7 +2309,6 @@ mod image {
             let mip_levels = 1;
             let (image, memory) = Self::create(
                 "depth",
-                instance,
                 device,
                 swapchain.extent.width,
                 swapchain.extent.height,
@@ -2346,7 +2373,6 @@ mod image {
 
             // Staging Buffer
             let staging_buffer = device.create_buffer(
-                instance,
                 size,
                 vk::BufferUsageFlags::TRANSFER_SRC,
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -2367,7 +2393,6 @@ mod image {
             // Texture Image
             let (image, memory) = Image::create(
                 name,
-                instance,
                 device,
                 info.width,
                 info.height,
@@ -2842,10 +2867,7 @@ mod command_pool {
 }
 
 mod descriptor {
-    use super::{
-        device::{Buffer, Device, QueueFamily},
-        swapchain::Swapchain,
-    };
+    use super::{device::Buffer, swapchain::Swapchain};
     use crate::math::UniformBufferObject;
     use anyhow::{Context, Result};
     use ash::vk;
@@ -2992,14 +3014,9 @@ mod descriptor {
 }
 
 mod sync {
-    use super::{
-        device::{Buffer, Device, QueueFamily},
-        swapchain::Swapchain,
-    };
-    use crate::math::UniformBufferObject;
+    use super::swapchain::Swapchain;
     use anyhow::{Context, Result};
     use ash::vk;
-    use std::mem::size_of;
 
     #[derive(Clone)]
     #[must_use]
@@ -3077,15 +3094,15 @@ mod sync {
 
 mod model {
     use crate::{math::Vertex, vector};
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result};
     use std::{
         collections::{hash_map, HashMap},
-        fs, hash,
+        fs,
         io::BufReader,
         path::Path,
     };
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     #[must_use]
     pub(crate) struct Model {
         pub(crate) name: String,
