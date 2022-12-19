@@ -1,0 +1,23 @@
+[package]
+name = "echoes_prelude_lib"
+authors = ["Luke Petherbridge <me@lukeworks.tech>"]
+categories = ["games"]
+description = "The hot-reloadable library for echoes_prelude"
+keywords = ["game"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lukexor/echos-prelude.git"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata]
+msrv = "1.65.0"
+
+[lib]
+crate-type = ["rlib", "dylib"]
+
+[dependencies]
+anyhow = { workspace = true }
+pix-engine = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+winit = { workspace = true }

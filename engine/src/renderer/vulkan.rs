@@ -1,4 +1,4 @@
-use super::{RendererBackend, RendererConfig};
+use super::{RendererBackend, Shader};
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
 use std::{
@@ -6,7 +6,7 @@ use std::{
     fmt,
     mem::size_of,
     ptr, slice,
-    time::{Duration, Instant},
+    time::Instant,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -32,11 +32,12 @@ pub(crate) struct Context {
     width: u32,
     height: u32,
     resized: bool,
-    config: RendererConfig,
+    shaders: Vec<Shader>,
 
-    _entry: ash::Entry,
-    instance: ash::Instance,
-    // TODO: custom allocator?
+    _entry: ash::Entry,      // Needs to out-live `instance`
+    instance: ash::Instance, // Needs to out-live `device`
+    // TODO: custom allocator
+    // allocator: Option<vk::AllocationCallbacks>
     #[cfg(debug_assertions)]
     debug: Debug,
 
@@ -66,6 +67,7 @@ pub(crate) struct Context {
 
 impl fmt::Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: debug
         f.debug_struct("Context")
             .field("surface", &self.surface)
             .field("device", &self.device)
@@ -75,7 +77,7 @@ impl fmt::Debug for Context {
 
 impl RendererBackend for Context {
     /// Initialize Vulkan `Context`.
-    fn initialize(application_name: &str, window: &Window, config: RendererConfig) -> Result<Self> {
+    fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self> {
         log::info!("initializing vulkan renderer backend");
 
         let entry = ash::Entry::linked();
@@ -116,7 +118,7 @@ impl RendererBackend for Context {
             swapchain.extent,
             render_pass,
             descriptor.set_layout,
-            &config,
+            shaders,
         )?;
 
         let color_image = Image::create_color(
@@ -156,7 +158,7 @@ impl RendererBackend for Context {
             width,
             height,
             resized: false,
-            config,
+            shaders: shaders.to_vec(),
 
             _entry: entry,
             instance,
@@ -226,14 +228,16 @@ impl RendererBackend for Context {
 
     /// Handle window resized event.
     fn on_resized(&mut self, width: u32, height: u32) {
-        log::debug!("received resized event {width}x{height}. pending swapchain recreation.");
-        self.width = width;
-        self.height = height;
-        self.resized = true;
+        if self.width != width || self.height != height {
+            log::debug!("received resized event {width}x{height}. pending swapchain recreation.");
+            self.width = width;
+            self.height = height;
+            self.resized = true;
+        }
     }
 
     /// Begin drawing a frame to the [Window] surface.
-    fn begin_frame(&mut self, _delta_time: Duration) -> Result<()> {
+    fn begin_frame(&mut self, _delta_time: f32) -> Result<()> {
         let in_flight_fence = self.syncs.in_flight_fences[self.frame];
 
         self.device
@@ -309,7 +313,7 @@ impl RendererBackend for Context {
     }
 
     /// End drawing a frame.
-    fn end_frame(&mut self, _delta_time: Duration) -> Result<()> {
+    fn end_frame(&mut self, _delta_time: f32) -> Result<()> {
         Ok(())
     }
 }
@@ -746,7 +750,7 @@ impl Context {
             self.swapchain.extent,
             self.render_pass,
             self.descriptor.set_layout,
-            &self.config,
+            &self.shaders,
         )?;
         self.color_image = Image::create_color(
             &self.device,
@@ -1906,7 +1910,10 @@ mod swapchain {
 
 mod pipeline {
     use super::device::Device;
-    use crate::{math::Vertex, renderer::RendererConfig};
+    use crate::{
+        math::Vertex,
+        renderer::{Shader, ShaderType},
+    };
     use anyhow::{Context, Result};
     use ash::vk;
     use std::{ffi::CString, slice};
@@ -1925,7 +1932,7 @@ mod pipeline {
             extent: vk::Extent2D,
             render_pass: vk::RenderPass,
             descriptor_set_layout: vk::DescriptorSetLayout,
-            config: &RendererConfig,
+            shaders: &[Shader],
         ) -> Result<Self> {
             log::debug!("creating graphics pipeline");
 
@@ -1933,8 +1940,17 @@ mod pipeline {
             let device = &device.logical_device;
 
             // Shader Stages
-            let vertex_shader_module = config.shaders.vertex_shader_module(device)?;
-            let fragment_shader_module = config.shaders.fragment_shader_module(device)?;
+            // TODO: Make shaders configuration more flexible
+            let vertex_shader_module = shaders
+                .iter()
+                .find(|shader| shader.ty == ShaderType::Vertex)
+                .context("failed to find a valid vertex shader")?
+                .create_shader_module(device)?;
+            let fragment_shader_module = shaders
+                .iter()
+                .find(|shader| shader.ty == ShaderType::Fragment)
+                .context("failed to find a valid fragment shader")?
+                .create_shader_module(device)?;
 
             let shader_entry_name = CString::new("main")?;
             let shader_stages = [
@@ -2096,37 +2112,20 @@ mod pipeline {
 }
 
 mod shader {
-    use crate::renderer::Shaders;
+    use crate::renderer::Shader;
     use anyhow::{bail, Context, Result};
     use ash::vk;
 
-    impl Shaders {
-        /// Create a Vertex [`vk::ShaderModule`] instance.
-        pub(crate) fn vertex_shader_module(
-            &self,
-            device: &ash::Device,
-        ) -> Result<vk::ShaderModule> {
-            Self::create_shader_module(device, &self.vertex)
-        }
-
-        /// Create a Fragment [`vk::ShaderModule`] instance.
-        pub(crate) fn fragment_shader_module(
-            &self,
-            device: &ash::Device,
-        ) -> Result<vk::ShaderModule> {
-            Self::create_shader_module(device, &self.fragment)
-        }
-
+    impl Shader {
         /// Create a [`vk::ShaderModule`] instance from bytecode.
         pub(crate) fn create_shader_module(
+            &self,
             device: &ash::Device,
-            bytecode: &[u8],
         ) -> Result<vk::ShaderModule> {
             log::debug!("creating shader module");
 
-            let bytecode = bytecode.to_vec();
             // SAFETY: We check for prefix/suffix below and bail if not aligned correctly.
-            let (prefix, code, suffix) = unsafe { bytecode.align_to::<u32>() };
+            let (prefix, code, suffix) = unsafe { self.bytes.align_to::<u32>() };
             if !prefix.is_empty() || !suffix.is_empty() {
                 bail!("shader bytecode is not properly aligned.");
             }

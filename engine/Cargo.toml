@@ -1,5 +1,5 @@
 [package]
-name = "echoes_engine"
+name = "pix-engine"
 authors = ["Luke Petherbridge <me@lukeworks.tech>"]
 categories = ["game-development", "game-engines", "graphics", "gui", "rendering"]
 description = "A cross-platform, hot-reloadable graphics/game engine for simple games, visualizations, and graphics applications."
@@ -23,13 +23,14 @@ opengl = []
 [dependencies]
 anyhow = { workspace = true }
 ash = { version = "0.37.1", features = ["linked"], optional = true }
+bitflags = "1.3.2"
 cfg-if = "1.0.0"
 derive_more = "0.99.17"
 env_logger = { workspace = true }
 log = { workspace = true }
 png = "0.17.6"
+thiserror = "1.0.38"
 tobj = "3.2.3"
-tokio = { version = "1.23.0", features = ["full"] }
 winit = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

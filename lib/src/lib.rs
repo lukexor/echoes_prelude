@@ -1,4 +1,4 @@
-//! Hot-reloadable library crate for `echoes_prelude`.
+//! Hot-reloadable library for `echoes_prelude`.
 
 #![warn(
     anonymous_parameters,
@@ -37,35 +37,37 @@
     variant_size_differences
 )]
 
-use thiserror::Error;
+pub mod game;
+pub mod logger;
 
-#[macro_use]
-pub mod profiling;
-pub mod config;
-pub mod context;
-pub mod core;
-pub mod event;
-pub mod input;
-pub mod math;
-pub mod platform;
-pub mod renderer;
+// pub use is required all exposed types for `hot_lib_reloader`
+pub use anyhow::Result;
+pub use game::Game;
+use pix_engine::{context::Context, prelude::Event};
+pub use winit::window::Window;
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
+#[no_mangle]
+/// Initializes the logger correctly when the hot_reload is enabled.
+pub fn initialize_logger() {
+    let _ = logger::initialize();
 }
 
-pub mod prelude {
-    pub use crate::{
-        config::Config,
-        context::Context,
-        core::{Engine, Update},
-        event::{
-            ControllerAxis, ControllerButton, Event, InputState, KeyCode, ModifierKeys, MouseButton,
-        },
-        renderer::{Renderer, Shader, ShaderType},
-    };
+#[no_mangle]
+pub fn update(game: &mut Game, delta_time: f32, cx: &mut Context) -> Result<()> {
+    game.update(delta_time, cx)
+}
+
+#[no_mangle]
+pub fn render(game: &mut Game, delta_time: f32, cx: &mut Context) -> Result<()> {
+    game.render(delta_time, cx)
+}
+
+#[no_mangle]
+pub fn audio_samples(game: &mut Game) -> Result<Vec<f32>> {
+    game.audio_samples()
+}
+
+#[no_mangle]
+pub fn on_event(game: &mut Game, event: Event, cx: &mut Context) {
+    game.on_event(event, cx);
 }

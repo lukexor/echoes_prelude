@@ -5,7 +5,7 @@
     clippy::branches_sharing_code,
     clippy::map_unwrap_or,
     clippy::match_wildcard_for_single_variants,
-    clippy::missing_errors_doc,
+    // clippy::missing_errors_doc,
     clippy::must_use_candidate,
     clippy::needless_for_each,
     clippy::redundant_closure_for_method_calls,
@@ -18,7 +18,7 @@
     future_incompatible,
     missing_copy_implementations,
     missing_debug_implementations,
-    missing_docs,
+    // missing_docs,
     nonstandard_style,
     rust_2018_compatibility,
     rust_2018_idioms,
@@ -37,27 +37,20 @@
 )]
 
 use anyhow::Result;
-use winit::{
-    dpi::LogicalSize,
-    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
-    event_loop::EventLoop,
-    window::WindowBuilder,
-};
+use pix_engine::prelude::*;
 
-use echoes_engine::renderer::{RendererConfig, Shaders};
 #[cfg(not(feature = "hot_reload"))]
-use echoes_engine::*;
+use echoes_prelude_lib::*;
 #[cfg(feature = "hot_reload")]
-use hot_echoes_engine::*;
+use hot_echoes_prelude_lib::*;
 
 #[cfg(feature = "hot_reload")]
 #[hot_lib_reloader::hot_module(
-    dylib = "echoes_engine",
-    // TODO: See if there's a way to make this optional
+    dylib = "echoes_prelude_lib",
     lib_dir = concat!(env!("CARGO_TARGET_DIR"), "/debug")
 )]
-mod hot_echoes_engine {
-    pub(crate) use echoes_engine::*;
+mod hot_echoes_prelude_lib {
+    pub(crate) use echoes_prelude_lib::*;
     hot_functions_from_file!("engine/src/lib.rs");
 
     #[lib_change_subscription]
@@ -69,86 +62,58 @@ const APPLICATION_NAME: &str = "Echoes: Prelude";
 const WINDOW_WIDTH: u32 = 1440;
 const WINDOW_HEIGHT: u32 = 900;
 
-const VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.vert.spv"));
-const FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/primary.frag.spv"));
+const VERTEX_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.vert.spv");
+const FRAGMENT_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.frag.spv");
 
-#[tokio::main]
-async fn main() -> Result<()> {
+// TODO: async io
+fn main() -> pix_engine::Result<()> {
     logger::initialize()?;
+
+    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
     #[cfg(feature = "hot_reload")]
     initialize_logger(); // Required to properly initialize logger with hot_reload
 
-    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
-
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title(APPLICATION_NAME)
-        .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
-        .build(&event_loop)?;
-
-    let application = Application::initialize(
-        APPLICATION_NAME.into(),
-        &window,
-        RendererConfig {
-            depth_stencil: false,
-            shaders: Shaders::new(VERTEX_SHADER, FRAGMENT_SHADER),
-        },
-    )?;
-
-    main_loop(application, event_loop, window).await;
-
-    Ok(())
+    let application = Application::initialize()?;
+    let engine = Engine::builder()
+        .title(APPLICATION_NAME)
+        .dimensions(WINDOW_WIDTH, WINDOW_HEIGHT)
+        .shader(Shader::vertex("primary", VERTEX_SHADER)?)
+        .shader(Shader::fragment("primary", FRAGMENT_SHADER)?)
+        .build()?;
+    Engine::run(engine, application)
 }
 
-async fn main_loop(mut engine: Application, event_loop: EventLoop<()>, window: Window) {
-    log::info!("application started");
+#[derive(Debug)]
+#[must_use]
+pub struct Application {
+    game: Game,
+}
 
-    // TODO: Need custom event loop to make it async
-    event_loop.run(move |event, _window_target, control_flow| {
-        control_flow.set_poll();
+impl Application {
+    pub fn initialize() -> Result<Self> {
+        let game = Game::initialize()?;
+        Ok(Self { game })
+    }
+}
 
-        log::trace!("received event: {event:?}");
-        match event {
-            Event::MainEventsCleared if engine.is_running() => {
-                if let Err(err) = update_and_render(&mut engine, &window) {
-                    log::error!("failed to render: {err}");
-                    control_flow.set_exit_with_code(1);
-                }
-            }
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(size) => engine.on_resized(size.width, size.height),
-                WindowEvent::KeyboardInput { input, .. } => {
-                    #[cfg(debug_assertions)]
-                    if matches!(
-                        (input.virtual_keycode, input.state),
-                        (Some(VirtualKeyCode::Escape), ElementState::Pressed)
-                    ) {
-                        control_flow.set_exit();
-                    }
-                    engine.on_key_input(input);
-                }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    engine.on_mouse_input(state, button);
-                }
-                WindowEvent::MouseWheel { delta, phase, .. } => engine.on_mouse_wheel(delta, phase),
-                WindowEvent::CursorMoved { position, .. } => {
-                    engine.on_mouse_motion(position.x as f32, position.y as f32);
-                }
-                WindowEvent::ModifiersChanged(state) => engine.on_modifiers_changed(state),
-                WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                    log::debug!("window closed or destroyed");
-                    control_flow.set_exit();
-                }
-                _ => (),
-            },
-            Event::DeviceEvent { event: _, .. } => {
-                // TODO: device events for controllers
-            }
-            Event::LoopDestroyed => {
-                log::info!("shutting down...");
-                control_flow.set_exit();
-            }
-            _ => (),
-        }
-    });
+impl Update for Application {
+    fn on_start(&mut self, _cx: &mut Context) -> pix_engine::Result<()> {
+        log::info!("application started");
+        Ok(())
+    }
+
+    fn on_update(&mut self, delta_time: f32, cx: &mut Context) -> pix_engine::Result<()> {
+        update(&mut self.game, delta_time, cx)?;
+        render(&mut self.game, delta_time, cx)?;
+        let _ = audio_samples(&mut self.game)?;
+        Ok(())
+    }
+
+    fn on_stop(&mut self, _cx: &mut Context) {
+        log::info!("application shutting down");
+    }
+
+    fn on_event(&mut self, event: Event, cx: &mut Context) {
+        on_event(&mut self.game, event, cx);
+    }
 }

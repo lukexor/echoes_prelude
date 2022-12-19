@@ -1,7 +1,12 @@
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use cfg_if::cfg_if;
-use std::time::Duration;
-use winit::{dpi::PhysicalSize, window::Window};
+use std::{
+    borrow::Cow,
+    fmt, fs,
+    io::{BufReader, Read},
+    path::Path,
+};
+use winit::window::Window;
 
 cfg_if! {
     if #[cfg(feature = "vulkan")] {
@@ -23,32 +28,22 @@ cfg_if! {
 }
 
 pub trait RendererBackend: Sized {
-    // TODO: instead of just shaders, have this be generic platform state?
-    fn initialize(application_name: &str, window: &Window, config: RendererConfig) -> Result<Self>;
+    fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self>;
     fn shutdown(&mut self) -> Result<()>;
     fn on_resized(&mut self, width: u32, height: u32);
-    fn begin_frame(&mut self, delta_time: Duration) -> Result<()>;
-    fn end_frame(&mut self, delta_time: Duration) -> Result<()>;
+    fn begin_frame(&mut self, delta_time: f32) -> Result<()>;
+    fn end_frame(&mut self, delta_time: f32) -> Result<()>;
 }
 
 #[derive(Debug)]
 pub struct Renderer {
     context: Context,
-    width: u32,
-    height: u32,
 }
 
 impl Renderer {
-    pub fn initialize(
-        application_name: &str,
-        window: &Window,
-        config: RendererConfig,
-    ) -> Result<Self> {
-        let PhysicalSize { width, height } = window.inner_size();
+    pub fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self> {
         Ok(Self {
-            context: Context::initialize(application_name, window, config)?,
-            width,
-            height,
+            context: Context::initialize(application_name, window, shaders)?,
         })
     }
 
@@ -57,11 +52,7 @@ impl Renderer {
     }
 
     pub fn on_resized(&mut self, width: u32, height: u32) {
-        if self.width != width || self.height != height {
-            self.width = width;
-            self.height = height;
-            self.context.on_resized(width, height);
-        }
+        self.context.on_resized(width, height);
     }
 
     pub fn draw_frame(&mut self, render_state: RenderState) -> Result<()> {
@@ -73,33 +64,66 @@ impl Renderer {
     }
 }
 
+// TODO: Make fields private
 #[derive(Debug, Copy, Clone)]
 #[must_use]
 pub struct RenderState {
-    pub(crate) delta_time: Duration,
+    pub delta_time: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[must_use]
-pub struct RendererConfig {
-    // TODO: Make these fields private with a builder/constructor
-    pub depth_stencil: bool,
-    // TODO: make passing in shaders more generic
-    pub shaders: Shaders,
+pub enum ShaderType {
+    Vertex,
+    Fragment,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[must_use]
-pub struct Shaders {
-    vertex: Vec<u8>,
-    fragment: Vec<u8>,
+pub struct Shader {
+    name: Cow<'static, str>,
+    ty: ShaderType,
+    bytes: Vec<u8>,
 }
 
-impl Shaders {
-    pub fn new(vertex: &[u8], fragment: &[u8]) -> Self {
+impl fmt::Debug for Shader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Shader")
+            .field("name", &self.name)
+            .field("ty", &self.ty)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Shader {
+    pub fn from_bytes(name: impl Into<Cow<'static, str>>, ty: ShaderType, bytes: Vec<u8>) -> Self {
         Self {
-            vertex: vertex.to_vec(),
-            fragment: fragment.to_vec(),
+            name: name.into(),
+            ty,
+            bytes,
         }
+    }
+
+    pub fn from_path(
+        name: impl Into<Cow<'static, str>>,
+        ty: ShaderType,
+        path: impl AsRef<Path>,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+        let mut file = BufReader::new(
+            fs::File::open(path).with_context(|| format!("failed to open shader: {path:?}"))?,
+        );
+        let mut bytes = vec![];
+        file.read_to_end(&mut bytes)
+            .with_context(|| format!("failed to read shader: {path:?}"))?;
+        Ok(Self::from_bytes(name, ty, bytes))
+    }
+
+    pub fn vertex(name: impl Into<Cow<'static, str>>, path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_path(name, ShaderType::Vertex, path)
+    }
+
+    pub fn fragment(name: impl Into<Cow<'static, str>>, path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_path(name, ShaderType::Fragment, path)
     }
 }
