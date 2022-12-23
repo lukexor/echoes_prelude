@@ -322,7 +322,7 @@ impl Drop for Context {
     /// Cleans up all Vulkan resources.
     fn drop(&mut self) {
         if let Err(err) = self.shutdown() {
-            log::error!("failed to shutdown vulkan context: {err}");
+            log::error!("failed to destroy vulkan context: {err}");
         }
     }
 }
@@ -853,7 +853,7 @@ mod surface {
             let loader = khr::Surface::new(entry, instance);
             let PhysicalSize { width, height } = window.inner_size();
 
-            log::debug!("vulkan surface created successfully");
+            log::debug!("surface created successfully");
 
             Ok(Self {
                 handle,
@@ -911,8 +911,12 @@ mod device {
 
             let (physical_device, queue_family_indices, info) =
                 Self::select_physical_device(instance, surface)?;
-            let logical_device =
-                Self::create_logical_device(instance, physical_device, &queue_family_indices)?;
+            let logical_device = Self::create_logical_device(
+                instance,
+                physical_device,
+                &queue_family_indices,
+                &info,
+            )?;
 
             log::debug!("created device successfully");
 
@@ -1326,13 +1330,13 @@ mod device {
             .into_iter()
             .filter_map(|physical_device| {
                 let (queue_family_indices, info) = DeviceInfo::query(instance, physical_device, surface);
-                log::debug!("Device Information:\nName: {}\nRating: {}\nQueue Family Indices: {:?}\nSwapchain Support: {}\nAnsiotropy Support: {}\nExtension Support: {}",
+                log::debug!("Device Information:\nName: {}\nRating: {}\nQueue Family Indices: {:?}\nSwapchain Support: {}\nAnsiotropy Support: {}\nExtensions Supported: {:?}",
                     &info.name,
                     info.rating,
                     &queue_family_indices,
                     info.swapchain_support.is_some(),
                     info.sampler_anisotropy_support,
-                    info.extension_support,
+                    info.extensions_supported,
                 );
                 (info.rating > 0).then_some((physical_device, queue_family_indices, info))
             })
@@ -1352,6 +1356,7 @@ mod device {
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
             queue_family_indices: &QueueFamilyIndices,
+            info: &DeviceInfo,
         ) -> Result<ash::Device> {
             log::debug!("creating logical device");
 
@@ -1374,12 +1379,11 @@ mod device {
                 #[cfg(debug_assertions)]
                 VALIDATION_LAYER_NAME.as_ptr(),
             ];
-            let enabled_extension_names = platform::required_device_extensions();
             let device_create_info = vk::DeviceCreateInfo::builder()
                 .queue_create_infos(&queue_create_infos)
                 .enabled_features(&enabled_features)
                 .enabled_layer_names(&enabled_layer_names)
-                .enabled_extension_names(&enabled_extension_names);
+                .enabled_extension_names(&info.extensions_supported);
             // SAFETY: All create_info values are set correctly above with valid lifetimes.
             let device =
                 unsafe { instance.create_device(physical_device, &device_create_info, None) }
@@ -1416,7 +1420,7 @@ mod device {
         pub(crate) rating: u32,
         pub(crate) msaa_samples: vk::SampleCountFlags,
         pub(crate) swapchain_support: Option<SwapchainSupport>,
-        pub(crate) extension_support: bool,
+        pub(crate) extensions_supported: Vec<*const i8>,
         pub(crate) sampler_anisotropy_support: bool,
     }
 
@@ -1464,8 +1468,9 @@ mod device {
             let name = unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }
                 .to_string_lossy()
                 .to_string();
-            let extension_support = Self::supports_required_extensions(instance, physical_device);
-            if !extension_support
+            let extensions_supported =
+                Self::supported_required_extensions(instance, physical_device);
+            if extensions_supported.is_empty()
                 || swapchain_support.is_none()
                 || !QueueFamily::is_complete(&queue_family_indices)
             {
@@ -1483,7 +1488,7 @@ mod device {
                     rating,
                     msaa_samples,
                     swapchain_support,
-                    extension_support,
+                    extensions_supported,
                     sampler_anisotropy_support: features.sampler_anisotropy == 1,
                 },
             )
@@ -1523,16 +1528,16 @@ mod device {
         }
 
         /// Whether a [`vk::PhysicalDevice`] supports the required device extensions for this platform.
-        fn supports_required_extensions(
+        fn supported_required_extensions(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
-        ) -> bool {
             // SAFETY: TODO
+        ) -> Vec<*const i8> {
             let device_extensions =
                 unsafe { instance.enumerate_device_extension_properties(physical_device) };
             let Ok(device_extensions) = device_extensions else {
                 log::error!("failed to enumerate device extensions");
-                return false;
+                return vec![];
             };
             let extension_names = device_extensions
                 .iter()
@@ -1541,12 +1546,7 @@ mod device {
                     CStr::from_ptr(extension_properties.extension_name.as_ptr())
                 })
                 .collect::<HashSet<_>>();
-            platform::required_device_extensions()
-                .iter()
-                // SAFETY: required_device_extensions are static strings provided by Ash and are valid
-                // CStrs.
-                .map(|&extension| unsafe { CStr::from_ptr(extension) })
-                .all(|extension| extension_names.contains(extension))
+            platform::required_device_extensions(&extension_names)
         }
     }
 
@@ -2543,7 +2543,7 @@ mod image {
                 .optimal_tiling_features
                 .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
             {
-                bail!("vulkan device does not support linear blitting!");
+                bail!("device does not support linear blitting!");
             }
 
             // Mipmap
@@ -3205,7 +3205,7 @@ mod debug {
             let messenger =
                 unsafe { utils.create_debug_utils_messenger(&debug_create_info, None)? };
 
-            log::debug!("vulkan debug utils created successfully");
+            log::debug!("debug utils created successfully");
 
             Ok(Self { utils, messenger })
         }
@@ -3269,6 +3269,8 @@ mod platform {
         extensions::{ext, khr, mvk},
         vk, Entry, Instance,
     };
+    use std::collections::HashSet;
+    use std::ffi::CStr;
     use winit::window::Window;
 
     /// Return a list of enabled Vulkan [ash::Instance] extensions for macOS.
@@ -3408,17 +3410,25 @@ mod platform {
 
     /// Return a list of required [`vk::PhysicalDevice`] extensions for macOS.
     #[cfg(target_os = "macos")]
-    pub(crate) fn required_device_extensions() -> Vec<*const i8> {
-        vec![
+    pub(crate) fn required_device_extensions(
+        supported_extensions: &HashSet<&CStr>,
+    ) -> Vec<*const i8> {
+        let mut required_extensions = vec![
             khr::Swapchain::name().as_ptr(),
             vk::KhrPortabilitySubsetFn::name().as_ptr(),
-        ]
+        ];
+        if supported_extensions.contains(ext::MetalSurface::name()) {
+            required_extensions.push(ext::MetalSurface::name().as_ptr());
+        }
+        required_extensions
     }
 
     /// Return a list of required [`vk::PhysicalDevice`] extensions for all platforms other than
     /// macOS.
     #[cfg(not(target_os = "macos"))]
-    pub(crate) fn required_device_extensions() -> Vec<*const i8> {
+    pub(crate) fn required_device_extensions(
+        _supported_extensions: &HashSet<&CStr>,
+    ) -> Vec<*const i8> {
         vec![khr::Swapchain::name().as_ptr()]
     }
 }
