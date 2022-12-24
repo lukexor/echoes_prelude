@@ -29,7 +29,7 @@ cfg_if! {
 
 pub trait RendererBackend: Sized {
     fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self>;
-    fn shutdown(&mut self) -> Result<()>;
+    fn destroy(&mut self);
     fn on_resized(&mut self, width: u32, height: u32);
     fn begin_frame(&mut self, delta_time: f32) -> Result<()>;
     fn end_frame(&mut self, delta_time: f32) -> Result<()>;

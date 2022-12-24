@@ -2,6 +2,7 @@ use super::{RendererBackend, Shader};
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
 use std::{
+    collections::HashSet,
     ffi::{c_void, CStr, CString},
     fmt,
     mem::size_of,
@@ -191,7 +192,7 @@ impl RendererBackend for Context {
     }
 
     /// Shutdown the Vulkan `Context`, freeing any resources.
-    fn shutdown(&mut self) -> Result<()> {
+    fn destroy(&mut self) {
         log::info!("destroying vulkan context");
 
         // NOTE: Drop-order is important!
@@ -202,7 +203,7 @@ impl RendererBackend for Context {
         // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
         //    the only way to construct a Context with all values initialized.
         unsafe {
-            self.destroy_swapchain()?;
+            self.destroy_swapchain();
 
             let device = &self.device.logical_device;
             self.syncs.destroy(device);
@@ -222,8 +223,6 @@ impl RendererBackend for Context {
         }
 
         log::info!("destroyed vulkan context");
-
-        Ok(())
     }
 
     /// Handle window resized event.
@@ -321,9 +320,7 @@ impl RendererBackend for Context {
 impl Drop for Context {
     /// Cleans up all Vulkan resources.
     fn drop(&mut self) {
-        if let Err(err) = self.shutdown() {
-            log::error!("failed to destroy vulkan context: {err}");
-        }
+        self.destroy();
     }
 }
 
@@ -530,20 +527,34 @@ impl Context {
                 layer_name == VALIDATION_LAYER_NAME
             })
         {
-            bail!("validation layer requested but is unsupported");
+            bail!("validation layer is not supported");
         }
 
         // Instance Creation
+        let required_extensions = platform::required_extensions();
+        let available_extensions = entry
+            .enumerate_instance_extension_properties(None)
+            .context("failed to enumerate instance extension properties")?
+            .iter()
+            .map(|extension_properties| unsafe {
+                CStr::from_ptr(extension_properties.extension_name.as_ptr())
+            })
+            .collect::<HashSet<_>>();
+        if !required_extensions.iter().all(|&extension| {
+            let extension_name = unsafe { CStr::from_ptr(extension) };
+            available_extensions.contains(extension_name)
+        }) {
+            bail!("required vulkan extensions are not supported");
+        }
         let enabled_layer_names = [
             #[cfg(debug_assertions)]
             VALIDATION_LAYER_NAME.as_ptr(),
         ];
-        let enabled_extension_names = platform::enabled_extension_names();
         let instance_create_flags = platform::instance_create_flags();
         let mut create_info = vk::InstanceCreateInfo::builder()
             .application_info(&application_info)
+            .enabled_extension_names(&required_extensions)
             .enabled_layer_names(&enabled_layer_names)
-            .enabled_extension_names(&enabled_extension_names)
             .flags(instance_create_flags);
 
         // Debug Creation
@@ -730,7 +741,7 @@ impl Context {
     fn recreate_swapchain(&mut self, width: u32, height: u32) -> Result<()> {
         log::debug!("re-creating swapchain for {width}x{height}");
 
-        self.destroy_swapchain()?;
+        self.destroy_swapchain();
 
         self.device.update(&self.surface)?;
         self.swapchain =
@@ -783,14 +794,17 @@ impl Context {
 
     /// Destroys the current [`vk::SwapchainKHR`] and associated [`vk::ImageView`]s. Used to clean
     /// up Vulkan when dropped and to re-create swapchain on window resize.
-    fn destroy_swapchain(&mut self) -> Result<()> {
+    fn destroy_swapchain(&mut self) {
         // SAFETY: TODO
         log::debug!("destroying swapchain");
 
         unsafe {
             // TODO: Instead of pausing, and destroying and re-creating entirely, try to use the
             // previous swapchain to recreate and then destroy it when it's finished being used.
-            self.device.wait_idle()?;
+            if self.device.wait_idle().is_err() {
+                log::error!("failed to wait for device idle");
+                return;
+            };
 
             let device = &self.device.logical_device;
 
@@ -810,8 +824,6 @@ impl Context {
         }
 
         log::debug!("destroyed swapchain succesfully");
-
-        Ok(())
     }
 }
 
@@ -1336,7 +1348,7 @@ mod device {
                     &queue_family_indices,
                     info.swapchain_support.is_some(),
                     info.sampler_anisotropy_support,
-                    info.extensions_supported,
+                    info.supported_extensions,
                 );
                 (info.rating > 0).then_some((physical_device, queue_family_indices, info))
             })
@@ -1373,7 +1385,7 @@ mod device {
                 })
                 .collect::<Vec<vk::DeviceQueueCreateInfo>>();
             let enabled_features = vk::PhysicalDeviceFeatures::builder()
-                .sampler_anisotropy(true)
+                .sampler_anisotropy(false) // TODO: Make configurable
                 .sample_rate_shading(true);
             let enabled_layer_names = [
                 #[cfg(debug_assertions)]
@@ -1383,7 +1395,7 @@ mod device {
                 .queue_create_infos(&queue_create_infos)
                 .enabled_features(&enabled_features)
                 .enabled_layer_names(&enabled_layer_names)
-                .enabled_extension_names(&info.extensions_supported);
+                .enabled_extension_names(&info.supported_extensions);
             // SAFETY: All create_info values are set correctly above with valid lifetimes.
             let device =
                 unsafe { instance.create_device(physical_device, &device_create_info, None) }
@@ -1420,7 +1432,7 @@ mod device {
         pub(crate) rating: u32,
         pub(crate) msaa_samples: vk::SampleCountFlags,
         pub(crate) swapchain_support: Option<SwapchainSupport>,
-        pub(crate) extensions_supported: Vec<*const i8>,
+        pub(crate) supported_extensions: Vec<*const i8>,
         pub(crate) sampler_anisotropy_support: bool,
     }
 
@@ -1468,9 +1480,9 @@ mod device {
             let name = unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }
                 .to_string_lossy()
                 .to_string();
-            let extensions_supported =
+            let supported_extensions =
                 Self::supported_required_extensions(instance, physical_device);
-            if extensions_supported.is_empty()
+            if supported_extensions.is_empty()
                 || swapchain_support.is_none()
                 || !QueueFamily::is_complete(&queue_family_indices)
             {
@@ -1488,7 +1500,7 @@ mod device {
                     rating,
                     msaa_samples,
                     swapchain_support,
-                    extensions_supported,
+                    supported_extensions,
                     sampler_anisotropy_support: features.sampler_anisotropy == 1,
                 },
             )
@@ -1547,6 +1559,12 @@ mod device {
                 })
                 .collect::<HashSet<_>>();
             platform::required_device_extensions(&extension_names)
+                .into_iter()
+                .filter(|&extension| {
+                    let extension_name = unsafe { CStr::from_ptr(extension) };
+                    extension_names.contains(extension_name)
+                })
+                .collect::<Vec<_>>()
         }
     }
 
@@ -3275,7 +3293,7 @@ mod platform {
 
     /// Return a list of enabled Vulkan [ash::Instance] extensions for macOS.
     #[cfg(target_os = "macos")]
-    pub(crate) fn enabled_extension_names() -> Vec<*const i8> {
+    pub(crate) fn required_extensions() -> Vec<*const i8> {
         vec![
             khr::Surface::name().as_ptr(),
             #[cfg(debug_assertions)]
