@@ -46,7 +46,7 @@ pub(crate) struct Context {
     device: Device,
     swapchain: Swapchain,
     render_pass: vk::RenderPass,
-    command_pools: Vec<CommandPool>,
+    command_pool: CommandPool,
 
     textures: Vec<Image>,
     sampler: vk::Sampler,
@@ -91,24 +91,24 @@ impl RendererBackend for Context {
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
-        let command_pools = Self::create_command_pools(&device, &swapchain)?;
+        let command_pool = Self::create_command_pool(&device, &swapchain)?;
 
         let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
         let texture = Image::create_texture(
             "viking_room",
             &instance,
             &device,
-            &command_pools[0],
+            &command_pool,
             graphics_queue,
             "assets/viking_room.png",
             #[cfg(debug_assertions)]
             &debug,
         )?;
-        let sampler = Image::create_sampler(&device.logical_device, texture.mip_levels)?;
+        let sampler = Image::create_sampler(&device.handle, texture.mip_levels)?;
 
         let uniform_buffers = device.create_uniform_buffers(&swapchain)?;
         let descriptor = Descriptor::create(
-            &device.logical_device,
+            &device.handle,
             &swapchain,
             &uniform_buffers,
             texture.view,
@@ -145,11 +145,11 @@ impl RendererBackend for Context {
 
         let model = Model::load("viking_room", "assets/viking_room.obj")?;
         let vertex_buffer =
-            device.create_vertex_buffer(&command_pools[0], graphics_queue, &model.vertices)?;
+            device.create_vertex_buffer(&command_pool, graphics_queue, &model.vertices)?;
         let index_buffer =
-            device.create_index_buffer(&command_pools[0], graphics_queue, &model.indices)?;
+            device.create_index_buffer(&command_pool, graphics_queue, &model.indices)?;
 
-        let syncs = Syncs::create(&device.logical_device, &swapchain)?;
+        let syncs = Syncs::create(&device.handle, &swapchain)?;
 
         log::info!("initialized vulkan renderer backend successfully");
 
@@ -170,7 +170,7 @@ impl RendererBackend for Context {
             device,
             swapchain,
             render_pass,
-            command_pools,
+            command_pool,
 
             textures: vec![texture],
             sampler,
@@ -205,7 +205,7 @@ impl RendererBackend for Context {
         unsafe {
             self.destroy_swapchain();
 
-            let device = &self.device.logical_device;
+            let device = &self.device.handle;
             self.syncs.destroy(device);
             self.index_buffer.destroy(device);
             self.vertex_buffer.destroy(device);
@@ -213,9 +213,7 @@ impl RendererBackend for Context {
             self.textures
                 .iter()
                 .for_each(|texture| texture.destroy(device));
-            self.command_pools
-                .iter()
-                .for_each(|command_pool| command_pool.destroy(device));
+            self.command_pool.destroy(device);
             device.destroy_device(None);
             self.surface.destroy();
             self.debug.destroy();
@@ -271,7 +269,7 @@ impl RendererBackend for Context {
 
         let wait_semaphores = [self.syncs.images_available[self.frame]];
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = [self.command_pools[image_index].buffers[0]];
+        let command_buffers = [self.command_pool.buffers[image_index]];
         let signal_semaphores = [self.syncs.renders_finished[self.frame]];
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(&wait_semaphores)
@@ -327,20 +325,17 @@ impl Drop for Context {
 impl Context {
     // TODO: refactor
     unsafe fn update_command_buffer(&mut self, image_index: usize) -> Result<()> {
-        // Reset
-        let pool = self.command_pools[image_index].handle;
+        let buffer = self.command_pool.buffers[image_index];
         self.device
-            .logical_device
-            .reset_command_pool(pool, vk::CommandPoolResetFlags::empty())?;
-
-        let buffer = self.command_pools[image_index].buffers[0];
+            .handle
+            .reset_command_buffer(buffer, vk::CommandBufferResetFlags::empty())?;
 
         // Commands
         let command_begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
         self.device
-            .logical_device
+            .handle
             .begin_command_buffer(buffer, &command_begin_info)?;
 
         let color_clear_value = vk::ClearValue {
@@ -366,7 +361,7 @@ impl Context {
             )
             .clear_values(&clear_values);
 
-        self.device.logical_device.cmd_begin_render_pass(
+        self.device.handle.cmd_begin_render_pass(
             buffer,
             &render_pass_info,
             vk::SubpassContents::SECONDARY_COMMAND_BUFFERS,
@@ -374,12 +369,12 @@ impl Context {
 
         let secondary_command_buffer = self.update_secondary_command_buffer(image_index, 0)?;
         self.device
-            .logical_device
+            .handle
             .cmd_execute_commands(buffer, slice::from_ref(&secondary_command_buffer));
 
-        self.device.logical_device.cmd_end_render_pass(buffer);
+        self.device.handle.cmd_end_render_pass(buffer);
 
-        self.device.logical_device.end_command_buffer(buffer)?;
+        self.device.handle.end_command_buffer(buffer)?;
 
         Ok(())
     }
@@ -390,10 +385,10 @@ impl Context {
         image_index: usize,
         model_index: usize,
     ) -> Result<vk::CommandBuffer> {
-        let device = &self.device.logical_device;
+        let device = &self.device.handle;
 
-        let pool = self.command_pools[image_index].handle;
-        let buffers = &mut self.command_pools[image_index].secondary_buffers;
+        let pool = self.command_pool.handle;
+        let buffers = &mut self.command_pool.secondary_buffers;
         buffers.clear();
         while model_index >= buffers.len() {
             let allocate_info = vk::CommandBufferAllocateInfo::builder()
@@ -468,7 +463,7 @@ impl Context {
 
     // TODO: refactor
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
-        let device = &self.device.logical_device;
+        let device = &self.device.handle;
 
         // View / Projection
         let view = Matrix::look_at(
@@ -661,7 +656,7 @@ impl Context {
 
         let render_pass = unsafe {
             device
-                .logical_device
+                .handle
                 .create_render_pass(&render_pass_create_info, None)
         }
         .context("failed to create render pass")?;
@@ -695,7 +690,7 @@ impl Context {
                 // SAFETY: TODO
                 unsafe {
                     device
-                        .logical_device
+                        .handle
                         .create_framebuffer(&framebuffer_create_info, None)
                 }
                 .context("failed to create framebuffer")
@@ -708,33 +703,16 @@ impl Context {
         Ok(framebuffers)
     }
 
-    /// Create a list of [`CommandPool`]s.
-    fn create_command_pools(device: &Device, swapchain: &Swapchain) -> Result<Vec<CommandPool>> {
-        log::debug!("creating command pools");
+    /// Create a [`CommandPool`].
+    fn create_command_pool(device: &Device, swapchain: &Swapchain) -> Result<CommandPool> {
+        log::debug!("creating command pool");
 
-        // One global pool + one pool for each swapchain image
-        let mut command_pools = Vec::with_capacity(swapchain.images.len() + 1);
-        let buffer_count = 1;
+        let command_pool =
+            CommandPool::create(device, QueueFamily::Graphics, swapchain.images.len() as u32)?;
 
-        // Global Pool
-        command_pools.push(CommandPool::create(
-            device,
-            QueueFamily::Graphics,
-            buffer_count,
-        )?);
+        log::debug!("created command pool successfully");
 
-        // Per-framebuffer Pool
-        for _ in 0..swapchain.images.len() {
-            command_pools.push(CommandPool::create(
-                device,
-                QueueFamily::Graphics,
-                buffer_count,
-            )?);
-        }
-
-        log::debug!("created command pools successfully");
-
-        Ok(command_pools)
+        Ok(command_pool)
     }
 
     /// Destroys the current swapchain and re-creates it with a new width/height.
@@ -750,7 +728,7 @@ impl Context {
             Self::create_render_pass(&self.instance, &self.device, self.swapchain.format)?;
         self.uniform_buffers = self.device.create_uniform_buffers(&self.swapchain)?;
         self.descriptor = Descriptor::create(
-            &self.device.logical_device,
+            &self.device.handle,
             &self.swapchain,
             &self.uniform_buffers,
             self.textures[0].view,
@@ -806,7 +784,7 @@ impl Context {
                 return;
             };
 
-            let device = &self.device.logical_device;
+            let device = &self.device.handle;
 
             self.descriptor.destroy(device);
             self.uniform_buffers
@@ -901,8 +879,8 @@ mod device {
     #[derive(Clone)]
     #[must_use]
     pub(crate) struct Device {
-        pub(crate) physical_device: vk::PhysicalDevice,
-        pub(crate) logical_device: ash::Device,
+        pub(crate) physical: vk::PhysicalDevice,
+        pub(crate) handle: ash::Device,
         pub(crate) queue_family_indices: QueueFamilyIndices,
         pub(crate) info: DeviceInfo,
     }
@@ -933,8 +911,8 @@ mod device {
             log::debug!("created device successfully");
 
             Ok(Self {
-                physical_device,
-                logical_device,
+                physical: physical_device,
+                handle: logical_device,
                 queue_family_indices,
                 info,
             })
@@ -942,7 +920,7 @@ mod device {
 
         /// Updates device capabilities if the window surface changes.
         pub(crate) fn update(&mut self, surface: &Surface) -> Result<()> {
-            self.info.swapchain_support = SwapchainSupport::query(self.physical_device, surface)
+            self.info.swapchain_support = SwapchainSupport::query(self.physical, surface)
                 .map_err(|err| log::error!("{err}"))
                 .ok();
             Ok(())
@@ -952,8 +930,7 @@ mod device {
         pub(crate) fn wait_idle(&self) -> Result<()> {
             log::trace!("waiting for device idle");
             // SAFETY: TODO
-            unsafe { self.logical_device.device_wait_idle() }
-                .context("failed to wait for device idle")
+            unsafe { self.handle.device_wait_idle() }.context("failed to wait for device idle")
         }
 
         /// Waits for the given [vk::Fence]s to be signaled.
@@ -965,19 +942,15 @@ mod device {
         ) -> Result<()> {
             log::trace!("waiting for device fences");
             // SAFETY: TODO
-            unsafe {
-                self.logical_device
-                    .wait_for_fences(fences, wait_all, timeout)
-            }
-            .context("failed to wait for device fence")
+            unsafe { self.handle.wait_for_fences(fences, wait_all, timeout) }
+                .context("failed to wait for device fence")
         }
 
         /// Resets the given [vk::Fence]s.
         pub(crate) fn reset_fences(&self, fences: &[vk::Fence]) -> Result<()> {
             log::trace!("resetting device fences");
             // SAFETY: TODO
-            unsafe { self.logical_device.reset_fences(fences) }
-                .context("failed to reset device fences")
+            unsafe { self.handle.reset_fences(fences) }.context("failed to reset device fences")
         }
 
         /// Submit commands to a [vk::Queue].
@@ -989,14 +962,14 @@ mod device {
         ) -> Result<()> {
             log::trace!("submitting to device queue {queue:?}");
             // SAFETY: TODO
-            unsafe { self.logical_device.queue_submit(queue, submits, fence) }
+            unsafe { self.handle.queue_submit(queue, submits, fence) }
                 .context("failed to submit to device queue {queue:?}")
         }
 
         /// Get a [vk::Queue] handle to a given [`QueueFamily`].
         pub(crate) fn queue_family(&self, family: QueueFamily) -> Result<vk::Queue> {
             Ok(unsafe {
-                self.logical_device.get_device_queue(
+                self.handle.get_device_queue(
                     *self
                         .queue_family_indices
                         .get(&family)
@@ -1060,7 +1033,7 @@ mod device {
             format: vk::Format,
         ) -> vk::FormatProperties {
             // SAFETY: TODO
-            unsafe { instance.get_physical_device_format_properties(self.physical_device, format) }
+            unsafe { instance.get_physical_device_format_properties(self.physical, format) }
         }
 
         /// Creates a [vk::Buffer] with associated [vk::DeviceMemory] for the given parameters.
@@ -1078,27 +1051,20 @@ mod device {
                 .usage(usage)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
             // SAFETY: TODO
-            let buffer = unsafe {
-                self.logical_device
-                    .create_buffer(&buffer_create_info, None)?
-            };
+            let buffer = unsafe { self.handle.create_buffer(&buffer_create_info, None)? };
 
             // Memory
             // SAFETY: TODO
-            let requirements =
-                unsafe { self.logical_device.get_buffer_memory_requirements(buffer) };
+            let requirements = unsafe { self.handle.get_buffer_memory_requirements(buffer) };
             let memory_allocate_info = vk::MemoryAllocateInfo::builder()
                 .allocation_size(requirements.size)
                 .memory_type_index(self.memory_type_index(properties, requirements)?);
 
             // Allocate
             // SAFETY: TODO
-            let memory = unsafe {
-                self.logical_device
-                    .allocate_memory(&memory_allocate_info, None)
-            }
-            .context("failed to allocate buffer memory")?;
-            unsafe { self.logical_device.bind_buffer_memory(buffer, memory, 0) }
+            let memory = unsafe { self.handle.allocate_memory(&memory_allocate_info, None) }
+                .context("failed to allocate buffer memory")?;
+            unsafe { self.handle.bind_buffer_memory(buffer, memory, 0) }
                 .context("failed to bind to buffer memory")?;
 
             log::debug!("created buffer successfully");
@@ -1154,11 +1120,11 @@ mod device {
             // SAFETY: TODO
             unsafe {
                 let memory = self
-                    .logical_device
+                    .handle
                     .map_memory(staging_buffer.memory, 0, size, vk::MemoryMapFlags::empty())
                     .context("failed to map vertex buffer memory")?;
                 ptr::copy_nonoverlapping(vertices.as_ptr(), memory.cast(), vertices.len());
-                self.logical_device.unmap_memory(staging_buffer.memory);
+                self.handle.unmap_memory(staging_buffer.memory);
             }
 
             // Buffer
@@ -1180,9 +1146,8 @@ mod device {
             // Cleanup
             // SAFETY: TODO
             unsafe {
-                self.logical_device
-                    .destroy_buffer(staging_buffer.handle, None);
-                self.logical_device.free_memory(staging_buffer.memory, None);
+                self.handle.destroy_buffer(staging_buffer.handle, None);
+                self.handle.free_memory(staging_buffer.memory, None);
             }
 
             log::debug!("created vertex buffer successfully");
@@ -1214,11 +1179,11 @@ mod device {
             // SAFETY: TODO
             unsafe {
                 let memory = self
-                    .logical_device
+                    .handle
                     .map_memory(staging_buffer.memory, 0, size, vk::MemoryMapFlags::empty())
                     .context("failed to map index buffer memory")?;
                 ptr::copy_nonoverlapping(indices.as_ptr(), memory.cast(), indices.len());
-                self.logical_device.unmap_memory(staging_buffer.memory);
+                self.handle.unmap_memory(staging_buffer.memory);
             }
 
             // Buffer
@@ -1240,9 +1205,8 @@ mod device {
             // Cleanup
             // SAFETY: TODO
             unsafe {
-                self.logical_device
-                    .destroy_buffer(staging_buffer.handle, None);
-                self.logical_device.free_memory(staging_buffer.memory, None);
+                self.handle.destroy_buffer(staging_buffer.handle, None);
+                self.handle.free_memory(staging_buffer.memory, None);
             }
 
             log::debug!("created index buffer successfully");
@@ -1259,12 +1223,12 @@ mod device {
             destination: vk::Buffer,
             size: vk::DeviceSize,
         ) -> Result<()> {
-            let command_buffer = command_pool.begin_one_time_command(&self.logical_device)?;
+            let command_buffer = command_pool.begin_one_time_command(&self.handle)?;
 
             let region = vk::BufferCopy::builder().size(size);
             // SAFETY: TODO
             unsafe {
-                self.logical_device.cmd_copy_buffer(
+                self.handle.cmd_copy_buffer(
                     command_buffer,
                     source,
                     destination,
@@ -1272,7 +1236,7 @@ mod device {
                 );
             };
 
-            command_pool.end_one_time_command(&self.logical_device, command_buffer, queue)?;
+            command_pool.end_one_time_command(&self.handle, command_buffer, queue)?;
             Ok(())
         }
 
@@ -1286,7 +1250,7 @@ mod device {
             width: u32,
             height: u32,
         ) -> Result<()> {
-            let command_buffer = command_pool.begin_one_time_command(&self.logical_device)?;
+            let command_buffer = command_pool.begin_one_time_command(&self.handle)?;
 
             let region = vk::BufferImageCopy::builder()
                 .buffer_offset(0)
@@ -1309,7 +1273,7 @@ mod device {
 
             // SAFETY: TODO
             unsafe {
-                self.logical_device.cmd_copy_buffer_to_image(
+                self.handle.cmd_copy_buffer_to_image(
                     command_buffer,
                     buffer,
                     image,
@@ -1318,7 +1282,7 @@ mod device {
                 );
             }
 
-            command_pool.end_one_time_command(&self.logical_device, command_buffer, queue)?;
+            command_pool.end_one_time_command(&self.handle, command_buffer, queue)?;
 
             Ok(())
         }
@@ -1385,7 +1349,7 @@ mod device {
                 })
                 .collect::<Vec<vk::DeviceQueueCreateInfo>>();
             let enabled_features = vk::PhysicalDeviceFeatures::builder()
-                .sampler_anisotropy(false) // TODO: Make configurable
+                .sampler_anisotropy(true) // TODO: Make configurable
                 .sample_rate_shading(true);
             let enabled_layer_names = [
                 #[cfg(debug_assertions)]
@@ -1839,7 +1803,7 @@ mod swapchain {
                 .image_array_layers(1);
 
             // Create swapchain
-            let swapchain_loader = khr::Swapchain::new(instance, &device.logical_device);
+            let swapchain_loader = khr::Swapchain::new(instance, &device.handle);
             // SAFETY: All create_info values are set correctly above with valid lifetimes.
             let swapchain =
                 unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None) }
@@ -1870,7 +1834,7 @@ mod swapchain {
                         .image(image);
                     unsafe {
                         device
-                            .logical_device
+                            .handle
                             .create_image_view(&image_view_create_info, None)
                     }
                     .context("failed to create image view")
@@ -1955,7 +1919,7 @@ mod pipeline {
             log::debug!("creating graphics pipeline");
 
             let device_info = &device.info;
-            let device = &device.logical_device;
+            let device = &device.handle;
 
             // Shader Stages
             // TODO: Make shaders configuration more flexible
@@ -2212,7 +2176,7 @@ mod image {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
             // SAFETY: TODO
-            let image = unsafe { device.logical_device.create_image(&image_info, None) }
+            let image = unsafe { device.handle.create_image(&image_info, None) }
                 .context("failed to create image")?;
 
             // Debug Name
@@ -2228,21 +2192,20 @@ mod image {
             unsafe {
                 debug
                     .utils
-                    .set_debug_utils_object_name(device.logical_device.handle(), &debug_info)
+                    .set_debug_utils_object_name(device.handle.handle(), &debug_info)
             }
             .context("failed to set debug utils object name")?;
 
             // Memory
 
-            let requirements =
-                unsafe { device.logical_device.get_image_memory_requirements(image) };
+            let requirements = unsafe { device.handle.get_image_memory_requirements(image) };
             let memory_info = vk::MemoryAllocateInfo::builder()
                 .allocation_size(requirements.size)
                 .memory_type_index(device.memory_type_index(properties, requirements)?);
-            let memory = unsafe { device.logical_device.allocate_memory(&memory_info, None) }
+            let memory = unsafe { device.handle.allocate_memory(&memory_info, None) }
                 .context("failed to allocate image memory")?;
             // SAFETY: TODO
-            unsafe { device.logical_device.bind_image_memory(image, memory, 0) }
+            unsafe { device.handle.bind_image_memory(image, memory, 0) }
                 .context("failed to bind image memory")?;
 
             log::debug!("created image successfully");
@@ -2390,12 +2353,12 @@ mod image {
             // SAFETY: TODO
             unsafe {
                 let memory = device
-                    .logical_device
+                    .handle
                     .map_memory(staging_buffer.memory, 0, size, vk::MemoryMapFlags::empty())
                     .context("failed to map staging buffer memory")?;
                 // SAFETY: TODO
                 ptr::copy_nonoverlapping(pixels.as_ptr(), memory.cast(), pixels.len());
-                device.logical_device.unmap_memory(staging_buffer.memory);
+                device.handle.unmap_memory(staging_buffer.memory);
             };
 
             // Texture Image
@@ -2418,7 +2381,7 @@ mod image {
 
             // Transition
             {
-                let command_buffer = command_pool.begin_one_time_command(&device.logical_device)?;
+                let command_buffer = command_pool.begin_one_time_command(&device.handle)?;
                 let image_barrier = vk::ImageMemoryBarrier::builder()
                     .old_layout(vk::ImageLayout::UNDEFINED)
                     .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
@@ -2440,7 +2403,7 @@ mod image {
                 // SAFETY: TODO
                 #[allow(trivial_casts)]
                 unsafe {
-                    device.logical_device.cmd_pipeline_barrier(
+                    device.handle.cmd_pipeline_barrier(
                         command_buffer,
                         vk::PipelineStageFlags::TOP_OF_PIPE,
                         vk::PipelineStageFlags::TRANSFER,
@@ -2451,7 +2414,7 @@ mod image {
                     );
                 };
                 command_pool.end_one_time_command(
-                    &device.logical_device,
+                    &device.handle,
                     command_buffer,
                     graphics_queue,
                 )?;
@@ -2492,7 +2455,7 @@ mod image {
             // Cleanup
             // SAFETY: TODO
             unsafe {
-                staging_buffer.destroy(&device.logical_device);
+                staging_buffer.destroy(&device.handle);
             }
 
             log::debug!("created texture named `{name}` successfully");
@@ -2529,12 +2492,8 @@ mod image {
                         .build(),
                 );
             // SAFETY: TODO
-            let view = unsafe {
-                device
-                    .logical_device
-                    .create_image_view(&view_create_info, None)
-            }
-            .context("failed to create image view")?;
+            let view = unsafe { device.handle.create_image_view(&view_create_info, None) }
+                .context("failed to create image view")?;
 
             log::debug!("created image view successfully");
 
@@ -2565,7 +2524,7 @@ mod image {
             }
 
             // Mipmap
-            let command_buffer = command_pool.begin_one_time_command(&device.logical_device)?;
+            let command_buffer = command_pool.begin_one_time_command(&device.handle)?;
 
             let mut barrier = vk::ImageMemoryBarrier::builder()
                 .image(image)
@@ -2593,7 +2552,7 @@ mod image {
                 // SAFETY: TODO
                 #[allow(trivial_casts)]
                 unsafe {
-                    device.logical_device.cmd_pipeline_barrier(
+                    device.handle.cmd_pipeline_barrier(
                         command_buffer,
                         vk::PipelineStageFlags::TRANSFER,
                         vk::PipelineStageFlags::TRANSFER,
@@ -2640,7 +2599,7 @@ mod image {
 
                 // SAFETY: TODO
                 unsafe {
-                    device.logical_device.cmd_blit_image(
+                    device.handle.cmd_blit_image(
                         command_buffer,
                         image,
                         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -2659,7 +2618,7 @@ mod image {
                 // SAFETY: TODO
                 #[allow(trivial_casts)]
                 unsafe {
-                    device.logical_device.cmd_pipeline_barrier(
+                    device.handle.cmd_pipeline_barrier(
                         command_buffer,
                         vk::PipelineStageFlags::TRANSFER,
                         vk::PipelineStageFlags::FRAGMENT_SHADER,
@@ -2683,7 +2642,7 @@ mod image {
             // SAFETY: TODO
             #[allow(trivial_casts)]
             unsafe {
-                device.logical_device.cmd_pipeline_barrier(
+                device.handle.cmd_pipeline_barrier(
                     command_buffer,
                     vk::PipelineStageFlags::TRANSFER,
                     vk::PipelineStageFlags::FRAGMENT_SHADER,
@@ -2694,11 +2653,7 @@ mod image {
                 );
             }
 
-            command_pool.end_one_time_command(
-                &device.logical_device,
-                command_buffer,
-                graphics_queue,
-            )?;
+            command_pool.end_one_time_command(&device.handle, command_buffer, graphics_queue)?;
 
             log::debug!("generated mipmaps successfully");
 
@@ -2767,23 +2722,15 @@ mod command_pool {
             let pool_create_info = vk::CommandPoolCreateInfo::builder()
                 .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
                 .queue_family_index(*queue_index);
-            let pool = unsafe {
-                device
-                    .logical_device
-                    .create_command_pool(&pool_create_info, None)
-            }
-            .context("failed to create command pool")?;
+            let pool = unsafe { device.handle.create_command_pool(&pool_create_info, None) }
+                .context("failed to create command pool")?;
 
             let buffer_alloc_info = vk::CommandBufferAllocateInfo::builder()
                 .command_pool(pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
                 .command_buffer_count(buffer_count);
-            let buffers = unsafe {
-                device
-                    .logical_device
-                    .allocate_command_buffers(&buffer_alloc_info)
-            }
-            .context("failed to allocate command buffers")?;
+            let buffers = unsafe { device.handle.allocate_command_buffers(&buffer_alloc_info) }
+                .context("failed to allocate command buffers")?;
 
             log::debug!("created command pool successfully");
 
