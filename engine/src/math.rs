@@ -23,10 +23,11 @@ impl Vertex {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 #[repr(C)]
 #[must_use]
 pub struct UniformBufferObject {
+    // pub model: Mat4,
     pub view: Mat4,
     pub projection: Mat4,
 }
@@ -778,6 +779,30 @@ impl Matrix<4, 4> {
         Vector::new([self[2], self[6], self[10]]).normalized()
     }
 
+    /// Create a copy of the `Matrix` inverted about the x-axis.
+    #[inline]
+    pub fn inverted_x(&self) -> Self {
+        let mut matrix = *self;
+        matrix[0] *= -1.0;
+        matrix
+    }
+
+    /// Create a copy of the `Matrix` inverted about the y-axis.
+    #[inline]
+    pub fn inverted_y(&self) -> Self {
+        let mut matrix = *self;
+        matrix[5] *= -1.0;
+        matrix
+    }
+
+    /// Create a copy of the `Matrix` inverted about the z-axis.
+    #[inline]
+    pub fn inverted_z(&self) -> Self {
+        let mut matrix = *self;
+        matrix[10] *= -1.0;
+        matrix
+    }
+
     /// Create a transposed copy of the `Matrix`.
     #[inline]
     pub fn transposed(&self) -> Self {
@@ -974,6 +999,7 @@ impl<const N: usize, const M: usize> DerefMut for Matrix<N, M> {
 impl<const N: usize, const M: usize> Index<usize> for Matrix<N, M> {
     type Output = f32;
 
+    // TODO: Make this a two-dimensional index
     fn index(&self, index: usize) -> &Self::Output {
         let n = index / M;
         let m = index % M;
