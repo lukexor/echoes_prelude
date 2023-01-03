@@ -269,17 +269,8 @@ impl Vector<4> {
     #[must_use]
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    pub fn dot_pairwise(
-        ax: f32,
-        ay: f32,
-        az: f32,
-        aw: f32,
-        bx: f32,
-        by: f32,
-        bz: f32,
-        bw: f32,
-    ) -> f32 {
-        ax * bx + ay * by + az * bz + aw * bw
+    pub fn dot_pairwise(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> f32 {
+        a.0 * b.0 + a.1 * b.1 + a.2 * b.2 + a.3 * b.3
     }
 }
 

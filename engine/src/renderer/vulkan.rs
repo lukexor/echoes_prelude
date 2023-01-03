@@ -1,14 +1,7 @@
 use super::{RendererBackend, Shader};
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
-use std::{
-    collections::HashSet,
-    ffi::{c_void, CStr, CString},
-    fmt,
-    mem::size_of,
-    ptr, slice,
-    time::Instant,
-};
+use std::{fmt, mem::size_of, ptr, slice, time::Instant};
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
@@ -21,11 +14,17 @@ use descriptor::Descriptor;
 use device::Buffer;
 use device::{Device, QueueFamily};
 use image::Image;
+use instance::Instance;
 use model::Model;
 use pipeline::Pipeline;
 use surface::Surface;
 use swapchain::Swapchain;
 use sync::Syncs;
+
+#[cfg(debug_assertions)]
+pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 1] = [VALIDATION_LAYER_NAME.as_ptr()];
+#[cfg(not(debug_assertions))]
+pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 0] = [];
 
 pub(crate) struct Context {
     start: Instant,
@@ -35,8 +34,7 @@ pub(crate) struct Context {
     resized: bool,
     shaders: Vec<Shader>,
 
-    _entry: ash::Entry,      // Needs to out-live `instance`
-    instance: ash::Instance, // Needs to out-live `device`
+    instance: Instance,
     // TODO: custom allocator
     // allocator: Option<vk::AllocationCallbacks>
     #[cfg(debug_assertions)]
@@ -81,12 +79,11 @@ impl RendererBackend for Context {
     fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self> {
         log::info!("initializing vulkan renderer backend");
 
-        let entry = ash::Entry::linked();
-        let instance = Self::create_instance(application_name, &entry)?;
+        let instance = Instance::create(application_name)?;
         #[cfg(debug_assertions)]
-        let debug = Debug::create(&entry, &instance)?;
+        let debug = Debug::create(&instance.entry, &instance)?;
 
-        let surface = Surface::create(&entry, &instance, window)?;
+        let surface = Surface::create(&instance.entry, &instance, window)?;
         let device = Device::create(&instance, &surface)?;
         let PhysicalSize { width, height } = window.inner_size();
         let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
@@ -161,7 +158,6 @@ impl RendererBackend for Context {
             resized: false,
             shaders: shaders.to_vec(),
 
-            _entry: entry,
             instance,
             #[cfg(debug_assertions)]
             debug,
@@ -205,19 +201,18 @@ impl RendererBackend for Context {
         unsafe {
             self.destroy_swapchain();
 
-            let device = &self.device.handle;
-            self.syncs.destroy(device);
-            self.index_buffer.destroy(device);
-            self.vertex_buffer.destroy(device);
-            device.destroy_sampler(self.sampler, None);
+            self.syncs.destroy(&self.device);
+            self.index_buffer.destroy(&self.device);
+            self.vertex_buffer.destroy(&self.device);
             self.textures
                 .iter()
-                .for_each(|texture| texture.destroy(device));
-            self.command_pool.destroy(device);
-            device.destroy_device(None);
+                .for_each(|texture| texture.destroy(&self.device));
+            self.command_pool.destroy(&self.device);
             self.surface.destroy();
+            self.device.destroy_sampler(self.sampler, None);
+            self.device.destroy();
             self.debug.destroy();
-            self.instance.destroy_instance(None);
+            self.instance.destroy();
         }
 
         log::info!("destroyed vulkan context");
@@ -497,79 +492,6 @@ impl Context {
         Ok(())
     }
 
-    /// Create a Vulkan [Instance].
-    fn create_instance(application_name: &str, entry: &ash::Entry) -> Result<ash::Instance> {
-        log::debug!("creating vulkan instance");
-
-        // Application Info
-        let application_name = CString::new(application_name)?;
-        let engine_name = CString::new("Echoes Engine")?;
-        let application_info = vk::ApplicationInfo::builder()
-            .application_name(&application_name)
-            .application_version(vk::API_VERSION_1_0)
-            .engine_name(&engine_name)
-            .engine_version(vk::API_VERSION_1_0)
-            .api_version(vk::API_VERSION_1_3);
-
-        // Validation Layer check
-        #[cfg(debug_assertions)]
-        if !entry
-            .enumerate_instance_layer_properties()?
-            .iter()
-            .any(|layer| {
-                // SAFETY: This layer name is provided by Vulkan and is a valid Cstr.
-                let layer_name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
-                layer_name == VALIDATION_LAYER_NAME
-            })
-        {
-            bail!("validation layer is not supported");
-        }
-
-        // Instance Creation
-        let required_extensions = platform::required_extensions();
-        let available_extensions = entry
-            .enumerate_instance_extension_properties(None)
-            .context("failed to enumerate instance extension properties")?
-            .iter()
-            .map(|extension_properties| unsafe {
-                CStr::from_ptr(extension_properties.extension_name.as_ptr())
-            })
-            .collect::<HashSet<_>>();
-        if !required_extensions.iter().all(|&extension| {
-            let extension_name = unsafe { CStr::from_ptr(extension) };
-            available_extensions.contains(extension_name)
-        }) {
-            bail!("required vulkan extensions are not supported");
-        }
-        let enabled_layer_names = [
-            #[cfg(debug_assertions)]
-            VALIDATION_LAYER_NAME.as_ptr(),
-        ];
-        let instance_create_flags = platform::instance_create_flags();
-        let mut create_info = vk::InstanceCreateInfo::builder()
-            .application_info(&application_info)
-            .enabled_extension_names(&required_extensions)
-            .enabled_layer_names(&enabled_layer_names)
-            .flags(instance_create_flags);
-
-        // Debug Creation
-        #[cfg(debug_assertions)]
-        let debug_create_info = Debug::build_debug_create_info();
-        #[cfg(debug_assertions)]
-        {
-            let p_next: *const vk::DebugUtilsMessengerCreateInfoEXT = &debug_create_info;
-            create_info.p_next = p_next as *const c_void;
-        }
-
-        // SAFETY: All create_info values are set correctly above with valid lifetimes.
-        let instance = unsafe { entry.create_instance(&create_info, None) }
-            .context("failed to create vulkan instance")?;
-
-        log::debug!("created vulkan instance successfully");
-
-        Ok(instance)
-    }
-
     /// Create a [`vk::RenderPass`] instance.
     fn create_render_pass(
         instance: &ash::Instance,
@@ -784,24 +706,126 @@ impl Context {
                 return;
             };
 
-            let device = &self.device.handle;
-
-            self.descriptor.destroy(device);
+            self.descriptor.destroy(&self.device);
             self.uniform_buffers
                 .iter()
-                .for_each(|uniform_buffer| uniform_buffer.destroy(device));
+                .for_each(|uniform_buffer| uniform_buffer.destroy(&self.device));
             [&self.color_image, &self.depth_image]
                 .iter()
-                .for_each(|image| image.destroy(device));
+                .for_each(|image| image.destroy(&self.device));
             self.framebuffers
                 .iter()
-                .for_each(|&framebuffer| device.destroy_framebuffer(framebuffer, None));
-            self.pipeline.destroy(device);
-            device.destroy_render_pass(self.render_pass, None);
-            self.swapchain.destroy(device);
+                .for_each(|&framebuffer| self.device.destroy_framebuffer(framebuffer, None));
+            self.pipeline.destroy(&self.device);
+            self.device.destroy_render_pass(self.render_pass, None);
+            self.swapchain.destroy(&self.device);
         }
 
         log::debug!("destroyed swapchain succesfully");
+    }
+}
+
+mod instance {
+    use super::{
+        debug::{Debug, VALIDATION_LAYER_NAME},
+        platform, ENABLED_LAYER_NAMES,
+    };
+    use anyhow::{bail, Context, Result};
+    use ash::vk;
+    use derive_more::{Deref, DerefMut};
+    use std::{
+        collections::HashSet,
+        ffi::{c_void, CStr, CString},
+    };
+
+    #[derive(Clone, Deref, DerefMut)]
+    #[must_use]
+    pub(crate) struct Instance {
+        pub(crate) entry: ash::Entry,
+        #[deref]
+        #[deref_mut]
+        pub(crate) handle: ash::Instance,
+    }
+
+    impl Instance {
+        /// Create a Vulkan [Instance].
+        pub(crate) fn create(application_name: &str) -> Result<Self> {
+            log::debug!("creating vulkan instance");
+
+            let entry = ash::Entry::linked();
+
+            // Application Info
+            let application_name = CString::new(application_name)?;
+            let engine_name = CString::new("Echoes Engine")?;
+            let application_info = vk::ApplicationInfo::builder()
+                .application_name(&application_name)
+                .application_version(vk::API_VERSION_1_0)
+                .engine_name(&engine_name)
+                .engine_version(vk::API_VERSION_1_0)
+                .api_version(vk::API_VERSION_1_3);
+
+            // Validation Layer check
+            #[cfg(debug_assertions)]
+            if !entry
+                .enumerate_instance_layer_properties()?
+                .iter()
+                .any(|layer| {
+                    // SAFETY: This layer name is provided by Vulkan and is a valid Cstr.
+                    let layer_name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
+                    layer_name == VALIDATION_LAYER_NAME
+                })
+            {
+                bail!("validation layer is not supported");
+            }
+
+            // Instance Creation
+            let required_extensions = platform::required_extensions();
+            let available_extensions = entry
+                .enumerate_instance_extension_properties(None)
+                .context("failed to enumerate instance extension properties")?
+                .iter()
+                .map(|extension_properties| unsafe {
+                    CStr::from_ptr(extension_properties.extension_name.as_ptr())
+                })
+                .collect::<HashSet<_>>();
+            if !required_extensions.iter().all(|&extension| {
+                let extension_name = unsafe { CStr::from_ptr(extension) };
+                available_extensions.contains(extension_name)
+            }) {
+                bail!("required vulkan extensions are not supported");
+            }
+            let instance_create_flags = platform::instance_create_flags();
+            let mut create_info = vk::InstanceCreateInfo::builder()
+                .application_info(&application_info)
+                .enabled_extension_names(&required_extensions)
+                .enabled_layer_names(&ENABLED_LAYER_NAMES)
+                .flags(instance_create_flags);
+
+            // Debug Creation
+            #[cfg(debug_assertions)]
+            let debug_create_info = Debug::build_debug_create_info();
+            #[cfg(debug_assertions)]
+            {
+                let p_next: *const vk::DebugUtilsMessengerCreateInfoEXT = &debug_create_info;
+                create_info.p_next = p_next as *const c_void;
+            }
+
+            // SAFETY: All create_info values are set correctly above with valid lifetimes.
+            let instance = unsafe { entry.create_instance(&create_info, None) }
+                .context("failed to create vulkan instance")?;
+
+            log::debug!("created vulkan instance successfully");
+
+            Ok(Self {
+                entry,
+                handle: instance,
+            })
+        }
+
+        /// Destroy a Vulkan `Instance`.
+        pub(crate) unsafe fn destroy(&mut self) {
+            self.handle.destroy_instance(None);
+        }
     }
 }
 
@@ -809,12 +833,15 @@ mod surface {
     use super::platform;
     use anyhow::Result;
     use ash::{extensions::khr, vk};
+    use derive_more::{Deref, DerefMut};
     use std::fmt;
     use winit::{dpi::PhysicalSize, window::Window};
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct Surface {
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: vk::SurfaceKHR,
         pub(crate) loader: khr::Surface,
         pub(crate) width: u32,
@@ -863,32 +890,28 @@ mod surface {
 
 mod device {
     use super::{
-        command_pool::CommandPool, platform, swapchain::Swapchain, Surface, VALIDATION_LAYER_NAME,
+        command_pool::CommandPool, platform, swapchain::Swapchain, Surface, ENABLED_LAYER_NAMES,
     };
     use crate::math::{UniformBufferObject, Vertex};
     use anyhow::{bail, Context as _, Result};
     use ash::vk;
-    use std::{
-        collections::{hash_map::Entry, HashMap, HashSet},
-        ffi::CStr,
-        fmt,
-        mem::size_of,
-        ptr, slice,
-    };
+    use derive_builder::Builder;
+    use derive_more::{Deref, DerefMut};
+    use std::{collections::HashSet, ffi::CStr, fmt, mem::size_of, ptr, slice};
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct Device {
         pub(crate) physical: vk::PhysicalDevice,
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: ash::Device,
-        pub(crate) queue_family_indices: QueueFamilyIndices,
         pub(crate) info: DeviceInfo,
     }
 
     impl fmt::Debug for Device {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("Device")
-                .field("queue_family_indices", &self.queue_family_indices)
                 .field("info", &self.info)
                 .finish_non_exhaustive()
         }
@@ -899,23 +922,21 @@ mod device {
         pub(crate) fn create(instance: &ash::Instance, surface: &Surface) -> Result<Self> {
             log::debug!("creating device");
 
-            let (physical_device, queue_family_indices, info) =
-                Self::select_physical_device(instance, surface)?;
-            let logical_device = Self::create_logical_device(
-                instance,
-                physical_device,
-                &queue_family_indices,
-                &info,
-            )?;
+            let (physical_device, info) = Self::select_physical_device(instance, surface)?;
+            let logical_device = Self::create_logical_device(instance, physical_device, &info)?;
 
             log::debug!("created device successfully");
 
             Ok(Self {
                 physical: physical_device,
                 handle: logical_device,
-                queue_family_indices,
                 info,
             })
+        }
+
+        /// Destry a `Device` instance.
+        pub(crate) unsafe fn destroy(&mut self) {
+            self.handle.destroy_device(None);
         }
 
         /// Updates device capabilities if the window surface changes.
@@ -969,13 +990,8 @@ mod device {
         /// Get a [vk::Queue] handle to a given [`QueueFamily`].
         pub(crate) fn queue_family(&self, family: QueueFamily) -> Result<vk::Queue> {
             Ok(unsafe {
-                self.handle.get_device_queue(
-                    *self
-                        .queue_family_indices
-                        .get(&family)
-                        .context("failed to get queue family: {family:?}")?,
-                    0,
-                )
+                self.handle
+                    .get_device_queue(self.info.queue_family_indices.get(family), 0)
             })
         }
 
@@ -1291,7 +1307,7 @@ mod device {
         fn select_physical_device(
             instance: &ash::Instance,
             surface: &Surface,
-        ) -> Result<(vk::PhysicalDevice, QueueFamilyIndices, DeviceInfo)> {
+        ) -> Result<(vk::PhysicalDevice, DeviceInfo)> {
             log::debug!("selecting physical device");
 
             // Select physical device
@@ -1305,19 +1321,19 @@ mod device {
             let mut devices = physical_devices
             .into_iter()
             .filter_map(|physical_device| {
-                let (queue_family_indices, info) = DeviceInfo::query(instance, physical_device, surface);
+                let Ok(info) = DeviceInfo::query(instance, physical_device, surface) else { return None };
                 log::debug!("Device Information:\nName: {}\nRating: {}\nQueue Family Indices: {:?}\nSwapchain Support: {}\nAnsiotropy Support: {}\nExtensions Supported: {:?}",
                     &info.name,
                     info.rating,
-                    &queue_family_indices,
+                    &info.queue_family_indices,
                     info.swapchain_support.is_some(),
                     info.sampler_anisotropy_support,
                     info.supported_extensions,
                 );
-                (info.rating > 0).then_some((physical_device, queue_family_indices, info))
+                (info.rating > 0).then_some((physical_device, info))
             })
-            .collect::<Vec<(vk::PhysicalDevice, QueueFamilyIndices, DeviceInfo)>>();
-            devices.sort_by_key(|(_, _, info)| info.rating);
+            .collect::<Vec<(vk::PhysicalDevice, DeviceInfo)>>();
+            devices.sort_by_key(|(_, info)| info.rating);
             let selected_device = devices
                 .pop()
                 .context("failed to find a suitable physical device")?;
@@ -1331,14 +1347,12 @@ mod device {
         fn create_logical_device(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
-            queue_family_indices: &QueueFamilyIndices,
             info: &DeviceInfo,
         ) -> Result<ash::Device> {
             log::debug!("creating logical device");
 
             let queue_priorities = [1.0];
-            let unique_families: HashSet<u32> =
-                HashSet::from_iter(queue_family_indices.values().copied());
+            let unique_families = info.queue_family_indices.unique();
             let queue_create_infos = unique_families
                 .iter()
                 .map(|&index| {
@@ -1351,14 +1365,10 @@ mod device {
             let enabled_features = vk::PhysicalDeviceFeatures::builder()
                 .sampler_anisotropy(true) // TODO: Make configurable
                 .sample_rate_shading(true);
-            let enabled_layer_names = [
-                #[cfg(debug_assertions)]
-                VALIDATION_LAYER_NAME.as_ptr(),
-            ];
             let device_create_info = vk::DeviceCreateInfo::builder()
                 .queue_create_infos(&queue_create_infos)
                 .enabled_features(&enabled_features)
-                .enabled_layer_names(&enabled_layer_names)
+                .enabled_layer_names(&ENABLED_LAYER_NAMES)
                 .enabled_extension_names(&info.supported_extensions);
             // SAFETY: All create_info values are set correctly above with valid lifetimes.
             let device =
@@ -1371,9 +1381,11 @@ mod device {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct Buffer {
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: vk::Buffer,
         pub(crate) memory: vk::DeviceMemory,
     }
@@ -1393,6 +1405,7 @@ mod device {
         pub(crate) properties: vk::PhysicalDeviceProperties,
         pub(crate) memory_properties: vk::PhysicalDeviceMemoryProperties,
         pub(crate) features: vk::PhysicalDeviceFeatures,
+        pub(crate) queue_family_indices: QueueFamilyIndices,
         pub(crate) rating: u32,
         pub(crate) msaa_samples: vk::SampleCountFlags,
         pub(crate) swapchain_support: Option<SwapchainSupport>,
@@ -1406,7 +1419,7 @@ mod device {
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
             surface: &Surface,
-        ) -> (QueueFamilyIndices, Self) {
+        ) -> Result<Self> {
             let mut rating = 10;
 
             // SAFETY: TODO
@@ -1416,21 +1429,17 @@ mod device {
                 unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
             let msaa_samples = Self::get_max_sample_count(properties, &mut rating);
-            let queue_family_indices = QueueFamily::query(instance, physical_device, surface);
+            let queue_family_indices = QueueFamily::query(instance, physical_device, surface)?;
             let swapchain_support = SwapchainSupport::query(physical_device, surface)
                 .map_err(|err| log::error!("{err}"))
                 .ok();
 
             // Bonus if graphics + present are the same queue
-            if queue_family_indices.get(&QueueFamily::Graphics)
-                == queue_family_indices.get(&QueueFamily::Present)
-            {
+            if queue_family_indices.graphics == queue_family_indices.present {
                 rating += 100;
             }
             // Bonus if has a dedicated transfer queue
-            if queue_family_indices.get(&QueueFamily::Graphics)
-                != queue_family_indices.get(&QueueFamily::Transfer)
-            {
+            if queue_family_indices.graphics != queue_family_indices.transfer {
                 rating += 500;
             }
             // Large bonus for being a discrete GPU
@@ -1446,28 +1455,23 @@ mod device {
                 .to_string();
             let supported_extensions =
                 Self::supported_required_extensions(instance, physical_device);
-            if supported_extensions.is_empty()
-                || swapchain_support.is_none()
-                || !QueueFamily::is_complete(&queue_family_indices)
-            {
+            if supported_extensions.is_empty() || swapchain_support.is_none() {
                 log::warn!("Device `{name}` does not meet minimum device requirements");
                 rating = 0;
             }
 
-            (
+            Ok(Self {
+                name,
+                properties,
+                memory_properties,
+                features,
                 queue_family_indices,
-                Self {
-                    name,
-                    properties,
-                    memory_properties,
-                    features,
-                    rating,
-                    msaa_samples,
-                    swapchain_support,
-                    supported_extensions,
-                    sampler_anisotropy_support: features.sampler_anisotropy == 1,
-                },
-            )
+                rating,
+                msaa_samples,
+                swapchain_support,
+                supported_extensions,
+                sampler_anisotropy_support: features.sampler_anisotropy == 1,
+            })
         }
 
         /// Return the maximum usable sample count for multisampling for a [`vk::PhysicalDevice`].
@@ -1588,20 +1592,18 @@ mod device {
         Transfer,
     }
 
-    type QueueFamilyIndices = HashMap<QueueFamily, u32>;
-
     impl QueueFamily {
         /// Queries for desired [vk::Queue] families from a [`vk::PhysicalDevice`].
         fn query(
             instance: &ash::Instance,
             physical_device: vk::PhysicalDevice,
             surface: &Surface,
-        ) -> QueueFamilyIndices {
+        ) -> Result<QueueFamilyIndices> {
             // SAFETY: TODO
             let queue_families =
                 unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
-            let mut queue_family_indices = HashMap::default();
+            let mut queue_family_indices = QueueFamilyIndicesBuilder::default();
             let mut min_transfer_score = 255;
             for (index, queue_family) in queue_families.iter().enumerate() {
                 let queue_index = index as u32;
@@ -1617,23 +1619,20 @@ mod device {
                 }
                 .unwrap_or_default();
 
-                queue_family_indices
-                    .entry(QueueFamily::Graphics)
-                    .or_insert_with(|| {
-                        current_transfer_score += 1;
-                        queue_index
-                    });
+                if queue_family_indices.graphics.is_none() {
+                    current_transfer_score += 1;
+                    queue_family_indices.graphics = Some(queue_index);
+                }
                 // Prioritize queues supporting both graphics and present
-                if queue_family_indices.contains_key(&QueueFamily::Graphics) && has_surface_support
-                {
-                    queue_family_indices.insert(QueueFamily::Present, queue_index);
+                if queue_family_indices.graphics.is_some() && has_surface_support {
+                    queue_family_indices.present = Some(queue_index);
                     current_transfer_score += 1;
                 }
 
-                if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
-                    queue_family_indices
-                        .entry(QueueFamily::Compute)
-                        .or_insert(queue_index);
+                if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE)
+                    && queue_family_indices.compute.is_none()
+                {
+                    queue_family_indices.compute = Some(queue_index);
                     current_transfer_score += 1;
                 }
 
@@ -1641,19 +1640,19 @@ mod device {
                     && current_transfer_score <= min_transfer_score
                 {
                     min_transfer_score = current_transfer_score;
-                    queue_family_indices
-                        .entry(QueueFamily::Transfer)
-                        .or_insert(queue_index);
+                    if queue_family_indices.transfer.is_none() {
+                        queue_family_indices.transfer = Some(queue_index);
+                    }
                 }
 
-                if QueueFamily::is_complete(&queue_family_indices) {
+                if queue_family_indices.is_complete() {
                     break;
                 }
             }
 
             // If we didn't find a Graphics family supporting Present, just find use first one
             // found
-            if let Entry::Vacant(entry) = queue_family_indices.entry(QueueFamily::Present) {
+            if queue_family_indices.present.is_none() {
                 if let Some(queue_index) = queue_families
                     .iter()
                     .enumerate()
@@ -1670,35 +1669,64 @@ mod device {
                         .unwrap_or_default()
                     })
                 {
-                    entry.insert(queue_index);
+                    queue_family_indices.present = Some(queue_index);
                 }
             }
 
-            queue_family_indices
+            Ok(queue_family_indices.build()?)
+        }
+    }
+
+    #[derive(Debug, Copy, Clone, Builder)]
+    #[must_use]
+    pub(crate) struct QueueFamilyIndices {
+        pub(crate) graphics: u32,
+        pub(crate) present: u32,
+        pub(crate) compute: u32,
+        pub(crate) transfer: u32,
+    }
+
+    impl QueueFamilyIndices {
+        pub(crate) fn get(&self, family: QueueFamily) -> u32 {
+            match family {
+                QueueFamily::Graphics => self.graphics,
+                QueueFamily::Present => self.present,
+                QueueFamily::Compute => self.compute,
+                QueueFamily::Transfer => self.transfer,
+            }
         }
 
+        pub(crate) fn unique(&self) -> HashSet<u32> {
+            HashSet::from_iter([self.graphics, self.present, self.compute, self.transfer])
+        }
+    }
+
+    impl QueueFamilyIndicesBuilder {
         /// Whether the `QueueFamilyIndices` contains all of the desired queues.
-        fn is_complete(indices: &QueueFamilyIndices) -> bool {
-            indices.contains_key(&Self::Graphics)
-                && indices.contains_key(&Self::Present)
-                && indices.contains_key(&Self::Compute)
-                && indices.contains_key(&Self::Transfer)
+        fn is_complete(&self) -> bool {
+            self.graphics.is_some()
+                && self.present.is_some()
+                && self.compute.is_some()
+                && self.transfer.is_some()
         }
     }
 }
 
 mod swapchain {
     use super::{
-        device::{Device, QueueFamily},
+        device::{Device, QueueFamilyIndices},
         surface::Surface,
     };
     use anyhow::{bail, Context, Result};
     use ash::{extensions::khr, prelude::VkResult, vk};
+    use derive_more::{Deref, DerefMut};
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct Swapchain {
         pub(crate) loader: khr::Swapchain,
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: vk::SwapchainKHR,
         pub(crate) format: vk::Format,
         pub(crate) extent: vk::Extent2D,
@@ -1776,14 +1804,13 @@ mod swapchain {
             };
 
             // Select image sharing mode, concurrent vs exclusive
-            let (image_sharing_mode, queue_family_indices) = match (
-                device.queue_family_indices.get(&QueueFamily::Graphics),
-                device.queue_family_indices.get(&QueueFamily::Present),
-            ) {
-                (Some(&graphics), Some(&present)) if graphics != present => {
-                    (vk::SharingMode::CONCURRENT, vec![graphics, present])
-                }
-                _ => (vk::SharingMode::EXCLUSIVE, vec![]),
+            let QueueFamilyIndices {
+                graphics, present, ..
+            } = device.info.queue_family_indices;
+            let (image_sharing_mode, queue_family_indices) = if graphics != present {
+                (vk::SharingMode::CONCURRENT, vec![graphics, present])
+            } else {
+                (vk::SharingMode::EXCLUSIVE, vec![])
             };
 
             // Create info
@@ -1898,11 +1925,14 @@ mod pipeline {
     };
     use anyhow::{Context, Result};
     use ash::vk;
+    use derive_more::{Deref, DerefMut};
     use std::{ffi::CString, slice};
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct Pipeline {
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: vk::Pipeline,
         pub(crate) layout: vk::PipelineLayout,
     }
@@ -2129,11 +2159,14 @@ mod image {
     use super::{command_pool::CommandPool, device::Device, swapchain::Swapchain};
     use anyhow::{bail, Context, Result};
     use ash::vk::{self, Handle};
+    use derive_more::{Deref, DerefMut};
     use std::{ffi::CString, fs, io::BufReader, path::Path, ptr, slice};
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct Image {
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: vk::Image,
         pub(crate) memory: vk::DeviceMemory,
         pub(crate) view: vk::ImageView,
@@ -2141,8 +2174,8 @@ mod image {
     }
 
     impl Image {
+        // TODO: Add builder
         /// Create an `Image` instance with a [vk::Image] handle and associated [`vk::DeviceMemory`] with the given parameters.
-        #[allow(clippy::too_many_arguments)]
         pub(crate) fn create(
             name: &str,
             device: &Device,
@@ -2500,7 +2533,7 @@ mod image {
             Ok(view)
         }
 
-        #[allow(clippy::too_many_arguments)]
+        // TODO: Add builder
         fn generate_mipmaps(
             instance: &ash::Instance,
             device: &Device,
@@ -2694,11 +2727,14 @@ mod command_pool {
     use super::device::{Device, QueueFamily};
     use anyhow::{Context, Result};
     use ash::vk;
+    use derive_more::{Deref, DerefMut};
     use std::slice;
 
-    #[derive(Clone)]
+    #[derive(Clone, Deref, DerefMut)]
     #[must_use]
     pub(crate) struct CommandPool {
+        #[deref]
+        #[deref_mut]
         pub(crate) handle: vk::CommandPool,
         pub(crate) buffers: Vec<vk::CommandBuffer>,
         pub(crate) secondary_buffers: Vec<vk::CommandBuffer>,
@@ -2714,14 +2750,11 @@ mod command_pool {
         ) -> Result<Self> {
             log::debug!("creating command pool on queue family: {queue_family:?}");
 
-            let queue_index = device
-                .queue_family_indices
-                .get(&queue_family)
-                .context("{queue_family:?} queue family not found")?;
+            let queue_index = device.info.queue_family_indices.get(queue_family);
 
             let pool_create_info = vk::CommandPoolCreateInfo::builder()
                 .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-                .queue_family_index(*queue_index);
+                .queue_family_index(queue_index);
             let pool = unsafe { device.handle.create_command_pool(&pool_create_info, None) }
                 .context("failed to create command pool")?;
 
