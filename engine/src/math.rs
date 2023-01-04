@@ -32,17 +32,6 @@ pub struct UniformBufferObject {
     pub projection: Mat4,
 }
 
-/// Constructs a new [Vector].
-#[macro_export]
-macro_rules! vector {
-    () => {
-        $crate::math::Vector::origin()
-    };
-    ($($v:expr),* $(,)?) => {
-        $crate::math::Vector::new([$($v,)*])
-    };
-}
-
 /// A N-dimensional `Vector`.
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
 #[must_use]
@@ -60,41 +49,52 @@ impl<const N: usize> Default for Vector<N> {
     }
 }
 
+/// Constructs a new [Vector].
+#[macro_export]
+macro_rules! vector {
+    () => {
+        $crate::math::Vector::origin()
+    };
+    ($($v:expr),* $(,)?) => {
+        $crate::math::Vector::new([$($v,)*])
+    };
+}
+
 impl Vector<2> {
     /// Create a 2D `Vector` from a 3D `Vector`.
     #[inline]
     pub fn from_3d(vector: Vector<3>) -> Self {
-        Self([vector.x(), vector.y()])
+        vector!(vector.x(), vector.y())
     }
 
     /// Create a 2D `Vector` from a 4D `Vector`.
     #[inline]
     pub fn from_4d(vector: Vector<4>) -> Self {
-        Self([vector.x(), vector.y()])
+        vector!(vector.x(), vector.y())
     }
 
     /// Create a 2D unit `Vector` pointing up.
     #[inline]
     pub fn up() -> Self {
-        Self([0.0, 1.0])
+        vector!(0.0, 1.0)
     }
 
     /// Create a 2D unit `Vector` pointing down.
     #[inline]
     pub fn down() -> Self {
-        Self([0.0, -1.0])
+        vector!(0.0, -1.0)
     }
 
     /// Create a 2D unit `Vector` pointing left.
     #[inline]
     pub fn left() -> Self {
-        Self([-1.0, 0.0])
+        vector!(-1.0, 0.0)
     }
 
     /// Create a 2D unit `Vector` pointing right.
     #[inline]
     pub fn right() -> Self {
-        Self([1.0, 0.0])
+        vector!(1.0, 0.0)
     }
 
     /// Return the `x` coordinate.
@@ -116,19 +116,19 @@ impl Vector<3> {
     /// Create a 3D `Vector` from a 2D `Vector`.
     #[inline]
     pub fn from_2d(vector: Vector<2>, z: f32) -> Self {
-        Self([vector.x(), vector.y(), z])
+        vector!(vector.x(), vector.y(), z)
     }
 
     /// Create a 3D `Vector` from a 4D `Vector`.
     #[inline]
     pub fn from_4d(vector: Vector<4>) -> Self {
-        Self([vector.x(), vector.y(), vector.z()])
+        vector!(vector.x(), vector.y(), vector.z())
     }
 
     /// Create a 3D `Vector` from separate RGB values.
     #[inline]
     pub fn from_rgb(r: u32, g: u32, b: u32) -> Self {
-        Self([r as f32, g as f32, b as f32]) / 255.0
+        vector!(r as f32, g as f32, b as f32) / 255.0
     }
 
     /// Create separate RGB values from the `Vector`.
@@ -142,37 +142,37 @@ impl Vector<3> {
     /// Create a 3D unit `Vector` pointing up.
     #[inline]
     pub fn up() -> Self {
-        Self([0.0, 1.0, 0.0])
+        vector!(0.0, 1.0, 0.0)
     }
 
     /// Create a 3D unit `Vector` pointing down.
     #[inline]
     pub fn down() -> Self {
-        Self([0.0, -1.0, 0.0])
+        vector!(0.0, -1.0, 0.0)
     }
 
     /// Create a 3D unit `Vector` pointing left.
     #[inline]
     pub fn left() -> Self {
-        Self([-1.0, 0.0, 0.0])
+        vector!(-1.0, 0.0, 0.0)
     }
 
     /// Create a 3D unit `Vector` pointing right.
     #[inline]
     pub fn right() -> Self {
-        Self([1.0, 0.0, 0.0])
+        vector!(1.0, 0.0, 0.0)
     }
 
     /// Create a 3D unit `Vector` pointing forward.
     #[inline]
     pub fn forward() -> Self {
-        Self([0.0, 0.0, -1.0])
+        vector!(0.0, 0.0, -1.0)
     }
 
     /// Create a 3D unit `Vector` pointing backward.
     #[inline]
     pub fn backward() -> Self {
-        Self([0.0, 0.0, 1.0])
+        vector!(0.0, 0.0, 1.0)
     }
 
     /// Return the `x` coordinate.
@@ -211,17 +211,17 @@ impl Vector<3> {
     pub fn cross(&self, rhs: Self) -> Self {
         let [x, y, z] = self.0;
         let [ox, oy, oz] = rhs.0;
-        Self([y * oz - z * oy, z * ox - x * oz, x * oy - y * ox])
+        vector!(y * oz - z * oy, z * ox - x * oz, x * oy - y * ox)
     }
 
     /// Create a transformed `Vector` by applying a `Matrix`.
     pub fn transformed(&self, matrix: Matrix<4, 4>) -> Self {
         let [x, y, z] = self.0;
-        Self([
-            x * matrix[0] + y * matrix[4] + z * matrix[8] + 1.0 * matrix[12],
-            x * matrix[1] + y * matrix[5] + z * matrix[9] + 1.0 * matrix[13],
-            x * matrix[2] + y * matrix[6] + z * matrix[10] + 1.0 * matrix[14],
-        ])
+        vector!(
+            x * matrix[(0, 0)] + y * matrix[(1, 0)] + z * matrix[(2, 0)] + 1.0 * matrix[(3, 0)],
+            x * matrix[(0, 1)] + y * matrix[(1, 1)] + z * matrix[(2, 1)] + 1.0 * matrix[(3, 1)],
+            x * matrix[(0, 2)] + y * matrix[(1, 2)] + z * matrix[(2, 2)] + 1.0 * matrix[(3, 2)],
+        )
     }
 }
 
@@ -229,13 +229,13 @@ impl Vector<4> {
     /// Create a 4D `Vector` from a 2D `Vector`.
     #[inline]
     pub fn from_2d(vector: Vector<2>, z: f32, w: f32) -> Self {
-        Self([vector.x(), vector.y(), z, w])
+        vector!(vector.x(), vector.y(), z, w)
     }
 
     /// Create a 4D `Vector` from a 3D `Vector`.
     #[inline]
     pub fn from_3d(vector: Vector<3>, w: f32) -> Self {
-        Self([vector.x(), vector.y(), vector.z(), w])
+        vector!(vector.x(), vector.y(), vector.z(), w)
     }
 
     /// Return the `x` coordinate.
@@ -290,6 +290,12 @@ impl<const N: usize> Vector<N> {
     /// Create a N-dimensional unit `Vector`.
     pub fn unit() -> Self {
         Self([1.0; N])
+    }
+
+    /// Converts the `Vector` into an array of `f32`.
+    #[must_use]
+    pub fn to_array(self) -> [f32; N] {
+        self.0
     }
 
     /// Calculate the squared magnitude of the `Vector`.
@@ -564,6 +570,28 @@ impl<const N: usize, const M: usize> Default for Matrix<N, M> {
     }
 }
 
+/// Constructs a new [Matrix].
+#[macro_export]
+macro_rules! matrix {
+    () => {
+        $crate::math::Matrix::identity()
+    };
+    ($([$($v:expr),* $(,)?]),* $(,)?) => {
+        $crate::math::Matrix::new([$([$($v),*]),*])
+    };
+    ($($v:expr),* $(,)?) => {
+        $crate::math::Matrix::new([$($v.to_array()),*])
+    };
+}
+
+impl<const N: usize, const M: usize> Matrix<N, M> {
+    /// Create a N-dimentional `Vector` from given coordinates.
+    #[inline]
+    pub fn new(coordinates: [[f32; M]; N]) -> Self {
+        Self(coordinates)
+    }
+}
+
 impl Matrix<4, 4> {
     /// Create an orthographic projection `Matrix`.
     #[inline]
@@ -580,13 +608,13 @@ impl Matrix<4, 4> {
         let nf = 1.0 / (near_clip - far_clip);
         let mut matrix = Self::identity();
 
-        matrix[0] = -2.0 * lr;
-        matrix[5] = -2.0 * bt;
-        matrix[10] = -2.0 * nf;
+        matrix[(0, 0)] = -2.0 * lr;
+        matrix[(1, 1)] = -2.0 * bt;
+        matrix[(2, 2)] = -2.0 * nf;
 
-        matrix[12] = (left + right) * lr;
-        matrix[13] = (bottom + top) * bt;
-        matrix[14] = (near_clip + far_clip) * nf;
+        matrix[(3, 0)] = (left + right) * lr;
+        matrix[(3, 1)] = (bottom + top) * bt;
+        matrix[(3, 2)] = (near_clip + far_clip) * nf;
 
         matrix
     }
@@ -598,12 +626,12 @@ impl Matrix<4, 4> {
         let nf = far_clip - near_clip;
         let mut matrix = Self::identity();
 
-        matrix[0] = 1.0 / (aspect_ratio * tan_frac_fov_two);
-        matrix[5] = 1.0 / tan_frac_fov_two;
-        matrix[10] = -((near_clip + far_clip) / nf);
+        matrix[(0, 0)] = 1.0 / (aspect_ratio * tan_frac_fov_two);
+        matrix[(1, 1)] = 1.0 / tan_frac_fov_two;
+        matrix[(2, 2)] = -((near_clip + far_clip) / nf);
 
-        matrix[11] = -1.0;
-        matrix[14] = -((2.0 * near_clip * far_clip) / nf);
+        matrix[(2, 3)] = -1.0;
+        matrix[(3, 2)] = -((2.0 * near_clip * far_clip) / nf);
 
         matrix
     }
@@ -614,7 +642,7 @@ impl Matrix<4, 4> {
         let z_axis = (target - position).normalized();
         let x_axis = z_axis.cross(up).normalized();
         let y_axis = x_axis.cross(z_axis);
-        Self([
+        matrix!(
             [x_axis.x(), y_axis.x(), -z_axis.x(), 0.0],
             [x_axis.y(), y_axis.y(), -z_axis.y(), 0.0],
             [x_axis.z(), y_axis.z(), -z_axis.z(), 0.0],
@@ -624,16 +652,16 @@ impl Matrix<4, 4> {
                 z_axis.dot(position),
                 1.0,
             ],
-        ])
+        )
     }
 
     /// Create a translation `Matrix` for the given position.
     #[inline]
     pub fn translation(position: Vector<3>) -> Self {
         let mut matrix = Self::identity();
-        matrix[12] = position.x();
-        matrix[13] = position.y();
-        matrix[14] = position.z();
+        matrix[(3, 0)] = position.x();
+        matrix[(3, 1)] = position.y();
+        matrix[(3, 2)] = position.z();
         matrix
     }
 
@@ -641,9 +669,9 @@ impl Matrix<4, 4> {
     #[inline]
     pub fn scale(scale: Vector<3>) -> Self {
         let mut matrix = Self::identity();
-        matrix[0] = scale.x();
-        matrix[5] = scale.y();
-        matrix[10] = scale.z();
+        matrix[(0, 0)] = scale.x();
+        matrix[(1, 1)] = scale.y();
+        matrix[(2, 2)] = scale.z();
         matrix
     }
 
@@ -653,17 +681,17 @@ impl Matrix<4, 4> {
         let q = quaternion.normalized();
         let mut matrix = Self::identity();
 
-        matrix[0] = 1.0 - 2.0 * q.y() * q.y() - 2.0 * q.z() * q.z();
-        matrix[1] = 2.0 * q.x() * q.y() - 2.0 * q.z() * q.w();
-        matrix[2] = 2.0 * q.x() * q.z() - 2.0 * q.y() * q.w();
+        matrix[(0, 0)] = 1.0 - 2.0 * q.y() * q.y() - 2.0 * q.z() * q.z();
+        matrix[(0, 1)] = 2.0 * q.x() * q.y() - 2.0 * q.z() * q.w();
+        matrix[(0, 2)] = 2.0 * q.x() * q.z() - 2.0 * q.y() * q.w();
 
-        matrix[4] = 2.0 * q.x() * q.y() + 2.0 * q.z() * q.w();
-        matrix[5] = 1.0 - 2.0 * q.x() * q.x() - 2.0 * q.z() * q.z();
-        matrix[6] = 2.0 * q.y() * q.z() - 2.0 * q.x() * q.w();
+        matrix[(1, 0)] = 2.0 * q.x() * q.y() + 2.0 * q.z() * q.w();
+        matrix[(1, 1)] = 1.0 - 2.0 * q.x() * q.x() - 2.0 * q.z() * q.z();
+        matrix[(1, 2)] = 2.0 * q.y() * q.z() - 2.0 * q.x() * q.w();
 
-        matrix[8] = 2.0 * q.x() * q.z() - 2.0 * q.y() * q.w();
-        matrix[0] = 2.0 * q.y() * q.z() + 2.0 * q.x() * q.w();
-        matrix[10] = 1.0 - 2.0 * q.x() * q.x() - 2.0 * q.y() * q.y();
+        matrix[(2, 0)] = 2.0 * q.x() * q.z() - 2.0 * q.y() * q.w();
+        matrix[(0, 0)] = 2.0 * q.y() * q.z() + 2.0 * q.x() * q.w();
+        matrix[(2, 2)] = 1.0 - 2.0 * q.x() * q.x() - 2.0 * q.y() * q.y();
 
         matrix
     }
@@ -675,25 +703,28 @@ impl Matrix<4, 4> {
         let c = center;
         let mut matrix = Self::default();
 
-        matrix[0] = (q.x() * q.x()) - (q.y() * q.y()) - (q.z() * q.z()) + (q.w() * q.w());
-        matrix[1] = 2.0 * ((q.x() * q.y()) + (q.z() * q.w()));
-        matrix[2] = 2.0 * ((q.x() * q.z()) - (q.y() * q.w()));
-        matrix[3] = c.x() - c.x() * matrix[0] - c.y() * matrix[1] - c.z() * matrix[2];
+        matrix[(0, 0)] = (q.x() * q.x()) - (q.y() * q.y()) - (q.z() * q.z()) + (q.w() * q.w());
+        matrix[(0, 1)] = 2.0 * ((q.x() * q.y()) + (q.z() * q.w()));
+        matrix[(0, 2)] = 2.0 * ((q.x() * q.z()) - (q.y() * q.w()));
+        matrix[(0, 3)] =
+            c.x() - c.x() * matrix[(0, 0)] - c.y() * matrix[(0, 1)] - c.z() * matrix[(0, 2)];
 
-        matrix[4] = 2.0 * ((q.x() * q.y()) - (q.z() * q.w()));
-        matrix[5] = -(q.x() * q.x()) + (q.y() * q.y()) - (q.z() * q.z()) + (q.w() * q.w());
-        matrix[6] = 2.0 * ((q.y() * q.z()) + (q.x() * q.w()));
-        matrix[7] = c.y() - c.x() * matrix[4] - c.y() * matrix[5] - c.z() * matrix[6];
+        matrix[(1, 0)] = 2.0 * ((q.x() * q.y()) - (q.z() * q.w()));
+        matrix[(1, 1)] = -(q.x() * q.x()) + (q.y() * q.y()) - (q.z() * q.z()) + (q.w() * q.w());
+        matrix[(1, 2)] = 2.0 * ((q.y() * q.z()) + (q.x() * q.w()));
+        matrix[(1, 3)] =
+            c.y() - c.x() * matrix[(1, 0)] - c.y() * matrix[(1, 1)] - c.z() * matrix[(1, 2)];
 
-        matrix[8] = 2.0 * ((q.x() * q.z()) + (q.y() * q.w()));
-        matrix[9] = 2.0 * ((q.y() * q.z()) - (q.x() * q.w()));
-        matrix[10] = -(q.x() * q.x()) - (q.y() * q.y()) + (q.z() * q.z()) + (q.w() * q.w());
-        matrix[11] = c.z() - c.x() * matrix[8] - c.y() * matrix[9] - c.z() * matrix[10];
+        matrix[(2, 0)] = 2.0 * ((q.x() * q.z()) + (q.y() * q.w()));
+        matrix[(2, 1)] = 2.0 * ((q.y() * q.z()) - (q.x() * q.w()));
+        matrix[(2, 2)] = -(q.x() * q.x()) - (q.y() * q.y()) + (q.z() * q.z()) + (q.w() * q.w());
+        matrix[(2, 3)] =
+            c.z() - c.x() * matrix[(2, 0)] - c.y() * matrix[(2, 1)] - c.z() * matrix[(2, 2)];
 
-        matrix[12] = 0.0;
-        matrix[13] = 0.0;
-        matrix[14] = 0.0;
-        matrix[15] = 1.0;
+        matrix[(3, 0)] = 0.0;
+        matrix[(3, 1)] = 0.0;
+        matrix[(3, 2)] = 0.0;
+        matrix[(3, 3)] = 1.0;
 
         matrix
     }
@@ -712,10 +743,10 @@ impl Matrix<4, 4> {
     pub fn rotation_x(angle: Radians) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.sin_cos();
-        matrix[5] = cos;
-        matrix[6] = sin;
-        matrix[9] = -sin;
-        matrix[10] = cos;
+        matrix[(1, 1)] = cos;
+        matrix[(1, 2)] = sin;
+        matrix[(2, 1)] = -sin;
+        matrix[(2, 2)] = cos;
         matrix
     }
 
@@ -724,10 +755,10 @@ impl Matrix<4, 4> {
     pub fn rotation_y(angle: Radians) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.sin_cos();
-        matrix[0] = cos;
-        matrix[2] = -sin;
-        matrix[8] = sin;
-        matrix[10] = cos;
+        matrix[(0, 0)] = cos;
+        matrix[(0, 2)] = -sin;
+        matrix[(2, 0)] = sin;
+        matrix[(2, 2)] = cos;
         matrix
     }
 
@@ -736,54 +767,54 @@ impl Matrix<4, 4> {
     pub fn rotation_z(angle: Radians) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.sin_cos();
-        matrix[0] = cos;
-        matrix[1] = sin;
-        matrix[4] = -sin;
-        matrix[5] = cos;
+        matrix[(0, 0)] = cos;
+        matrix[(0, 1)] = sin;
+        matrix[(1, 0)] = -sin;
+        matrix[(1, 1)] = cos;
         matrix
     }
 
     /// Create an up unit `Vector` relative to the `Matrix`.
     #[inline]
     pub fn up(&self) -> Vector<3> {
-        Vector::new([self[1], self[5], self[9]]).normalized()
+        vector!(self[(0, 1)], self[(1, 1)], self[(2, 1)]).normalized()
     }
 
     /// Create a down unit `Vector` relative to the `Matrix`.
     #[inline]
     pub fn down(&self) -> Vector<3> {
-        Vector::new([-self[1], -self[5], -self[9]]).normalized()
+        vector!(-self[(0, 1)], -self[(1, 1)], -self[(2, 1)]).normalized()
     }
 
     /// Create a left unit `Vector` relative to the `Matrix`.
     #[inline]
     pub fn left(&self) -> Vector<3> {
-        Vector::new([-self[0], -self[4], -self[8]]).normalized()
+        vector!(-self[(0, 0)], -self[(1, 0)], -self[(2, 0)]).normalized()
     }
 
     /// Create a right unit `Vector` relative to the `Matrix`.
     #[inline]
     pub fn right(&self) -> Vector<3> {
-        Vector::new([self[0], self[4], self[8]]).normalized()
+        vector!(self[(0, 0)], self[(1, 0)], self[(2, 0)]).normalized()
     }
 
     /// Create a forward unit `Vector` relative to the `Matrix`.
     #[inline]
     pub fn forward(&self) -> Vector<3> {
-        Vector::new([-self[2], -self[6], -self[10]]).normalized()
+        vector!(-self[(0, 2)], -self[(1, 2)], -self[(2, 2)]).normalized()
     }
 
     /// Create a backward unit `Vector` relative to the `Matrix`.
     #[inline]
     pub fn backward(&self) -> Vector<3> {
-        Vector::new([self[2], self[6], self[10]]).normalized()
+        vector!(self[(0, 2)], self[(1, 2)], self[(2, 2)]).normalized()
     }
 
     /// Create a copy of the `Matrix` inverted about the x-axis.
     #[inline]
     pub fn inverted_x(&self) -> Self {
         let mut matrix = *self;
-        matrix[0] *= -1.0;
+        matrix[(0, 0)] *= -1.0;
         matrix
     }
 
@@ -791,7 +822,7 @@ impl Matrix<4, 4> {
     #[inline]
     pub fn inverted_y(&self) -> Self {
         let mut matrix = *self;
-        matrix[5] *= -1.0;
+        matrix[(1, 1)] *= -1.0;
         matrix
     }
 
@@ -799,7 +830,7 @@ impl Matrix<4, 4> {
     #[inline]
     pub fn inverted_z(&self) -> Self {
         let mut matrix = *self;
-        matrix[10] *= -1.0;
+        matrix[(2, 2)] *= -1.0;
         matrix
     }
 
@@ -807,22 +838,22 @@ impl Matrix<4, 4> {
     #[inline]
     pub fn transposed(&self) -> Self {
         let mut matrix = Self::identity();
-        matrix[0] = self[0];
-        matrix[1] = self[4];
-        matrix[2] = self[8];
-        matrix[3] = self[12];
-        matrix[4] = self[1];
-        matrix[5] = self[5];
-        matrix[6] = self[9];
-        matrix[7] = self[13];
-        matrix[8] = self[2];
-        matrix[9] = self[6];
-        matrix[10] = self[10];
-        matrix[11] = self[14];
-        matrix[12] = self[3];
-        matrix[13] = self[7];
-        matrix[14] = self[11];
-        matrix[15] = self[15];
+        matrix[(0, 0)] = self[(0, 0)];
+        matrix[(0, 1)] = self[(1, 0)];
+        matrix[(0, 2)] = self[(2, 0)];
+        matrix[(0, 3)] = self[(3, 0)];
+        matrix[(1, 0)] = self[(0, 1)];
+        matrix[(1, 1)] = self[(1, 1)];
+        matrix[(1, 2)] = self[(2, 1)];
+        matrix[(1, 3)] = self[(3, 1)];
+        matrix[(2, 0)] = self[(0, 2)];
+        matrix[(2, 1)] = self[(1, 2)];
+        matrix[(2, 2)] = self[(2, 2)];
+        matrix[(2, 3)] = self[(3, 2)];
+        matrix[(3, 0)] = self[(0, 3)];
+        matrix[(3, 1)] = self[(1, 3)];
+        matrix[(3, 2)] = self[(2, 3)];
+        matrix[(3, 3)] = self[(3, 3)];
         matrix
     }
 
@@ -831,68 +862,88 @@ impl Matrix<4, 4> {
     pub fn inverse(&self) -> Self {
         let m = self;
 
-        let t0 = m[10] * m[15];
-        let t1 = m[14] * m[11];
-        let t2 = m[6] * m[15];
-        let t3 = m[14] * m[7];
-        let t4 = m[6] * m[11];
-        let t5 = m[10] * m[7];
-        let t6 = m[2] * m[15];
-        let t7 = m[14] * m[3];
-        let t8 = m[2] * m[11];
-        let t9 = m[10] * m[3];
-        let t10 = m[2] * m[7];
-        let t11 = m[6] * m[3];
-        let t12 = m[8] * m[13];
-        let t13 = m[12] * m[9];
-        let t14 = m[4] * m[13];
-        let t15 = m[12] * m[5];
-        let t16 = m[4] * m[9];
-        let t17 = m[8] * m[5];
-        let t18 = m[0] * m[13];
-        let t19 = m[12] * m[1];
-        let t20 = m[0] * m[9];
-        let t21 = m[8] * m[1];
-        let t22 = m[0] * m[5];
-        let t23 = m[4] * m[1];
+        let t0 = m[(2, 2)] * m[(3, 3)];
+        let t1 = m[(3, 2)] * m[(2, 3)];
+        let t2 = m[(1, 2)] * m[(3, 3)];
+        let t3 = m[(3, 2)] * m[(1, 3)];
+        let t4 = m[(1, 2)] * m[(2, 3)];
+        let t5 = m[(2, 2)] * m[(1, 3)];
+        let t6 = m[(0, 2)] * m[(3, 3)];
+        let t7 = m[(3, 2)] * m[(0, 3)];
+        let t8 = m[(0, 2)] * m[(2, 3)];
+        let t9 = m[(2, 2)] * m[(0, 3)];
+        let t10 = m[(0, 2)] * m[(1, 3)];
+        let t11 = m[(1, 2)] * m[(0, 3)];
+        let t12 = m[(2, 0)] * m[(3, 1)];
+        let t13 = m[(3, 0)] * m[(2, 1)];
+        let t14 = m[(1, 0)] * m[(3, 1)];
+        let t15 = m[(3, 0)] * m[(1, 1)];
+        let t16 = m[(1, 0)] * m[(2, 1)];
+        let t17 = m[(2, 0)] * m[(1, 1)];
+        let t18 = m[(0, 0)] * m[(3, 1)];
+        let t19 = m[(3, 0)] * m[(0, 1)];
+        let t20 = m[(0, 0)] * m[(2, 1)];
+        let t21 = m[(2, 0)] * m[(0, 1)];
+        let t22 = m[(0, 0)] * m[(1, 1)];
+        let t23 = m[(1, 0)] * m[(0, 1)];
 
         let mut matrix = Matrix::default();
 
-        matrix[0] = (t0 * m[5] + t3 * m[9] + t4 * m[13]) - (t1 * m[5] + t2 * m[9] + t5 * m[13]);
-        matrix[1] = (t1 * m[1] + t6 * m[9] + t9 * m[13]) - (t0 * m[1] + t7 * m[9] + t8 * m[13]);
-        matrix[2] = (t2 * m[1] + t7 * m[5] + t10 * m[13]) - (t3 * m[1] + t6 * m[5] + t11 * m[13]);
-        matrix[3] = (t5 * m[1] + t8 * m[5] + t11 * m[9]) - (t4 * m[1] + t9 * m[5] + t10 * m[9]);
+        matrix[(0, 0)] = (t0 * m[(1, 1)] + t3 * m[(2, 1)] + t4 * m[(3, 1)])
+            - (t1 * m[(1, 1)] + t2 * m[(2, 1)] + t5 * m[(3, 1)]);
+        matrix[(0, 1)] = (t1 * m[(0, 1)] + t6 * m[(2, 1)] + t9 * m[(3, 1)])
+            - (t0 * m[(0, 1)] + t7 * m[(2, 1)] + t8 * m[(3, 1)]);
+        matrix[(0, 2)] = (t2 * m[(0, 1)] + t7 * m[(1, 1)] + t10 * m[(3, 1)])
+            - (t3 * m[(0, 1)] + t6 * m[(1, 1)] + t11 * m[(3, 1)]);
+        matrix[(0, 3)] = (t5 * m[(0, 1)] + t8 * m[(1, 1)] + t11 * m[(2, 1)])
+            - (t4 * m[(0, 1)] + t9 * m[(1, 1)] + t10 * m[(2, 1)]);
 
-        let d = 1.0 / (m[0] * matrix[0] + m[4] * matrix[1] + m[8] * matrix[2] + m[12] * matrix[3]);
+        let d = 1.0
+            / (m[(0, 0)] * matrix[(0, 0)]
+                + m[(1, 0)] * matrix[(0, 1)]
+                + m[(2, 0)] * matrix[(0, 2)]
+                + m[(3, 0)] * matrix[(0, 3)]);
 
-        matrix[0] *= d;
-        matrix[1] *= d;
-        matrix[2] *= d;
-        matrix[3] *= d;
-        matrix[4] =
-            d * ((t1 * m[4] + t2 * m[8] + t5 * m[12]) - (t0 * m[4] + t3 * m[8] + t4 * m[12]));
-        matrix[5] =
-            d * ((t0 * m[0] + t7 * m[8] + t8 * m[12]) - (t1 * m[0] + t6 * m[8] + t9 * m[12]));
-        matrix[6] =
-            d * ((t3 * m[0] + t6 * m[4] + t11 * m[12]) - (t2 * m[0] + t7 * m[4] + t10 * m[12]));
-        matrix[7] =
-            d * ((t4 * m[0] + t9 * m[4] + t10 * m[8]) - (t5 * m[0] + t8 * m[4] + t11 * m[8]));
-        matrix[8] = d
-            * ((t12 * m[7] + t15 * m[11] + t16 * m[15]) - (t13 * m[7] + t14 * m[11] + t17 * m[15]));
-        matrix[9] = d
-            * ((t13 * m[3] + t18 * m[11] + t21 * m[15]) - (t12 * m[3] + t19 * m[11] + t20 * m[15]));
-        matrix[10] =
-            d * ((t14 * m[3] + t19 * m[7] + t22 * m[15]) - (t15 * m[3] + t18 * m[7] + t23 * m[15]));
-        matrix[11] =
-            d * ((t17 * m[3] + t20 * m[7] + t23 * m[11]) - (t16 * m[3] + t21 * m[7] + t22 * m[11]));
-        matrix[12] = d
-            * ((t14 * m[10] + t17 * m[14] + t13 * m[6]) - (t16 * m[14] + t12 * m[6] + t15 * m[10]));
-        matrix[13] = d
-            * ((t20 * m[14] + t12 * m[2] + t19 * m[10]) - (t18 * m[10] + t21 * m[14] + t13 * m[2]));
-        matrix[14] =
-            d * ((t18 * m[6] + t23 * m[14] + t15 * m[2]) - (t22 * m[14] + t14 * m[2] + t19 * m[6]));
-        matrix[15] =
-            d * ((t22 * m[10] + t16 * m[2] + t21 * m[6]) - (t20 * m[6] + t23 * m[10] + t17 * m[2]));
+        matrix[(0, 0)] *= d;
+        matrix[(0, 1)] *= d;
+        matrix[(0, 2)] *= d;
+        matrix[(0, 3)] *= d;
+        matrix[(1, 0)] = d
+            * ((t1 * m[(1, 0)] + t2 * m[(2, 0)] + t5 * m[(3, 0)])
+                - (t0 * m[(1, 0)] + t3 * m[(2, 0)] + t4 * m[(3, 0)]));
+        matrix[(1, 1)] = d
+            * ((t0 * m[(0, 0)] + t7 * m[(2, 0)] + t8 * m[(3, 0)])
+                - (t1 * m[(0, 0)] + t6 * m[(2, 0)] + t9 * m[(3, 0)]));
+        matrix[(1, 2)] = d
+            * ((t3 * m[(0, 0)] + t6 * m[(1, 0)] + t11 * m[(3, 0)])
+                - (t2 * m[(0, 0)] + t7 * m[(1, 0)] + t10 * m[(3, 0)]));
+        matrix[(1, 3)] = d
+            * ((t4 * m[(0, 0)] + t9 * m[(1, 0)] + t10 * m[(2, 0)])
+                - (t5 * m[(0, 0)] + t8 * m[(1, 0)] + t11 * m[(2, 0)]));
+        matrix[(2, 0)] = d
+            * ((t12 * m[(1, 3)] + t15 * m[(2, 3)] + t16 * m[(3, 3)])
+                - (t13 * m[(1, 3)] + t14 * m[(2, 3)] + t17 * m[(3, 3)]));
+        matrix[(2, 1)] = d
+            * ((t13 * m[(0, 3)] + t18 * m[(2, 3)] + t21 * m[(3, 3)])
+                - (t12 * m[(0, 3)] + t19 * m[(2, 3)] + t20 * m[(3, 3)]));
+        matrix[(2, 2)] = d
+            * ((t14 * m[(0, 3)] + t19 * m[(1, 3)] + t22 * m[(3, 3)])
+                - (t15 * m[(0, 3)] + t18 * m[(1, 3)] + t23 * m[(3, 3)]));
+        matrix[(2, 3)] = d
+            * ((t17 * m[(0, 3)] + t20 * m[(1, 3)] + t23 * m[(2, 3)])
+                - (t16 * m[(0, 3)] + t21 * m[(1, 3)] + t22 * m[(2, 3)]));
+        matrix[(3, 0)] = d
+            * ((t14 * m[(2, 2)] + t17 * m[(3, 2)] + t13 * m[(1, 2)])
+                - (t16 * m[(3, 2)] + t12 * m[(1, 2)] + t15 * m[(2, 2)]));
+        matrix[(3, 1)] = d
+            * ((t20 * m[(3, 2)] + t12 * m[(0, 2)] + t19 * m[(2, 2)])
+                - (t18 * m[(2, 2)] + t21 * m[(3, 2)] + t13 * m[(0, 2)]));
+        matrix[(3, 2)] = d
+            * ((t18 * m[(1, 2)] + t23 * m[(3, 2)] + t15 * m[(0, 2)])
+                - (t22 * m[(3, 2)] + t14 * m[(0, 2)] + t19 * m[(1, 2)]));
+        matrix[(3, 3)] = d
+            * ((t22 * m[(2, 2)] + t16 * m[(0, 2)] + t21 * m[(1, 2)])
+                - (t20 * m[(1, 2)] + t23 * m[(2, 2)] + t17 * m[(0, 2)]));
 
         matrix
     }
@@ -902,17 +953,12 @@ impl Mul for Matrix<4, 4> {
     type Output = Matrix;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut matrix = Self::Output::identity();
-        for i in 0..4 {
-            for j in 0..4 {
-                let mut sum = 0.0;
-                for k in 0..4 {
-                    sum += self[i * k] * rhs[k * j];
-                }
-                matrix[i * j] = sum;
-            }
-        }
-        matrix
+        matrix!(
+            self * vector!(rhs[(0, 0)], rhs[(0, 1)], rhs[(0, 2)], rhs[(0, 3)]),
+            self * vector!(rhs[(1, 0)], rhs[(1, 1)], rhs[(1, 2)], rhs[(1, 3)]),
+            self * vector!(rhs[(2, 0)], rhs[(2, 1)], rhs[(2, 2)], rhs[(2, 3)]),
+            self * vector!(rhs[(3, 0)], rhs[(3, 1)], rhs[(3, 2)], rhs[(3, 3)]),
+        )
     }
 }
 
@@ -921,11 +967,11 @@ impl Mul<Vector<3>> for Matrix<4, 4> {
 
     fn mul(self, v: Vector<3>) -> Self::Output {
         let m = self;
-        Vector::new([
-            v.x() * m[0] + v.y() * m[1] + v.z() * m[2] + m[3],
-            v.x() * m[4] + v.y() * m[5] + v.z() * m[6] + m[7],
-            v.x() * m[8] + v.y() * m[9] + v.z() * m[10] + m[11],
-        ])
+        vector!(
+            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + m[(0, 3)],
+            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + m[(1, 3)],
+            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + m[(2, 3)],
+        )
     }
 }
 
@@ -934,11 +980,11 @@ impl Mul<Matrix<4, 4>> for Vector<3> {
 
     fn mul(self, m: Matrix<4, 4>) -> Self::Output {
         let v = self;
-        Vector::new([
-            v.x() * m[0] + v.y() * m[4] + v.z() * m[8] + m[12],
-            v.x() * m[1] + v.y() * m[5] + v.z() * m[9] + m[13],
-            v.x() * m[2] + v.y() * m[6] + v.z() * m[10] + m[14],
-        ])
+        vector!(
+            v.x() * m[(0, 0)] + v.y() * m[(1, 0)] + v.z() * m[(2, 0)] + m[(3, 0)],
+            v.x() * m[(0, 1)] + v.y() * m[(1, 1)] + v.z() * m[(2, 1)] + m[(3, 1)],
+            v.x() * m[(0, 2)] + v.y() * m[(1, 2)] + v.z() * m[(2, 2)] + m[(3, 2)],
+        )
     }
 }
 
@@ -947,12 +993,12 @@ impl Mul<Vector<4>> for Matrix<4, 4> {
 
     fn mul(self, v: Vector<4>) -> Self::Output {
         let m = self;
-        Vector::new([
-            v.x() * m[0] + v.y() * m[1] + v.z() * m[2] + m[3],
-            v.x() * m[4] + v.y() * m[5] + v.z() * m[6] + m[7],
-            v.x() * m[8] + v.y() * m[9] + v.z() * m[10] + m[11],
-            v.x() * m[12] + v.y() * m[13] + v.z() * m[14] + m[15],
-        ])
+        vector!(
+            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + m[(0, 3)],
+            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + m[(1, 3)],
+            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + m[(2, 3)],
+            v.x() * m[(3, 0)] + v.y() * m[(3, 1)] + v.z() * m[(3, 2)] + m[(3, 3)],
+        )
     }
 }
 
@@ -961,12 +1007,12 @@ impl Mul<Matrix<4, 4>> for Vector<4> {
 
     fn mul(self, m: Matrix<4, 4>) -> Self::Output {
         let v = self;
-        Vector::new([
-            v.x() * m[0] + v.y() * m[4] + v.z() * m[8] + m[12],
-            v.x() * m[1] + v.y() * m[5] + v.z() * m[9] + m[13],
-            v.x() * m[2] + v.y() * m[6] + v.z() * m[10] + m[14],
-            v.x() * m[3] + v.y() * m[7] + v.z() * m[11] + m[15],
-        ])
+        vector!(
+            v.x() * m[(0, 0)] + v.y() * m[(1, 0)] + v.z() * m[(2, 0)] + m[(3, 0)],
+            v.x() * m[(0, 1)] + v.y() * m[(1, 1)] + v.z() * m[(2, 1)] + m[(3, 1)],
+            v.x() * m[(0, 2)] + v.y() * m[(1, 2)] + v.z() * m[(2, 2)] + m[(3, 2)],
+            v.x() * m[(0, 3)] + v.y() * m[(1, 3)] + v.z() * m[(2, 3)] + m[(3, 3)],
+        )
     }
 }
 
@@ -976,8 +1022,8 @@ impl<const N: usize, const M: usize> Matrix<N, M> {
     pub fn identity() -> Self {
         assert_eq!(N, M, "matrix is not symmetrical");
         let mut matrix = Self::default();
-        for i in (0..(N * M)).step_by(N + 1) {
-            matrix[i] = 1.0;
+        for n in 0..N {
+            matrix[(n, n)] = 1.0;
         }
         matrix
     }
@@ -996,21 +1042,17 @@ impl<const N: usize, const M: usize> DerefMut for Matrix<N, M> {
     }
 }
 
-impl<const N: usize, const M: usize> Index<usize> for Matrix<N, M> {
+impl<const N: usize, const M: usize> Index<(usize, usize)> for Matrix<N, M> {
     type Output = f32;
 
     // TODO: Make this a two-dimensional index
-    fn index(&self, index: usize) -> &Self::Output {
-        let n = index / M;
-        let m = index % M;
+    fn index(&self, (n, m): (usize, usize)) -> &Self::Output {
         &self.0[n][m]
     }
 }
 
-impl<const N: usize, const M: usize> IndexMut<usize> for Matrix<N, M> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        let n = index / M;
-        let m = index % M;
+impl<const N: usize, const M: usize> IndexMut<(usize, usize)> for Matrix<N, M> {
+    fn index_mut(&mut self, (n, m): (usize, usize)) -> &mut Self::Output {
         &mut self.0[n][m]
     }
 }

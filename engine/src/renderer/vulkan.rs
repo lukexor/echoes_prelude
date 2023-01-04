@@ -576,7 +576,7 @@ impl Context {
             0.1,
             10.0,
         );
-        self.uniform_transform.projection[5] *= -1.0;
+        self.uniform_transform.projection[(1, 1)] *= -1.0;
         // .inverted_y();
 
         // Copy
