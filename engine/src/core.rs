@@ -5,9 +5,10 @@ use crate::{
     context::Context,
     event::Event,
     renderer::{Renderer, Shader},
-    Result,
+    Error, Result,
 };
 use anyhow::Context as _;
+use derive_builder::Builder;
 use std::{
     borrow::Cow,
     fmt::Write,
@@ -32,31 +33,53 @@ pub trait Update {
     fn on_event(&mut self, _event: Event, _cx: &mut Context) {}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Builder)]
+#[builder(default, build_fn(error = "Error"))]
+#[builder_struct_attr(must_use)]
 #[must_use]
 pub struct Engine {
-    name: Cow<'static, str>,
-    window_title: String,
+    #[builder(setter(into))]
+    title: Cow<'static, str>,
+    #[builder(setter(into))]
+    version: Cow<'static, str>,
     width: u32,
     height: u32,
+    position: Position,
     config: Config,
+    #[builder(setter(each = "shader"))]
     shaders: Vec<Shader>,
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self {
+            title: "".into(),
+            version: "1.0.0".into(),
+            position: Position::from(LogicalPosition::<u32>::default()),
+            width: 1024,
+            height: 768,
+            config: Config::default(),
+            shaders: vec![],
+        }
+    }
 }
 
 impl Engine {
     pub fn builder() -> EngineBuilder {
-        EngineBuilder::new()
+        EngineBuilder::default()
     }
 
     pub fn run(engine: Engine, mut app: impl Update + 'static) -> Result<()> {
         let event_loop = EventLoop::new();
         let window = WindowBuilder::new()
-            .with_title(&engine.window_title)
+            .with_title(engine.title.clone())
             .with_inner_size(LogicalSize::new(engine.width, engine.height))
+            .with_position(engine.position)
             .build(&event_loop)
             .context("failed to create window")?;
 
-        let renderer = Renderer::initialize(engine.name.as_ref(), &window, &engine.shaders)?;
+        let renderer =
+            Renderer::initialize(&engine.title, &engine.version, &window, &engine.shaders)?;
         let mut cx = Context::new(engine.config, renderer);
 
         app.on_start(&mut cx)?;
@@ -92,8 +115,11 @@ impl Engine {
                     let one_second = Duration::from_secs(1);
                     if cx.fps_timer > one_second {
                         cx.window_title.clear();
-                        let _ =
-                            write!(cx.window_title, "{} - FPS: {}", engine.name, cx.fps_counter);
+                        let _ = write!(
+                            cx.window_title,
+                            "{} - FPS: {}",
+                            engine.title, cx.fps_counter
+                        );
                         window.set_title(&cx.window_title);
                         cx.fps_timer -= one_second;
                         cx.fps_counter = 0;
@@ -130,67 +156,5 @@ impl Engine {
                 control_flow.set_exit();
             }
         });
-    }
-}
-
-#[derive(Debug, Clone)]
-#[must_use]
-pub struct EngineBuilder {
-    title: Cow<'static, str>,
-    position: Position,
-    width: u32,
-    height: u32,
-    shaders: Vec<Shader>,
-}
-
-impl Default for EngineBuilder {
-    fn default() -> Self {
-        Self {
-            title: Default::default(),
-            position: Position::from(LogicalPosition::<u32>::default()),
-            width: 1024,
-            height: 768,
-            shaders: vec![],
-        }
-    }
-}
-
-impl EngineBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn title(mut self, title: impl Into<Cow<'static, str>>) -> Self {
-        self.title = title.into();
-        self
-    }
-
-    pub fn position(mut self, position: Position) -> Self {
-        self.position = position;
-        self
-    }
-
-    pub fn dimensions(mut self, width: u32, height: u32) -> Self {
-        self.width = width;
-        self.height = height;
-        self
-    }
-
-    pub fn shader(mut self, shader: Shader) -> Self {
-        self.shaders.push(shader);
-        self
-    }
-
-    pub fn build(self) -> Result<Engine> {
-        let config = Config::new();
-        let window_title = self.title.to_string();
-        Ok(Engine {
-            name: self.title,
-            window_title,
-            width: self.width,
-            height: self.height,
-            config,
-            shaders: self.shaders,
-        })
     }
 }

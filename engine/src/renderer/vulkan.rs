@@ -80,10 +80,15 @@ impl fmt::Debug for Context {
 
 impl RendererBackend for Context {
     /// Initialize Vulkan `Context`.
-    fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self> {
+    fn initialize(
+        application_name: &str,
+        application_version: &str,
+        window: &Window,
+        shaders: &[Shader],
+    ) -> Result<Self> {
         log::info!("initializing vulkan renderer backend");
 
-        let instance = Instance::create(application_name)?;
+        let instance = Instance::create(application_name, application_version)?;
         #[cfg(debug_assertions)]
         let debug = Debug::create(&instance.entry, &instance)?;
 
@@ -730,6 +735,7 @@ mod instance {
     use anyhow::{bail, Context, Result};
     use ash::vk;
     use derive_more::{Deref, DerefMut};
+    use semver::Version;
     use std::{
         collections::HashSet,
         ffi::{c_void, CStr, CString},
@@ -746,19 +752,30 @@ mod instance {
 
     impl Instance {
         /// Create a Vulkan [Instance].
-        pub(crate) fn create(application_name: &str) -> Result<Self> {
+        pub(crate) fn create(application_name: &str, application_version: &str) -> Result<Self> {
             log::debug!("creating vulkan instance");
 
             let entry = ash::Entry::linked();
 
             // Application Info
             let application_name = CString::new(application_name)?;
-            let engine_name = CString::new("Echoes Engine")?;
+            let application_version = Version::parse(application_version)?;
+            let engine_name = CString::new(env!("CARGO_PKG_NAME"))?;
             let application_info = vk::ApplicationInfo::builder()
                 .application_name(&application_name)
-                .application_version(vk::API_VERSION_1_0)
+                .application_version(vk::make_api_version(
+                    0,
+                    application_version.major as u32,
+                    application_version.minor as u32,
+                    application_version.patch as u32,
+                ))
                 .engine_name(&engine_name)
-                .engine_version(vk::API_VERSION_1_0)
+                .engine_version(vk::make_api_version(
+                    0,
+                    env!("CARGO_PKG_VERSION_MAJOR").parse::<u32>()?,
+                    env!("CARGO_PKG_VERSION_MINOR").parse::<u32>()?,
+                    env!("CARGO_PKG_VERSION_PATCH").parse::<u32>()?,
+                ))
                 .api_version(vk::API_VERSION_1_3);
 
             // Validation Layer check

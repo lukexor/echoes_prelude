@@ -65,8 +65,8 @@ const WINDOW_HEIGHT: u32 = 900;
 const VERTEX_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.vert.spv");
 const FRAGMENT_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.frag.spv");
 
-// TODO: async io
-fn main() -> pix_engine::Result<()> {
+#[tokio::main]
+async fn main() -> pix_engine::Result<()> {
     logger::initialize()?;
 
     // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
@@ -76,9 +76,11 @@ fn main() -> pix_engine::Result<()> {
     let application = Application::initialize()?;
     let engine = Engine::builder()
         .title(APPLICATION_NAME)
-        .dimensions(WINDOW_WIDTH, WINDOW_HEIGHT)
-        .shader(Shader::vertex("primary", VERTEX_SHADER)?)
-        .shader(Shader::fragment("primary", FRAGMENT_SHADER)?)
+        .version(env!("CARGO_PKG_VERSION"))
+        .width(WINDOW_WIDTH)
+        .height(WINDOW_HEIGHT)
+        .shader(Shader::vertex("primary", VERTEX_SHADER).await?)
+        .shader(Shader::fragment("primary", FRAGMENT_SHADER).await?)
         .build()?;
     Engine::run(engine, application)
 }

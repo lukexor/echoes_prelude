@@ -1,10 +1,13 @@
+use crate::{
+    math::{Matrix, Radians},
+    vector,
+};
 use anyhow::{Context as _, Result};
 use cfg_if::cfg_if;
-use std::{
-    borrow::Cow,
-    fmt, fs,
-    io::{BufReader, Read},
-    path::Path,
+use std::{borrow::Cow, fmt, path::Path};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, BufReader},
 };
 use winit::window::Window;
 
@@ -28,7 +31,12 @@ cfg_if! {
 }
 
 pub trait RendererBackend: Sized {
-    fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self>;
+    fn initialize(
+        application_name: &str,
+        application_version: &str,
+        window: &Window,
+        shaders: &[Shader],
+    ) -> Result<Self>;
     fn destroy(&mut self);
     fn on_resized(&mut self, width: u32, height: u32);
     fn begin_frame(&mut self, delta_time: f32) -> Result<()>;
@@ -38,12 +46,19 @@ pub trait RendererBackend: Sized {
 #[derive(Debug)]
 pub struct Renderer {
     context: Context,
+    z: f32,
 }
 
 impl Renderer {
-    pub fn initialize(application_name: &str, window: &Window, shaders: &[Shader]) -> Result<Self> {
+    pub fn initialize(
+        application_name: &str,
+        applcation_version: &str,
+        window: &Window,
+        shaders: &[Shader],
+    ) -> Result<Self> {
         Ok(Self {
-            context: Context::initialize(application_name, window, shaders)?,
+            context: Context::initialize(application_name, applcation_version, window, shaders)?,
+            z: -1.0,
         })
     }
 
@@ -104,26 +119,35 @@ impl Shader {
         }
     }
 
-    pub fn from_path(
+    pub async fn from_path(
         name: impl Into<Cow<'static, str>>,
         ty: ShaderType,
         path: impl AsRef<Path>,
     ) -> Result<Self> {
         let path = path.as_ref();
         let mut file = BufReader::new(
-            fs::File::open(path).with_context(|| format!("failed to open shader: {path:?}"))?,
+            File::open(path)
+                .await
+                .with_context(|| format!("failed to open shader: {path:?}"))?,
         );
         let mut bytes = vec![];
         file.read_to_end(&mut bytes)
+            .await
             .with_context(|| format!("failed to read shader: {path:?}"))?;
         Ok(Self::from_bytes(name, ty, bytes))
     }
 
-    pub fn vertex(name: impl Into<Cow<'static, str>>, path: impl AsRef<Path>) -> Result<Self> {
-        Self::from_path(name, ShaderType::Vertex, path)
+    pub async fn vertex(
+        name: impl Into<Cow<'static, str>>,
+        path: impl AsRef<Path>,
+    ) -> Result<Self> {
+        Self::from_path(name, ShaderType::Vertex, path).await
     }
 
-    pub fn fragment(name: impl Into<Cow<'static, str>>, path: impl AsRef<Path>) -> Result<Self> {
-        Self::from_path(name, ShaderType::Fragment, path)
+    pub async fn fragment(
+        name: impl Into<Cow<'static, str>>,
+        path: impl AsRef<Path>,
+    ) -> Result<Self> {
+        Self::from_path(name, ShaderType::Fragment, path).await
     }
 }
