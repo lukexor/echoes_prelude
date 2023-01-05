@@ -1,14 +1,15 @@
 use super::{RendererBackend, Shader};
-use anyhow::{bail, Context as _, Result};
+use anyhow::{bail, Context, Result};
 use ash::vk;
 use std::{ffi::c_void, fmt, ptr, slice, time::Instant};
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    math::{Matrix, Radians, UniformBufferObject},
+    math::{Mat4, Matrix, Radians, UniformBufferObject},
     vector,
 };
 use command_pool::CommandPool;
+#[cfg(debug_assertions)]
 use debug::{Debug, VALIDATION_LAYER_NAME};
 use descriptor::Descriptor;
 use device::Buffer;
@@ -26,7 +27,7 @@ pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 1] = [VALIDATION_LAYER_NAME.as
 #[cfg(not(debug_assertions))]
 pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 0] = [];
 
-pub(crate) struct Context {
+pub(crate) struct RendererState {
     start: Instant,
     current_frame: usize,
     width: u32,
@@ -68,18 +69,18 @@ pub(crate) struct Context {
     syncs: Syncs,
 }
 
-impl fmt::Debug for Context {
+impl fmt::Debug for RendererState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: debug
-        f.debug_struct("Context")
+        f.debug_struct("RendererState")
             .field("surface", &self.surface)
             .field("device", &self.device)
             .finish_non_exhaustive()
     }
 }
 
-impl RendererBackend for Context {
-    /// Initialize Vulkan `Context`.
+impl RendererBackend for RendererState {
+    /// Initialize Vulkan `RendererState`.
     fn initialize(
         application_name: &str,
         application_version: &str,
@@ -163,7 +164,7 @@ impl RendererBackend for Context {
 
         log::info!("initialized vulkan renderer backend successfully");
 
-        Ok(Context {
+        Ok(RendererState {
             start: Instant::now(),
             current_frame: 0,
             width,
@@ -204,8 +205,8 @@ impl RendererBackend for Context {
         })
     }
 
-    /// Shutdown the Vulkan `Context`, freeing any resources.
-    fn destroy(&mut self) {
+    /// Shutdown the Vulkan `RendererState`, freeing any resources.
+    fn shutdown(&mut self) {
         log::info!("destroying vulkan context");
 
         // NOTE: Drop-order is important!
@@ -214,7 +215,7 @@ impl RendererBackend for Context {
         //
         // 1. Elements are destroyed in the correct order
         // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
-        //    the only way to construct a Context with all values initialized.
+        //    the only way to construct a RendererState with all values initialized.
         unsafe {
             self.destroy_swapchain();
 
@@ -228,6 +229,7 @@ impl RendererBackend for Context {
             self.surface.destroy();
             self.device.destroy_sampler(self.sampler, None);
             self.device.destroy();
+            #[cfg(debug_assertions)]
             self.debug.destroy();
             self.instance.destroy();
         }
@@ -245,7 +247,7 @@ impl RendererBackend for Context {
         }
     }
 
-    /// Begin drawing a frame to the [Window] surface.
+    /// Begin rendering a frame to the screen.
     fn begin_frame(&mut self, _delta_time: f32) -> Result<()> {
         let in_flight_fence = self.syncs.in_flight_fences[self.current_frame];
         self.device
@@ -333,21 +335,26 @@ impl RendererBackend for Context {
 
         Ok(())
     }
+    /// Update the projection-view matrices.
+    fn update_projection_view(&mut self, projection: Mat4, view: Mat4) {
+        self.uniform_transform.projection = projection;
+        self.uniform_transform.view = view;
+    }
 
-    /// End drawing a frame.
+    /// Finish rendering a frame to the screen.
     fn end_frame(&mut self, _delta_time: f32) -> Result<()> {
         Ok(())
     }
 }
 
-impl Drop for Context {
+impl Drop for RendererState {
     /// Cleans up all Vulkan resources.
     fn drop(&mut self) {
-        self.destroy();
+        self.shutdown();
     }
 }
 
-impl Context {
+impl RendererState {
     /// Create a [`vk::RenderPass`] instance.
     fn create_render_pass(
         instance: &ash::Instance,
@@ -566,24 +573,6 @@ impl Context {
 
     /// Updates the uniform buffers for this frame
     fn update_uniform_buffer(&mut self, current_image: usize) -> Result<()> {
-        // Update
-        // let time = self.start.elapsed().as_secs_f32();
-        // self.uniform_transform.model = Matrix::rotation_z(Radians(time * 20.0f32.to_radians()));
-        self.uniform_transform.view = Matrix::look_at(
-            vector!(2.0, 2.0, 2.0),
-            vector!(0.0, 0.0, 0.0),
-            vector!(0.0, 0.0, 1.0),
-        );
-        let vk::Extent2D { width, height } = self.swapchain.extent;
-        self.uniform_transform.projection = Matrix::perspective(
-            Radians(45.0f32.to_radians()),
-            width as f32 / height as f32,
-            0.1,
-            10.0,
-        );
-        self.uniform_transform.projection[(1, 1)] *= -1.0;
-        // .inverted_y();
-
         // Copy
         // SAFETY: TODO
         unsafe {
@@ -599,8 +588,9 @@ impl Context {
 
     /// Record the draw command buffers for this frame.
     fn record_command_buffer(&self, buffer: vk::CommandBuffer, image_index: usize) -> Result<()> {
-        let time = self.start.elapsed().as_secs_f32();
-        let model = Matrix::rotation_z(Radians(time * 20.0f32.to_radians()));
+        // let time = self.start.elapsed().as_secs_f32();
+        // let model = Matrix::rotation_z(Radians(time * 20.0f32.to_radians()));
+        let model = Mat4::identity();
 
         // Commands
         let command_begin_info = vk::CommandBufferBeginInfo::builder()
@@ -907,7 +897,7 @@ mod device {
         command_pool::CommandPool, platform, swapchain::Swapchain, Surface, ENABLED_LAYER_NAMES,
     };
     use crate::math::{UniformBufferObject, Vertex};
-    use anyhow::{bail, Context as _, Result};
+    use anyhow::{bail, Context, Result};
     use ash::vk;
     use derive_builder::Builder;
     use derive_more::{Deref, DerefMut};
@@ -1427,6 +1417,7 @@ mod device {
 
     #[derive(Debug, Clone)]
     #[must_use]
+    #[allow(unused)]
     pub(crate) struct DeviceInfo {
         pub(crate) name: String,
         pub(crate) properties: vk::PhysicalDeviceProperties,
@@ -1612,6 +1603,7 @@ mod device {
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     #[must_use]
+    #[allow(unused)]
     pub(crate) enum QueueFamily {
         Graphics,
         Present,
@@ -1857,7 +1849,7 @@ mod swapchain {
                 .image_array_layers(1);
 
             // Create swapchain
-            let swapchain_loader = khr::Swapchain::new(instance, &device);
+            let swapchain_loader = khr::Swapchain::new(instance, device);
             // SAFETY: All create_info values are set correctly above with valid lifetimes.
             let swapchain =
                 unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None) }
@@ -2202,8 +2194,8 @@ mod image {
     }
 
     impl Image {
-        // TODO: Add builder
         /// Create an `Image` instance with a [vk::Image] handle and associated [`vk::DeviceMemory`] with the given parameters.
+        #[allow(clippy::too_many_arguments)]
         pub(crate) fn create(
             name: &str,
             device: &Device,
@@ -2559,7 +2551,7 @@ mod image {
             Ok(view)
         }
 
-        // TODO: Add builder
+        #[allow(clippy::too_many_arguments)]
         fn generate_mipmaps(
             instance: &ash::Instance,
             device: &Device,
@@ -3093,6 +3085,7 @@ mod model {
 
     #[derive(Clone, Debug)]
     #[must_use]
+    #[allow(unused)]
     pub(crate) struct Model {
         pub(crate) name: String,
         pub(crate) vertices: Vec<Vertex>,

@@ -23,14 +23,19 @@ use winit::{
 };
 
 pub trait Update {
+    /// Called on engine start.
     fn on_start(&mut self, _cx: &mut Context) -> Result<()> {
         Ok(())
     }
+
+    /// Called every frame.
     fn on_update(&mut self, delta_time: f32, cx: &mut Context) -> Result<()>;
 
+    /// Called on engine shutdown.
     fn on_stop(&mut self, _cx: &mut Context) {}
 
-    fn on_event(&mut self, _event: Event, _cx: &mut Context) {}
+    /// Called on every event.
+    fn on_event(&mut self, _delta_time: f32, _event: Event, _cx: &mut Context) {}
 }
 
 #[derive(Debug, Builder)]
@@ -80,19 +85,19 @@ impl Engine {
 
         let renderer =
             Renderer::initialize(&engine.title, &engine.version, &window, &engine.shaders)?;
-        let mut cx = Context::new(engine.config, renderer);
+        let mut cx = Context::new(engine.config, renderer, &window);
 
         app.on_start(&mut cx)?;
 
         event_loop.run(move |event, _window_target, control_flow| {
             control_flow.set_poll();
 
+            let current_time = Instant::now();
+            let delta_time = current_time - cx.last_frame_time;
+
             log::trace!("received event: {event:?}");
             match &event {
                 WinitEvent::MainEventsCleared if cx.is_running() => {
-                    let current_time = Instant::now();
-                    let delta_time = current_time - cx.last_frame_time;
-
                     if let Err(err) = app.on_update(delta_time.as_secs_f32(), &mut cx) {
                         log::error!("failed to update application: {err}");
                         control_flow.set_exit_with_code(1);
@@ -128,7 +133,7 @@ impl Engine {
                     cx.last_frame_time = current_time;
                 }
                 WinitEvent::WindowEvent { event, .. } => match event {
-                    WindowEvent::Resized(size) => cx.renderer.on_resized(size.width, size.height),
+                    WindowEvent::Resized(size) => cx.on_resized(size.width, size.height),
                     #[cfg(debug_assertions)]
                     WindowEvent::KeyboardInput { input, .. } => {
                         if matches!(
@@ -150,7 +155,14 @@ impl Engine {
                 }
                 _ => (),
             }
-            app.on_event(event.into(), &mut cx);
+            if !matches!(
+                event,
+                WinitEvent::MainEventsCleared
+                    | WinitEvent::RedrawEventsCleared
+                    | WinitEvent::NewEvents(_)
+            ) {
+                app.on_event(delta_time.as_secs_f32(), event.into(), &mut cx);
+            }
 
             if cx.should_quit {
                 control_flow.set_exit();

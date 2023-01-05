@@ -1,7 +1,4 @@
-use crate::{
-    math::{Matrix, Radians},
-    vector,
-};
+use crate::math::Mat4;
 use anyhow::{Context as _, Result};
 use cfg_if::cfg_if;
 use std::{borrow::Cow, fmt, path::Path};
@@ -14,14 +11,14 @@ use winit::window::Window;
 cfg_if! {
     if #[cfg(feature = "vulkan")] {
         mod vulkan;
-        use vulkan::Context;
+        use vulkan::RendererState;
     } else if #[cfg(feature = "opengl")] {
         mod opengl;
         use opengl::Context;
     } else {
         #[derive(Debug)]
         struct Context;
-        impl RendererBackend for Context {
+        impl RendererBackend for RendererState {
             fn initialize(application_name: &str, window: &Window) -> Result<Self> { Ok(Self) }
             fn on_resized(&mut self, width: u32, height: u32) {}
             fn draw_frame(&mut self) -> Result<()> { Ok(()) }
@@ -31,25 +28,37 @@ cfg_if! {
 }
 
 pub trait RendererBackend: Sized {
+    /// Initialize the `RendererBackend`.
     fn initialize(
         application_name: &str,
         application_version: &str,
         window: &Window,
         shaders: &[Shader],
     ) -> Result<Self>;
-    fn destroy(&mut self);
+
+    /// Shutdown and destroy any resources created by the `RendererBackend`.
+    fn shutdown(&mut self);
+
+    /// Handle window resized event.
     fn on_resized(&mut self, width: u32, height: u32);
+
+    /// Begin rendering a frame to the screen.
     fn begin_frame(&mut self, delta_time: f32) -> Result<()>;
+
+    /// Finish rendering a frame to the screen.
     fn end_frame(&mut self, delta_time: f32) -> Result<()>;
+
+    /// Update the projection-view matrices.
+    fn update_projection_view(&mut self, projection: Mat4, view: Mat4);
 }
 
 #[derive(Debug)]
 pub struct Renderer {
-    context: Context,
-    z: f32,
+    state: RendererState,
 }
 
 impl Renderer {
+    /// Initialize the `Renderer`.
     pub fn initialize(
         application_name: &str,
         applcation_version: &str,
@@ -57,33 +66,44 @@ impl Renderer {
         shaders: &[Shader],
     ) -> Result<Self> {
         Ok(Self {
-            context: Context::initialize(application_name, applcation_version, window, shaders)?,
-            z: -1.0,
+            state: RendererState::initialize(
+                application_name,
+                applcation_version,
+                window,
+                shaders,
+            )?,
         })
     }
 
+    /// Shutdown the `Renderer`
     pub fn shutdown(&mut self) {
-        todo!()
+        // TODO
     }
 
+    /// Handle window resized event.
     pub fn on_resized(&mut self, width: u32, height: u32) {
-        self.context.on_resized(width, height);
+        self.state.on_resized(width, height);
     }
 
+    /// Draw a frame to the screen.
     pub fn draw_frame(&mut self, render_state: RenderState) -> Result<()> {
-        self.context.begin_frame(render_state.delta_time)?;
+        self.state.begin_frame(render_state.delta_time)?;
+        self.state
+            .update_projection_view(render_state.projection, render_state.view);
 
-        self.context.end_frame(render_state.delta_time)?;
+        self.state.end_frame(render_state.delta_time)?;
 
         Ok(())
     }
 }
 
 // TODO: Make fields private
-#[derive(Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 #[must_use]
 pub struct RenderState {
     pub delta_time: f32,
+    pub view: Mat4,
+    pub projection: Mat4,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

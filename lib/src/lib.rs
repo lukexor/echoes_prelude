@@ -68,6 +68,6 @@ pub fn audio_samples(game: &mut Game) -> Result<Vec<f32>> {
 }
 
 #[no_mangle]
-pub fn on_event(game: &mut Game, event: Event, cx: &mut Context) {
-    game.on_event(event, cx);
+pub fn on_event(game: &mut Game, delta_time: f32, event: Event, cx: &mut Context) {
+    game.on_event(delta_time, event, cx);
 }

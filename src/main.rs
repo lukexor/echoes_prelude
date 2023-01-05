@@ -99,11 +99,13 @@ impl Application {
 }
 
 impl Update for Application {
+    /// Called on engine start.
     fn on_start(&mut self, _cx: &mut Context) -> pix_engine::Result<()> {
         log::info!("application started");
         Ok(())
     }
 
+    /// Called every frame.
     fn on_update(&mut self, delta_time: f32, cx: &mut Context) -> pix_engine::Result<()> {
         update(&mut self.game, delta_time, cx)?;
         render(&mut self.game, delta_time, cx)?;
@@ -111,11 +113,13 @@ impl Update for Application {
         Ok(())
     }
 
+    /// Called on engine shutdown.
     fn on_stop(&mut self, _cx: &mut Context) {
         log::info!("application shutting down");
     }
 
-    fn on_event(&mut self, event: Event, cx: &mut Context) {
-        on_event(&mut self.game, event, cx);
+    /// Called on every event.
+    fn on_event(&mut self, delta_time: f32, event: Event, cx: &mut Context) {
+        on_event(&mut self.game, delta_time, event, cx);
     }
 }

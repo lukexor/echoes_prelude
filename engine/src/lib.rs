@@ -39,6 +39,7 @@
 
 use thiserror::Error;
 
+pub mod camera;
 #[macro_use]
 pub mod profiling;
 pub mod config;

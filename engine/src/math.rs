@@ -104,11 +104,23 @@ impl Vector<2> {
         self[0]
     }
 
+    /// Set the `x` coordinate.
+    #[inline]
+    pub fn set_x(&mut self, value: f32) {
+        self[0] = value;
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
     pub fn y(&self) -> f32 {
         self[1]
+    }
+
+    /// Set the `y` coordinate.
+    #[inline]
+    pub fn set_y(&mut self, value: f32) {
+        self[1] = value;
     }
 }
 
@@ -182,6 +194,12 @@ impl Vector<3> {
         self[0]
     }
 
+    /// Set the `x` coordinate.
+    #[inline]
+    pub fn set_x(&mut self, value: f32) {
+        self[0] = value;
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
@@ -189,11 +207,23 @@ impl Vector<3> {
         self[1]
     }
 
+    /// Set the `y` coordinate.
+    #[inline]
+    pub fn set_y(&mut self, value: f32) {
+        self[1] = value;
+    }
+
     /// Return the `z` coordinate.
     #[must_use]
     #[inline]
     pub fn z(&self) -> f32 {
         self[2]
+    }
+
+    /// Set the `z` coordinate.
+    #[inline]
+    pub fn set_z(&mut self, value: f32) {
+        self[2] = value;
     }
 
     /// Calculate the dot-product between two `Vector`s.
@@ -215,6 +245,7 @@ impl Vector<3> {
     }
 
     /// Create a transformed `Vector` by applying a `Matrix`.
+    #[inline]
     pub fn transformed(&self, matrix: Matrix<4, 4>) -> Self {
         let [x, y, z] = self.0;
         vector!(
@@ -245,11 +276,23 @@ impl Vector<4> {
         self[0]
     }
 
+    /// Set the `x` coordinate.
+    #[inline]
+    pub fn set_x(&mut self, value: f32) {
+        self[0] = value;
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
     pub fn y(&self) -> f32 {
         self[1]
+    }
+
+    /// Set the `y` coordinate.
+    #[inline]
+    pub fn set_y(&mut self, value: f32) {
+        self[1] = value;
     }
 
     /// Return the `z` coordinate.
@@ -259,11 +302,23 @@ impl Vector<4> {
         self[2]
     }
 
+    /// Set the `z` coordinate.
+    #[inline]
+    pub fn set_z(&mut self, value: f32) {
+        self[2] = value;
+    }
+
     /// Return the `w` coordinate.
     #[must_use]
     #[inline]
     pub fn w(&self) -> f32 {
         self[3]
+    }
+
+    /// Set the `w` coordinate.
+    #[inline]
+    pub fn set_w(&mut self, value: f32) {
+        self[3] = value;
     }
 
     /// Calculate the dot-product between two `Vector`s, pairwise.
@@ -283,34 +338,49 @@ impl<const N: usize> Vector<N> {
     }
 
     /// Create a N-dimensional `Vector` at the origin.
+    #[inline]
     pub fn origin() -> Self {
         Self([0.0; N])
     }
 
     /// Create a N-dimensional unit `Vector`.
+    #[inline]
     pub fn unit() -> Self {
         Self([1.0; N])
     }
 
     /// Converts the `Vector` into an array of `f32`.
     #[must_use]
+    #[inline]
     pub fn to_array(self) -> [f32; N] {
         self.0
     }
 
+    /// Returns whether two `Vector`s are equal given an epsilon.
+    #[must_use]
+    #[inline]
+    pub fn compare(&self, rhs: Self, epsilon: f32) -> bool {
+        self.iter()
+            .zip(rhs.iter())
+            .all(|(a, b)| (a - b).abs() <= epsilon)
+    }
+
     /// Calculate the squared magnitude of the `Vector`.
     #[must_use]
+    #[inline]
     pub fn magnitude_squared(&self) -> f32 {
         self.iter().map(|val| val * val).sum()
     }
 
     /// Calculate the magnitude of the `Vector`.
     #[must_use]
+    #[inline]
     pub fn magnitude(&self) -> f32 {
         self.magnitude_squared().sqrt()
     }
 
     /// Normalize the `Vector` into a unit `Vector`.
+    #[inline]
     pub fn normalize(&mut self) {
         let magnitude = self.magnitude();
         if magnitude != 0.0 {
@@ -319,6 +389,7 @@ impl<const N: usize> Vector<N> {
     }
 
     /// Create a normalized copy of the `Vector`.
+    #[inline]
     pub fn normalized(&self) -> Self {
         let mut vector = *self;
         vector.normalize();
@@ -327,6 +398,7 @@ impl<const N: usize> Vector<N> {
 
     /// Create the Euclidean distance between two `Vector`s.
     #[must_use]
+    #[inline]
     pub fn distance(&self, vector: Self) -> f32 {
         (*self - vector).magnitude()
     }
@@ -358,7 +430,7 @@ impl<const N: usize> Add for Vector<N> {
     type Output = Vector<N>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -371,7 +443,7 @@ impl<const N: usize> Add for &Vector<N> {
     type Output = Vector<N>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -392,7 +464,7 @@ impl<const N: usize> Sub for Vector<N> {
     type Output = Vector<N>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -405,7 +477,7 @@ impl<const N: usize> Sub for &Vector<N> {
     type Output = Vector<N>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -426,7 +498,7 @@ impl<const N: usize> Mul for Vector<N> {
     type Output = Vector<N>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -439,7 +511,7 @@ impl<const N: usize> Mul for &Vector<N> {
     type Output = Vector<N>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -452,7 +524,7 @@ impl<const N: usize> Mul<f32> for Vector<N> {
     type Output = Vector<N>;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector.iter_mut().for_each(|val| *val *= rhs);
         vector
     }
@@ -470,7 +542,7 @@ impl<const N: usize> Mul<f32> for &Vector<N> {
     type Output = Vector<N>;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector.iter_mut().for_each(|val| *val *= rhs);
         vector
     }
@@ -486,7 +558,7 @@ impl<const N: usize> Div for Vector<N> {
     type Output = Vector<N>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -499,7 +571,7 @@ impl<const N: usize> Div for &Vector<N> {
     type Output = Vector<N>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector
             .iter_mut()
             .zip(rhs.iter())
@@ -512,7 +584,7 @@ impl<const N: usize> Div<f32> for Vector<N> {
     type Output = Vector<N>;
 
     fn div(self, rhs: f32) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector.iter_mut().for_each(|val| *val /= rhs);
         vector
     }
@@ -522,7 +594,7 @@ impl<const N: usize> Div<f32> for &Vector<N> {
     type Output = Vector<N>;
 
     fn div(self, rhs: f32) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector.iter_mut().for_each(|val| *val /= rhs);
         vector
     }
@@ -540,7 +612,7 @@ impl<const N: usize> Neg for Vector<N> {
     type Output = Vector<N>;
 
     fn neg(self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = self;
         vector.iter_mut().for_each(|val| *val = val.neg());
         vector
     }
@@ -550,14 +622,14 @@ impl<const N: usize> Neg for &Vector<N> {
     type Output = Vector<N>;
 
     fn neg(self) -> Self::Output {
-        let mut vector = Self::Output::default();
+        let mut vector = *self;
         vector.iter_mut().for_each(|val| *val = val.neg());
         vector
     }
 }
 
 /// A NxM `Matrix`.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[must_use]
 #[repr(transparent)]
 pub struct Matrix<const N: usize = 4, const M: usize = 4>([[f32; M]; N]);
@@ -676,7 +748,6 @@ impl Matrix<4, 4> {
     }
 
     /// Create a rotation `Matrix` from a `Quaternion`.
-    #[inline]
     pub fn from_quaternion(&self, quaternion: Quaternion) -> Self {
         let q = quaternion.normalized();
         let mut matrix = Self::identity();
@@ -697,7 +768,6 @@ impl Matrix<4, 4> {
     }
 
     /// Create a rotation `Matrix` from a `Quaternion` around a center point.
-    #[inline]
     pub fn from_quaternion_center(&self, quaternion: Quaternion, center: Vector<3>) -> Self {
         let q = quaternion;
         let c = center;
@@ -835,7 +905,6 @@ impl Matrix<4, 4> {
     }
 
     /// Create a transposed copy of the `Matrix`.
-    #[inline]
     pub fn transposed(&self) -> Self {
         let mut matrix = Self::identity();
         matrix[(0, 0)] = self[(0, 0)];
@@ -858,7 +927,6 @@ impl Matrix<4, 4> {
     }
 
     /// Create an inversed copy of the `Matrix`.
-    #[inline]
     pub fn inverse(&self) -> Self {
         let m = self;
 
@@ -953,11 +1021,32 @@ impl Mul for Matrix<4, 4> {
     type Output = Matrix;
 
     fn mul(self, rhs: Self) -> Self::Output {
+        // TODO: Better way to clean this up?
+        let mat4_mul = |m: Mat4, v: Vec4| {
+            vector!(
+                v.x() * m[(0, 0)] + v.y() * m[(1, 0)] + v.z() * m[(2, 0)] + v.w() * m[(3, 0)],
+                v.x() * m[(0, 1)] + v.y() * m[(1, 1)] + v.z() * m[(2, 1)] + v.w() * m[(3, 1)],
+                v.x() * m[(0, 2)] + v.y() * m[(1, 2)] + v.z() * m[(2, 2)] + v.w() * m[(3, 2)],
+                v.x() * m[(0, 3)] + v.y() * m[(1, 3)] + v.z() * m[(2, 3)] + v.w() * m[(3, 3)],
+            )
+        };
         matrix!(
-            self * vector!(rhs[(0, 0)], rhs[(0, 1)], rhs[(0, 2)], rhs[(0, 3)]),
-            self * vector!(rhs[(1, 0)], rhs[(1, 1)], rhs[(1, 2)], rhs[(1, 3)]),
-            self * vector!(rhs[(2, 0)], rhs[(2, 1)], rhs[(2, 2)], rhs[(2, 3)]),
-            self * vector!(rhs[(3, 0)], rhs[(3, 1)], rhs[(3, 2)], rhs[(3, 3)]),
+            mat4_mul(
+                self,
+                vector!(rhs[(0, 0)], rhs[(0, 1)], rhs[(0, 2)], rhs[(0, 3)])
+            ),
+            mat4_mul(
+                self,
+                vector!(rhs[(1, 0)], rhs[(1, 1)], rhs[(1, 2)], rhs[(1, 3)])
+            ),
+            mat4_mul(
+                self,
+                vector!(rhs[(2, 0)], rhs[(2, 1)], rhs[(2, 2)], rhs[(2, 3)])
+            ),
+            mat4_mul(
+                self,
+                vector!(rhs[(3, 0)], rhs[(3, 1)], rhs[(3, 2)], rhs[(3, 3)])
+            ),
         )
     }
 }
@@ -981,9 +1070,9 @@ impl Mul<Matrix<4, 4>> for Vector<3> {
     fn mul(self, m: Matrix<4, 4>) -> Self::Output {
         let v = self;
         vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(1, 0)] + v.z() * m[(2, 0)] + m[(3, 0)],
-            v.x() * m[(0, 1)] + v.y() * m[(1, 1)] + v.z() * m[(2, 1)] + m[(3, 1)],
-            v.x() * m[(0, 2)] + v.y() * m[(1, 2)] + v.z() * m[(2, 2)] + m[(3, 2)],
+            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + m[(0, 3)],
+            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + m[(1, 3)],
+            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + m[(2, 3)],
         )
     }
 }
@@ -994,10 +1083,10 @@ impl Mul<Vector<4>> for Matrix<4, 4> {
     fn mul(self, v: Vector<4>) -> Self::Output {
         let m = self;
         vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + m[(0, 3)],
-            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + m[(1, 3)],
-            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + m[(2, 3)],
-            v.x() * m[(3, 0)] + v.y() * m[(3, 1)] + v.z() * m[(3, 2)] + m[(3, 3)],
+            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + v.w() * m[(0, 3)],
+            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + v.w() * m[(1, 3)],
+            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + v.w() * m[(2, 3)],
+            v.x() * m[(3, 0)] + v.y() * m[(3, 1)] + v.z() * m[(3, 2)] + v.w() * m[(3, 3)],
         )
     }
 }
@@ -1008,10 +1097,10 @@ impl Mul<Matrix<4, 4>> for Vector<4> {
     fn mul(self, m: Matrix<4, 4>) -> Self::Output {
         let v = self;
         vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(1, 0)] + v.z() * m[(2, 0)] + m[(3, 0)],
-            v.x() * m[(0, 1)] + v.y() * m[(1, 1)] + v.z() * m[(2, 1)] + m[(3, 1)],
-            v.x() * m[(0, 2)] + v.y() * m[(1, 2)] + v.z() * m[(2, 2)] + m[(3, 2)],
-            v.x() * m[(0, 3)] + v.y() * m[(1, 3)] + v.z() * m[(2, 3)] + m[(3, 3)],
+            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + v.w() * m[(0, 3)],
+            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + v.w() * m[(1, 3)],
+            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + v.w() * m[(2, 3)],
+            v.x() * m[(3, 0)] + v.y() * m[(3, 1)] + v.z() * m[(3, 2)] + v.w() * m[(3, 3)],
         )
     }
 }
@@ -1094,11 +1183,23 @@ impl Quaternion {
         self[0]
     }
 
+    /// Set the `x` coordinate.
+    #[inline]
+    pub fn set_x(&mut self, value: f32) {
+        self[0] = value;
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
     pub fn y(&self) -> f32 {
         self[1]
+    }
+
+    /// Set the `y` coordinate.
+    #[inline]
+    pub fn set_y(&mut self, value: f32) {
+        self[1] = value;
     }
 
     /// Return the `z` coordinate.
@@ -1108,11 +1209,23 @@ impl Quaternion {
         self[2]
     }
 
+    /// Set the `z` coordinate.
+    #[inline]
+    pub fn set_z(&mut self, value: f32) {
+        self[2] = value;
+    }
+
     /// Return the `w` coordinate.
     #[must_use]
     #[inline]
     pub fn w(&self) -> f32 {
         self[3]
+    }
+
+    /// Set the `w` coordinate.
+    #[inline]
+    pub fn set_w(&mut self, value: f32) {
+        self[3] = value;
     }
 
     /// Create an identity `Quaternion`.
@@ -1206,7 +1319,7 @@ impl Add for Quaternion {
     type Output = Quaternion;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut quaternion = Self::Output::default();
+        let mut quaternion = self;
         quaternion
             .iter_mut()
             .zip(rhs.iter())
@@ -1219,7 +1332,7 @@ impl Add for &Quaternion {
     type Output = Quaternion;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut quaternion = Self::Output::default();
+        let mut quaternion = *self;
         quaternion
             .iter_mut()
             .zip(rhs.iter())
@@ -1232,7 +1345,7 @@ impl Sub for Quaternion {
     type Output = Quaternion;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut quaternion = Self::Output::default();
+        let mut quaternion = self;
         quaternion
             .iter_mut()
             .zip(rhs.iter())
@@ -1245,7 +1358,7 @@ impl Sub for &Quaternion {
     type Output = Quaternion;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut quaternion = Self::Output::default();
+        let mut quaternion = *self;
         quaternion
             .iter_mut()
             .zip(rhs.iter())
@@ -1282,7 +1395,7 @@ impl Mul<f32> for Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let mut quaternion = Self::Output::default();
+        let mut quaternion = self;
         quaternion.iter_mut().for_each(|val| *val *= rhs);
         quaternion
     }
@@ -1292,7 +1405,7 @@ impl Mul<f32> for &Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let mut quaternion = Self::Output::default();
+        let mut quaternion = *self;
         quaternion.iter_mut().for_each(|val| *val *= rhs);
         quaternion
     }
@@ -1302,9 +1415,9 @@ impl Neg for Quaternion {
     type Output = Quaternion;
 
     fn neg(self) -> Self::Output {
-        let mut vector = Self::Output::default();
-        vector.iter_mut().for_each(|val| *val = val.neg());
-        vector
+        let mut quaternion = self;
+        quaternion.iter_mut().for_each(|val| *val = val.neg());
+        quaternion
     }
 }
 
@@ -1312,9 +1425,9 @@ impl Neg for &Quaternion {
     type Output = Quaternion;
 
     fn neg(self) -> Self::Output {
-        let mut vector = Self::Output::default();
-        vector.iter_mut().for_each(|val| *val = val.neg());
-        vector
+        let mut quaternion = *self;
+        quaternion.iter_mut().for_each(|val| *val = val.neg());
+        quaternion
     }
 }
 
@@ -1411,4 +1524,44 @@ pub fn rgb_to_u32(r: u32, g: u32, b: u32) -> u32 {
 #[must_use]
 pub fn u32_to_rgb(value: u32) -> [u32; 3] {
     [(value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF]
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn matrix_multiply_matrix() {
+        let m1 = matrix!(
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0]
+        );
+        let m2 = matrix!(
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0]
+        );
+        assert_eq!(
+            m1 * m2,
+            matrix!(
+                [34.0, 44.0, 54.0, 64.0],
+                [82.0, 108.0, 134.0, 160.0],
+                [34.0, 44.0, 54.0, 64.0],
+                [82.0, 108.0, 134.0, 160.0]
+            )
+        );
+    }
+
+    #[test]
+    fn matrix_multiply_vector() {
+        let m = matrix!(
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0]
+        );
+        let v = vector!(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(m * v, vector!(30.0, 70.0, 30.0, 70.0));
+    }
 }
