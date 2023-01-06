@@ -1,13 +1,10 @@
 use super::{RendererBackend, Shader};
 use anyhow::{bail, Context, Result};
 use ash::vk;
-use std::{ffi::c_void, fmt, ptr, slice, time::Instant};
+use std::{ffi::c_void, fmt, ptr, slice};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{
-    math::{Mat4, Matrix, Radians, UniformBufferObject},
-    vector,
-};
+use crate::math::{Mat4, UniformBufferObject};
 use command_pool::CommandPool;
 #[cfg(debug_assertions)]
 use debug::{Debug, VALIDATION_LAYER_NAME};
@@ -28,7 +25,6 @@ pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 1] = [VALIDATION_LAYER_NAME.as
 pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 0] = [];
 
 pub(crate) struct RendererState {
-    start: Instant,
     current_frame: usize,
     width: u32,
     height: u32,
@@ -52,7 +48,7 @@ pub(crate) struct RendererState {
     textures: Vec<Image>,
     sampler: vk::Sampler,
 
-    uniform_transform: UniformBufferObject,
+    uniform_buffer_object: UniformBufferObject,
     uniform_buffers: Vec<Buffer>,
     uniform_buffers_mapped: Vec<*mut c_void>,
     descriptor: Descriptor,
@@ -62,6 +58,7 @@ pub(crate) struct RendererState {
     depth_image: Image,
     framebuffers: Vec<vk::Framebuffer>,
 
+    model: Mat4, // FIXME: temporary
     models: Vec<Model>,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -165,7 +162,6 @@ impl RendererBackend for RendererState {
         log::info!("initialized vulkan renderer backend successfully");
 
         Ok(RendererState {
-            start: Instant::now(),
             current_frame: 0,
             width,
             height,
@@ -187,7 +183,7 @@ impl RendererBackend for RendererState {
             textures: vec![texture],
             sampler,
 
-            uniform_transform,
+            uniform_buffer_object: uniform_transform,
             uniform_buffers,
             uniform_buffers_mapped,
             descriptor,
@@ -197,6 +193,7 @@ impl RendererBackend for RendererState {
             depth_image,
             framebuffers,
 
+            model: Mat4::identity(), // FIXME: temporary
             models: vec![model],
             vertex_buffer,
             index_buffer,
@@ -335,15 +332,21 @@ impl RendererBackend for RendererState {
 
         Ok(())
     }
-    /// Update the projection-view matrices.
-    fn update_projection_view(&mut self, projection: Mat4, view: Mat4) {
-        self.uniform_transform.projection = projection;
-        self.uniform_transform.view = view;
-    }
 
     /// Finish rendering a frame to the screen.
     fn end_frame(&mut self, _delta_time: f32) -> Result<()> {
         Ok(())
+    }
+
+    /// Update the projection-view matrices for the scene.
+    fn update_projection_view(&mut self, projection: Mat4, view: Mat4) {
+        self.uniform_buffer_object.projection = projection;
+        self.uniform_buffer_object.view = view;
+    }
+
+    /// Update the model matrix for the scene.
+    fn update_model(&mut self, model: Mat4) {
+        self.model = model;
     }
 }
 
@@ -577,7 +580,7 @@ impl RendererState {
         // SAFETY: TODO
         unsafe {
             ptr::copy_nonoverlapping(
-                &self.uniform_transform,
+                &self.uniform_buffer_object,
                 self.uniform_buffers_mapped[current_image].cast(),
                 1,
             );
@@ -588,10 +591,6 @@ impl RendererState {
 
     /// Record the draw command buffers for this frame.
     fn record_command_buffer(&self, buffer: vk::CommandBuffer, image_index: usize) -> Result<()> {
-        // let time = self.start.elapsed().as_secs_f32();
-        // let model = Matrix::rotation_z(Radians(time * 20.0f32.to_radians()));
-        let model = Mat4::identity();
-
         // Commands
         let command_begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -684,7 +683,7 @@ impl RendererState {
 
         // SAFETY: TODO
         unsafe {
-            let (_, model_bytes, _) = model.as_slice().align_to::<u8>();
+            let (_, model_bytes, _) = self.model.as_slice().align_to::<u8>();
             self.device.cmd_push_constants(
                 buffer,
                 self.pipeline.layout,

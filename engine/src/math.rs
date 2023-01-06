@@ -530,14 +530,6 @@ impl<const N: usize> Mul<f32> for Vector<N> {
     }
 }
 
-impl<const N: usize> MulAssign for Vector<N> {
-    fn mul_assign(&mut self, rhs: Self) {
-        self.iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val *= rhs);
-    }
-}
-
 impl<const N: usize> Mul<f32> for &Vector<N> {
     type Output = Vector<N>;
 
@@ -545,6 +537,34 @@ impl<const N: usize> Mul<f32> for &Vector<N> {
         let mut vector = *self;
         vector.iter_mut().for_each(|val| *val *= rhs);
         vector
+    }
+}
+
+impl<const N: usize> Mul<Vector<N>> for f32 {
+    type Output = Vector<N>;
+
+    fn mul(self, rhs: Vector<N>) -> Self::Output {
+        let mut vector = rhs;
+        vector.iter_mut().for_each(|val| *val *= self);
+        vector
+    }
+}
+
+impl<const N: usize> Mul<&Vector<N>> for f32 {
+    type Output = Vector<N>;
+
+    fn mul(self, rhs: &Vector<N>) -> Self::Output {
+        let mut vector = *rhs;
+        vector.iter_mut().for_each(|val| *val *= self);
+        vector
+    }
+}
+
+impl<const N: usize> MulAssign for Vector<N> {
+    fn mul_assign(&mut self, rhs: Self) {
+        self.iter_mut()
+            .zip(rhs.iter())
+            .for_each(|(val, rhs)| *val *= rhs);
     }
 }
 
@@ -600,11 +620,37 @@ impl<const N: usize> Div<f32> for &Vector<N> {
     }
 }
 
+impl<const N: usize> Div<Vector<N>> for f32 {
+    type Output = Vector<N>;
+
+    fn div(self, rhs: Vector<N>) -> Self::Output {
+        let mut vector = rhs;
+        vector.iter_mut().for_each(|val| *val /= self);
+        vector
+    }
+}
+
+impl<const N: usize> Div<&Vector<N>> for f32 {
+    type Output = Vector<N>;
+
+    fn div(self, rhs: &Vector<N>) -> Self::Output {
+        let mut vector = *rhs;
+        vector.iter_mut().for_each(|val| *val /= self);
+        vector
+    }
+}
+
 impl<const N: usize> DivAssign for Vector<N> {
     fn div_assign(&mut self, rhs: Self) {
         self.iter_mut()
             .zip(rhs.iter())
             .for_each(|(val, rhs)| *val /= rhs);
+    }
+}
+
+impl<const N: usize> DivAssign<f32> for Vector<N> {
+    fn div_assign(&mut self, rhs: f32) {
+        self.iter_mut().for_each(|val| *val /= rhs);
     }
 }
 
@@ -693,7 +739,12 @@ impl Matrix<4, 4> {
 
     /// Create a perspective projection `Matrix`.
     #[inline]
-    pub fn perspective(fov: Radians, aspect_ratio: f32, near_clip: f32, far_clip: f32) -> Self {
+    pub fn perspective(
+        fov: Radians<f32>,
+        aspect_ratio: f32,
+        near_clip: f32,
+        far_clip: f32,
+    ) -> Self {
         let tan_frac_fov_two = (fov * 0.5).tan();
         let nf = far_clip - near_clip;
         let mut matrix = Self::identity();
@@ -801,7 +852,7 @@ impl Matrix<4, 4> {
 
     /// Create a rotation `Matrix` for all axes for the given angles.
     #[inline]
-    pub fn rotation(x_angle: Radians, y_angle: Radians, z_angle: Radians) -> Self {
+    pub fn rotation(x_angle: Radians<f32>, y_angle: Radians<f32>, z_angle: Radians<f32>) -> Self {
         let rotate_x = Self::rotation_x(x_angle);
         let rotate_y = Self::rotation_y(y_angle);
         let rotate_z = Self::rotation_z(z_angle);
@@ -810,7 +861,7 @@ impl Matrix<4, 4> {
 
     /// Create a rotation `Matrix` for about the x-axis for the given angle.
     #[inline]
-    pub fn rotation_x(angle: Radians) -> Self {
+    pub fn rotation_x(angle: Radians<f32>) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.sin_cos();
         matrix[(1, 1)] = cos;
@@ -822,7 +873,7 @@ impl Matrix<4, 4> {
 
     /// Create a rotation `Matrix` for about the y-axis for the given angle.
     #[inline]
-    pub fn rotation_y(angle: Radians) -> Self {
+    pub fn rotation_y(angle: Radians<f32>) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.sin_cos();
         matrix[(0, 0)] = cos;
@@ -834,7 +885,7 @@ impl Matrix<4, 4> {
 
     /// Create a rotation `Matrix` for about the z-axis for the given angle.
     #[inline]
-    pub fn rotation_z(angle: Radians) -> Self {
+    pub fn rotation_z(angle: Radians<f32>) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.sin_cos();
         matrix[(0, 0)] = cos;
@@ -1167,7 +1218,7 @@ impl Quaternion {
 
     /// Create a `Quaternion` from an axis and angle.
     #[inline]
-    pub fn from_axis_angle(axis: Vector<3>, angle: Radians, normalize: bool) -> Self {
+    pub fn from_axis_angle(axis: Vector<3>, angle: Radians<f32>, normalize: bool) -> Self {
         let frac_angle_two = 0.5 * *angle;
         let (sin, cos) = frac_angle_two.sin_cos();
         let quaternion = Self([sin * axis.x(), sin * axis.y(), sin * axis.z(), cos]);
@@ -1441,8 +1492,6 @@ impl Neg for &Quaternion {
     PartialOrd,
     derive_more::Add,
     derive_more::AddAssign,
-    derive_more::From,
-    derive_more::Into,
     derive_more::Mul,
     derive_more::MulAssign,
     derive_more::Div,
@@ -1453,18 +1502,30 @@ impl Neg for &Quaternion {
 )]
 #[must_use]
 #[repr(transparent)]
-pub struct Radians(pub f32);
+pub struct Radians<T>(pub T);
 
-impl Deref for Radians {
-    type Target = f32;
+impl<T> Deref for Radians<T> {
+    type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for Radians {
+impl<T> DerefMut for Radians<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl From<Degrees<f32>> for Radians<f32> {
+    fn from(degrees: Degrees<f32>) -> Self {
+        Radians(degrees.to_radians())
+    }
+}
+
+impl From<Degrees<f64>> for Radians<f64> {
+    fn from(degrees: Degrees<f64>) -> Self {
+        Radians(degrees.to_radians())
     }
 }
 
@@ -1478,8 +1539,6 @@ impl DerefMut for Radians {
     PartialOrd,
     derive_more::Add,
     derive_more::AddAssign,
-    derive_more::From,
-    derive_more::Into,
     derive_more::Mul,
     derive_more::MulAssign,
     derive_more::Div,
@@ -1490,18 +1549,30 @@ impl DerefMut for Radians {
 )]
 #[must_use]
 #[repr(transparent)]
-pub struct Degrees(f32);
+pub struct Degrees<T>(pub T);
 
-impl Deref for Degrees {
-    type Target = f32;
+impl<T> Deref for Degrees<T> {
+    type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for Degrees {
+impl<T> DerefMut for Degrees<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl From<Radians<f32>> for Degrees<f32> {
+    fn from(radians: Radians<f32>) -> Self {
+        Degrees(radians.to_degrees())
+    }
+}
+
+impl From<Radians<f64>> for Degrees<f64> {
+    fn from(radians: Radians<f64>) -> Self {
+        Degrees(radians.to_degrees())
     }
 }
 
@@ -1563,5 +1634,18 @@ mod tests {
         );
         let v = vector!(1.0, 2.0, 3.0, 4.0);
         assert_eq!(m * v, vector!(30.0, 70.0, 30.0, 70.0));
+    }
+
+    #[test]
+    fn matrix_forward() {
+        let m = matrix!(
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0]
+        );
+        assert!(m
+            .forward()
+            .compare(vector!(-0.366_508, -0.855_186, -0.366_508), 0.0002));
     }
 }

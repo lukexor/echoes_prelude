@@ -48,8 +48,11 @@ pub trait RendererBackend: Sized {
     /// Finish rendering a frame to the screen.
     fn end_frame(&mut self, delta_time: f32) -> Result<()>;
 
-    /// Update the projection-view matrices.
+    /// Update the projection-view matrices for the scene.
     fn update_projection_view(&mut self, projection: Mat4, view: Mat4);
+
+    /// Update the model matrix for the scene.
+    fn update_model(&mut self, model: Mat4);
 }
 
 #[derive(Debug)]
@@ -81,6 +84,7 @@ impl Renderer {
     }
 
     /// Handle window resized event.
+    #[inline]
     pub fn on_resized(&mut self, width: u32, height: u32) {
         self.state.on_resized(width, height);
     }
@@ -90,6 +94,7 @@ impl Renderer {
         self.state.begin_frame(render_state.delta_time)?;
         self.state
             .update_projection_view(render_state.projection, render_state.view);
+        self.state.update_model(render_state.model);
 
         self.state.end_frame(render_state.delta_time)?;
 
@@ -104,6 +109,7 @@ pub struct RenderState {
     pub delta_time: f32,
     pub view: Mat4,
     pub projection: Mat4,
+    pub model: Mat4, // FIXME: temporary
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

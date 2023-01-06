@@ -15,6 +15,11 @@ msrv = "1.65.0"
 [lib]
 crate-type = ["rlib", "dylib"]
 
+[features]
+default = ["vulkan"]
+vulkan = ["pix-engine/vulkan"]
+opengl = ["pix-engine/opengl"]
+
 [dependencies]
 anyhow = { workspace = true }
 pix-engine = { workspace = true }

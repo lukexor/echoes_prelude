@@ -85,7 +85,7 @@ impl Engine {
 
         let renderer =
             Renderer::initialize(&engine.title, &engine.version, &window, &engine.shaders)?;
-        let mut cx = Context::new(engine.config, renderer, &window);
+        let mut cx = Context::new(engine.config, &window, renderer);
 
         app.on_start(&mut cx)?;
 
@@ -119,13 +119,9 @@ impl Engine {
 
                     let one_second = Duration::from_secs(1);
                     if cx.fps_timer > one_second {
-                        cx.window_title.clear();
-                        let _ = write!(
-                            cx.window_title,
-                            "{} - FPS: {}",
-                            engine.title, cx.fps_counter
-                        );
-                        window.set_title(&cx.window_title);
+                        cx.title.clear();
+                        let _ = write!(cx.title, "{} - FPS: {}", engine.title, cx.fps_counter);
+                        window.set_title(&cx.title);
                         cx.fps_timer -= one_second;
                         cx.fps_counter = 0;
                     }

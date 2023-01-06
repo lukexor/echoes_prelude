@@ -67,6 +67,9 @@ pub mod prelude {
         event::{
             ControllerAxis, ControllerButton, Event, InputState, KeyCode, ModifierKeys, MouseButton,
         },
-        renderer::{Renderer, Shader, ShaderType},
+        math::{Degrees, Mat4, Radians, Vec2, Vec3},
+        matrix,
+        renderer::{RenderState, Renderer, Shader, ShaderType},
+        vector,
     };
 }

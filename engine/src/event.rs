@@ -2,10 +2,11 @@
 
 use bitflags::bitflags;
 use winit::event::{
-    ElementState, Event as WinitEvent, ModifiersState, VirtualKeyCode, WindowEvent,
+    DeviceEvent, ElementState, Event as WinitEvent, ModifiersState, MouseScrollDelta,
+    VirtualKeyCode, WindowEvent,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[must_use]
 #[non_exhaustive]
 pub enum Event {
@@ -13,6 +14,7 @@ pub enum Event {
     WindowClose,
     Resized(u32, u32),
     Moved(i32, i32),
+    Focused(bool),
     KeyInput {
         keycode: KeyCode,
         state: InputState,
@@ -23,11 +25,12 @@ pub enum Event {
     },
     ModifiersChanged(ModifierKeys),
     MouseMotion {
-        x: i32,
-        y: i32,
+        x: f64,
+        y: f64,
     },
     MouseWheel {
-        delta: i32,
+        x: f64,
+        y: f64,
     },
     ControllerInput {
         button: ControllerButton,
@@ -51,7 +54,7 @@ impl<'a, T> From<WinitEvent<'a, T>> for Event {
                 // WindowEvent::HoveredFile(_) => todo!(),
                 // WindowEvent::HoveredFileCancelled => todo!(),
                 // WindowEvent::ReceivedCharacter(_) => todo!(),
-                // WindowEvent::Focused(_) => todo!(),
+                WindowEvent::Focused(focused) => Self::Focused(focused),
                 WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
                     Some(keycode) => Self::KeyInput {
                         keycode: keycode.into(),
@@ -99,16 +102,29 @@ impl<'a, T> From<WinitEvent<'a, T>> for Event {
                 // WindowEvent::Occluded(_) => todo!(),
                 _ => Self::Unknown,
             },
-            // WinitEvent::DeviceEvent { device_id, event } => match event {
-            // DeviceEvent::Added => todo!(),
-            // DeviceEvent::Removed => todo!(),
-            // DeviceEvent::MouseMotion { delta } => todo!(),
-            // DeviceEvent::MouseWheel { delta } => todo!(),
-            // DeviceEvent::Motion { axis, value } => todo!(),
-            // DeviceEvent::Button { button, state } => todo!(),
-            // DeviceEvent::Key(_) => todo!(),
-            // DeviceEvent::Text { codepoint } => todo!(),
-            // },
+            WinitEvent::DeviceEvent {
+                device_id: _,
+                event,
+            } => match event {
+                // DeviceEvent::Added => todo!(),
+                // DeviceEvent::Removed => todo!(),
+                DeviceEvent::MouseMotion { delta: (x, y) } => Self::MouseMotion { x, y },
+                DeviceEvent::MouseWheel { delta } => match delta {
+                    MouseScrollDelta::LineDelta(x, y) => Self::MouseWheel {
+                        x: x as f64,
+                        y: y as f64,
+                    },
+                    MouseScrollDelta::PixelDelta(delta) => Self::MouseWheel {
+                        x: delta.x,
+                        y: delta.y,
+                    },
+                },
+                // DeviceEvent::Motion { axis, value } => todo!(),
+                // DeviceEvent::Button { button, state } => todo!(),
+                // DeviceEvent::Key(_) => todo!(),
+                // DeviceEvent::Text { codepoint } => todo!(),
+                _ => Self::Unknown,
+            },
             // WinitEvent::UserEvent(_) => todo!(),
             // WinitEvent::Suspended => todo!(),
             // WinitEvent::Resumed => todo!(),

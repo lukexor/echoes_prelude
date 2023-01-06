@@ -93,15 +93,16 @@ pub struct Application {
 
 impl Application {
     pub fn initialize() -> Result<Self> {
-        let game = Game::initialize()?;
+        let game = Game::new()?;
         Ok(Self { game })
     }
 }
 
 impl Update for Application {
     /// Called on engine start.
-    fn on_start(&mut self, _cx: &mut Context) -> pix_engine::Result<()> {
+    fn on_start(&mut self, cx: &mut Context) -> pix_engine::Result<()> {
         log::info!("application started");
+        self.game.initialize(cx);
         Ok(())
     }
 

@@ -37,6 +37,7 @@
     variant_size_differences
 )]
 
+pub mod config;
 pub mod game;
 pub mod logger;
 
