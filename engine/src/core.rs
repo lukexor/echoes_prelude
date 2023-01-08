@@ -1,10 +1,7 @@
 use crate::{
     config::{Config, FullscreenMode},
     context::Context,
-    prelude::{
-        CursorGrabMode, Event, PhysicalPosition, PhysicalSize, Position, Size, WindowBuilder,
-        WindowEvent,
-    },
+    prelude::{Event, PhysicalPosition, PhysicalSize, Position, Size, WindowEvent},
     renderer::{Renderer, Shader},
     Result,
 };
@@ -15,7 +12,11 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use winit::{event::StartCause, event_loop::EventLoopBuilder};
+use winit::{
+    event::{Event as WinitEvent, StartCause},
+    event_loop::EventLoopBuilder,
+    window::{CursorGrabMode, WindowBuilder},
+};
 
 pub trait Update {
     type UserEvent: 'static + fmt::Debug;
@@ -32,13 +33,7 @@ pub trait Update {
     fn on_stop(&mut self, _cx: &mut Context) {}
 
     /// Called on every event.
-    fn on_event(
-        &mut self,
-        _delta_time: f32,
-        _event: Event<'_, Self::UserEvent>,
-        _cx: &mut Context,
-    ) {
-    }
+    fn on_event(&mut self, _delta_time: f32, _event: Event<Self::UserEvent>, _cx: &mut Context) {}
 }
 
 #[derive(Default, Debug)]
@@ -60,7 +55,7 @@ impl EngineBuilder {
         self
     }
 
-    pub fn size(&mut self, size: impl Into<Size>) -> &mut Self {
+    pub fn inner_size(&mut self, size: impl Into<Size>) -> &mut Self {
         self.0.size = size.into();
         self
     }
@@ -130,7 +125,7 @@ impl Default for Engine {
             title: "".into(),
             version: "1.0.0".into(),
             size: PhysicalSize::new(1024, 768).into(),
-            position: PhysicalPosition::<u32>::default().into(),
+            position: PhysicalPosition::default().into(),
             cursor_grab: true,
             fullscreen: false,
             resizable: true,
@@ -151,7 +146,7 @@ impl Engine {
 
         log::debug!("starting `Engine::on_update` loop.");
         event_loop.run(move |event, event_loop, control_flow| {
-            if matches!(event, Event::NewEvents(StartCause::Init)) {
+            if matches!(event, WinitEvent::NewEvents(StartCause::Init)) {
                 let Ok(window) = WindowBuilder::new()
                     .with_title(self.title.clone())
                     .with_inner_size(self.size)
@@ -190,7 +185,7 @@ impl Engine {
                 let delta_time = current_time - cx.last_frame_time;
 
                 match event {
-                    Event::MainEventsCleared if cx.is_running() => {
+                    WinitEvent::MainEventsCleared if cx.is_running() => {
                         let on_update = app.on_update(delta_time.as_secs_f32(), cx);
                         if let Err(err) = on_update {
                             log::error!("{err:?}");
@@ -228,23 +223,22 @@ impl Engine {
                     }
                     _ => {
                         log::trace!("received event: {event:?}");
+                        let event = event.into();
                         if let Event::WindowEvent {
                             window_id: _,
-                            ref event,
+                            event,
                         } = event
                         {
                             match event {
-                                WindowEvent::Resized(size) => cx.on_resized(*size),
-                                WindowEvent::KeyboardInput { input, .. } => {
-                                    if let Some(keycode) = input.virtual_keycode {
-                                        cx.key_state.key_input(keycode, input.state);
-                                    }
+                                WindowEvent::Resized(size) => cx.on_resized(size),
+                                WindowEvent::KeyboardInput { keycode: Some(keycode), state, .. } => {
+                                    cx.key_state.key_input(keycode, state);
                                 }
                                 WindowEvent::MouseInput { button, state, .. } => {
-                                    cx.mouse_state.mouse_input(*button, *state);
+                                    cx.mouse_state.mouse_input(button, state);
                                 }
                                 WindowEvent::Focused(focused) => {
-                                    cx.focused = *focused;
+                                    cx.focused = focused;
                                     if self.cursor_grab && cx.focused {
                                         cx.window.set_cursor_visible(false);
                                         if let Err(err) = cx
@@ -260,7 +254,7 @@ impl Engine {
                                 }
                                 WindowEvent::CloseRequested | WindowEvent::Destroyed => cx.quit(),
                                 WindowEvent::ModifiersChanged(modifiers) => {
-                                    cx.modifiers_state = *modifiers;
+                                    cx.modifiers_state = modifiers;
                                 }
                                 _ => (),
                             }

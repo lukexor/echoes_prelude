@@ -30,7 +30,7 @@ log = "0.4.7"
 # TODO: Make optional image feature
 png = "0.17.6"
 semver = "1.0.16"
-serde = { version = "1.0.152", optional = true }
+serde = { version = "1.0.152", optional = true, features = ["derive"] }
 thiserror = "1.0.38"
 # TODO: Make optional model feature
 tobj = { version = "3.2.3" }

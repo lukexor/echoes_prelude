@@ -1,7 +1,7 @@
 use super::{RendererBackend, Shader};
 use crate::{
     math::{Mat4, UniformBufferObject},
-    prelude::{PhysicalSize, Window},
+    window::{PhysicalSize, Window},
 };
 use anyhow::{bail, Context as _, Result};
 use ash::vk;
@@ -28,7 +28,7 @@ pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 0] = [];
 
 pub(crate) struct Context {
     current_frame: usize,
-    size: PhysicalSize<u32>,
+    size: PhysicalSize,
     resized: bool,
     shaders: Vec<Shader>,
 
@@ -95,7 +95,7 @@ impl RendererBackend for Context {
         let device = Device::create(&instance, &surface)?;
         let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
         let present_queue = device.queue_family(QueueFamily::Present)?;
-        let size = window.inner_size();
+        let size = window.inner_size().into();
         let swapchain = Swapchain::create(&instance, &device, &surface, size)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
         let command_pool = CommandPool::create(
@@ -201,40 +201,8 @@ impl RendererBackend for Context {
         })
     }
 
-    /// Shutdown the Vulkan `RendererState`, freeing any resources.
-    fn shutdown(&mut self) {
-        log::info!("destroying vulkan context");
-
-        // NOTE: Drop-order is important!
-        //
-        // SAFETY:
-        //
-        // 1. Elements are destroyed in the correct order
-        // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
-        //    the only way to construct a RendererState with all values initialized.
-        unsafe {
-            self.destroy_swapchain();
-
-            self.syncs.destroy(&self.device);
-            self.index_buffer.destroy(&self.device);
-            self.vertex_buffer.destroy(&self.device);
-            self.textures
-                .iter()
-                .for_each(|texture| texture.destroy(&self.device));
-            self.command_pool.destroy(&self.device);
-            self.surface.destroy();
-            self.device.destroy_sampler(self.sampler, None);
-            self.device.destroy();
-            #[cfg(debug_assertions)]
-            self.debug.destroy();
-            self.instance.destroy();
-        }
-
-        log::info!("destroyed vulkan context");
-    }
-
     /// Handle window resized event.
-    fn on_resized(&mut self, size: PhysicalSize<u32>) {
+    fn on_resized(&mut self, size: PhysicalSize) {
         if self.size != size {
             log::debug!("received resized event {size:?}. pending swapchain recreation.");
             self.size = size;
@@ -351,7 +319,34 @@ impl RendererBackend for Context {
 impl Drop for Context {
     /// Cleans up all Vulkan resources.
     fn drop(&mut self) {
-        self.shutdown();
+        log::info!("destroying vulkan context");
+
+        // NOTE: Drop-order is important!
+        //
+        // SAFETY:
+        //
+        // 1. Elements are destroyed in the correct order
+        // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
+        //    the only way to construct a RendererState with all values initialized.
+        unsafe {
+            self.destroy_swapchain();
+
+            self.syncs.destroy(&self.device);
+            self.index_buffer.destroy(&self.device);
+            self.vertex_buffer.destroy(&self.device);
+            self.textures
+                .iter()
+                .for_each(|texture| texture.destroy(&self.device));
+            self.command_pool.destroy(&self.device);
+            self.surface.destroy();
+            self.device.destroy_sampler(self.sampler, None);
+            self.device.destroy();
+            #[cfg(debug_assertions)]
+            self.debug.destroy();
+            self.instance.destroy();
+        }
+
+        log::info!("destroyed vulkan context");
     }
 }
 
@@ -1757,7 +1752,7 @@ mod swapchain {
         device::{Device, QueueFamilyIndices},
         surface::Surface,
     };
-    use crate::prelude::PhysicalSize;
+    use crate::window::PhysicalSize;
     use anyhow::{bail, Context, Result};
     use ash::{extensions::khr, prelude::VkResult, vk};
     use derive_more::{Deref, DerefMut};
@@ -1784,7 +1779,7 @@ mod swapchain {
             instance: &ash::Instance,
             device: &Device,
             surface: &Surface,
-            size: PhysicalSize<u32>,
+            size: PhysicalSize,
         ) -> Result<Self> {
             log::debug!("creating swapchain");
 

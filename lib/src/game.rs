@@ -4,6 +4,8 @@ use crate::config::Config;
 use anyhow::Result;
 use pix_engine::{camera::Camera, prelude::*};
 
+pub type GameEvent = ();
+
 #[allow(missing_copy_implementations)]
 #[derive(Debug, Clone)]
 #[must_use]
@@ -56,48 +58,48 @@ impl Game {
 
     fn handle_events(&mut self, delta_time: f32, cx: &mut Context) {
         let speed = 5.0 * delta_time;
-        if cx.key_down(VirtualKeyCode::A) {
+        if cx.key_down(KeyCode::A) {
             self.camera.move_left(speed);
         }
-        if cx.key_down(VirtualKeyCode::D) {
+        if cx.key_down(KeyCode::D) {
             self.camera.move_right(speed);
         }
-        if cx.key_down(VirtualKeyCode::W) {
+        if cx.key_down(KeyCode::W) {
             self.camera.move_forward(speed);
         }
-        if cx.key_down(VirtualKeyCode::S) {
+        if cx.key_down(KeyCode::S) {
             self.camera.move_backward(speed);
         }
-        if cx.key_down(VirtualKeyCode::Left) {
+        if cx.key_down(KeyCode::Left) {
             self.camera.yaw(Degrees(-20.0 * speed));
         }
-        if cx.key_down(VirtualKeyCode::Right) {
+        if cx.key_down(KeyCode::Right) {
             self.camera.yaw(Degrees(20.0 * speed));
         }
-        if cx.key_down(VirtualKeyCode::Up) {
+        if cx.key_down(KeyCode::Up) {
             self.camera.pitch(Degrees(-20.0 * speed));
         }
-        if cx.key_down(VirtualKeyCode::Down) {
+        if cx.key_down(KeyCode::Down) {
             self.camera.pitch(Degrees(20.0 * speed));
         }
-        if cx.key_down(VirtualKeyCode::Space) {
+        if cx.key_down(KeyCode::Space) {
             self.camera.move_up(speed);
         }
-        if cx.key_down(VirtualKeyCode::X) {
+        if cx.key_down(KeyCode::X) {
             self.camera.move_down(speed);
         }
 
-        if cx.key_typed(VirtualKeyCode::Return) && cx.modifiers_down(ModifiersState::CTRL) {
+        if cx.key_typed(KeyCode::Return) && cx.modifiers_down(ModifierKeys::CTRL) {
             cx.toggle_fullscreen();
         }
 
         #[cfg(debug_assertions)]
         {
-            if cx.key_typed(VirtualKeyCode::Escape) {
+            if cx.key_typed(KeyCode::Escape) {
                 cx.quit();
             }
             // TODO: Temporary
-            if cx.key_typed(VirtualKeyCode::C) {
+            if cx.key_typed(KeyCode::C) {
                 dbg!(&self.camera);
             }
         }
@@ -122,7 +124,7 @@ impl Game {
     }
 
     /// Called on every event.
-    pub fn on_event(&mut self, delta_time: f32, event: Event<'_, ()>, cx: &mut Context) {
+    pub fn on_event(&mut self, delta_time: f32, event: Event<GameEvent>, cx: &mut Context) {
         if !cx.focused() {
             return;
         }

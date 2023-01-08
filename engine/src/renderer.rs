@@ -1,9 +1,6 @@
 //! Renderer interface for a renderer backend.
 
-use crate::{
-    math::Mat4,
-    prelude::{PhysicalSize, Window},
-};
+use crate::{math::Mat4, prelude::PhysicalSize, window::Window};
 use anyhow::{Context as _, Result};
 use std::{borrow::Cow, fmt, path::Path};
 use tokio::{
@@ -11,18 +8,18 @@ use tokio::{
     io::{AsyncReadExt, BufReader},
 };
 
-#[cfg(feature = "opengl")]
-mod opengl;
-#[cfg(feature = "opengl")]
-use opengl::Context;
-
-#[cfg(feature = "vulkan")]
+#[cfg(any(feature = "vulkan", not(feature = "opengl")))]
 mod vulkan;
-#[cfg(feature = "vulkan")]
+#[cfg(any(feature = "vulkan", not(feature = "opengl")))]
 use vulkan::Context;
 
+#[cfg(all(feature = "opengl", not(feature = "vulkan")))]
+mod opengl;
+#[cfg(all(feature = "opengl", not(feature = "vulkan")))]
+use opengl::Context;
+
 #[cfg(not(any(feature = "opengl", feature = "vulkan")))]
-compile_error!("must choose a valid renderer feature flag");
+compile_error!("must choose a valid renderer feature: `vulkan` or `opengl`");
 
 pub trait RendererBackend: Sized {
     /// Initialize the `RendererBackend`.
@@ -33,11 +30,8 @@ pub trait RendererBackend: Sized {
         shaders: &[Shader],
     ) -> Result<Self>;
 
-    /// Shutdown and destroy any resources created by the `RendererBackend`.
-    fn shutdown(&mut self);
-
     /// Handle window resized event.
-    fn on_resized(&mut self, size: PhysicalSize<u32>);
+    fn on_resized(&mut self, size: PhysicalSize);
 
     /// Begin rendering a frame to the screen.
     fn begin_frame(&mut self, delta_time: f32) -> Result<()>;
@@ -77,7 +71,7 @@ impl Renderer {
 
     /// Handle window resized event.
     #[inline]
-    pub fn on_resized(&mut self, size: PhysicalSize<u32>) {
+    pub fn on_resized(&mut self, size: PhysicalSize) {
         self.cx.on_resized(size);
     }
 

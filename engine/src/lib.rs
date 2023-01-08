@@ -45,10 +45,12 @@ pub mod profiling;
 pub mod config;
 pub mod context;
 pub mod core;
+pub mod event;
 pub mod input;
 pub mod math;
 pub mod platform;
 pub mod renderer;
+pub mod window;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -69,10 +71,14 @@ pub mod prelude {
         config::Config,
         context::Context,
         core::{Engine, Update},
+        event::{
+            DeviceEvent, Event, InputState, KeyCode, ModifierKeys, MouseButton, MouseScrollDelta,
+            WindowEvent,
+        },
         math::{Degrees, Mat4, Radians, Vec2, Vec3},
         matrix,
         renderer::{RenderState, Renderer, Shader, ShaderType},
         vector,
+        window::{PhysicalPosition, PhysicalSize, Position, Size},
     };
-    pub use winit::{dpi::*, event::*, window::*};
 }

@@ -1,8 +1,7 @@
 //! Engine configuration.
 
-use crate::prelude::*;
 use std::{env, time::Duration};
-use winit::monitor::MonitorHandle;
+use winit::{monitor::MonitorHandle, window::Fullscreen};
 
 #[derive(Debug, Copy, Clone)]
 #[must_use]
