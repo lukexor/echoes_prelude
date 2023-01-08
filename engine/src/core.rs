@@ -75,8 +75,13 @@ impl EngineBuilder {
         self
     }
 
-    pub fn fullscreen(&mut self, fullscreen: FullscreenMode) -> &mut Self {
-        self.0.config.fullscreen_mode = fullscreen;
+    pub fn fullscreen(&mut self, fullscreen: bool) -> &mut Self {
+        self.0.fullscreen = fullscreen;
+        self
+    }
+
+    pub fn fullscreen_mode(&mut self, mode: FullscreenMode) -> &mut Self {
+        self.0.config.fullscreen_mode = mode;
         self
     }
 
@@ -113,6 +118,7 @@ pub struct Engine {
     size: Size,
     position: Position,
     cursor_grab: bool,
+    fullscreen: bool,
     resizable: bool,
     config: Config,
     shaders: Vec<Shader>,
@@ -126,6 +132,7 @@ impl Default for Engine {
             size: PhysicalSize::new(1024, 768).into(),
             position: PhysicalPosition::<u32>::default().into(),
             cursor_grab: true,
+            fullscreen: false,
             resizable: true,
             config: Config::default(),
             shaders: vec![],
@@ -142,24 +149,18 @@ impl Engine {
         let event_loop = EventLoopBuilder::<A::UserEvent>::with_user_event().build();
         let mut cx = None;
 
-        let start = Instant::now();
-
         log::debug!("starting `Engine::on_update` loop.");
         event_loop.run(move |event, event_loop, control_flow| {
-            if start.elapsed() > Duration::from_secs(30) {
-                control_flow.set_exit();
-            }
-
             if matches!(event, Event::NewEvents(StartCause::Init)) {
                 let Ok(window) = WindowBuilder::new()
                     .with_title(self.title.clone())
                     .with_inner_size(self.size)
                     .with_position(self.position)
+                    .with_resizable(self.resizable)
                     // TODO: Support Exclusive
                     .with_fullscreen(self
-                        .config.fullscreen_mode.as_monitor(event_loop.primary_monitor())
+                        .fullscreen.then(|| self.config.fullscreen_mode.as_monitor(event_loop.primary_monitor())).flatten()
                     )
-                    .with_resizable(self.resizable)
                     .build(event_loop)
                     .context("failed to create window") else {
                         control_flow.set_exit_with_code(1);

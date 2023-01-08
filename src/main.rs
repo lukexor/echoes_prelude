@@ -37,7 +37,7 @@
 )]
 
 use anyhow::Result;
-use pix_engine::{config::FullscreenMode, prelude::*};
+use pix_engine::prelude::*;
 
 #[cfg(not(feature = "hot_reload"))]
 use echoes_prelude_lib::*;

@@ -22,7 +22,7 @@ impl Default for Config {
                 .and_then(|target_fps| target_fps.parse::<u32>().ok())
                 .unwrap_or(60),
             double_click_speed: Duration::from_millis(400),
-            fullscreen_mode: FullscreenMode::Windowed,
+            fullscreen_mode: FullscreenMode::Exclusive,
         }
     }
 }
@@ -36,7 +36,6 @@ impl Config {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[must_use]
 pub enum FullscreenMode {
-    Windowed,
     Exclusive,
     Borderless,
 }
@@ -44,7 +43,6 @@ pub enum FullscreenMode {
 impl FullscreenMode {
     pub(crate) fn as_monitor(&self, monitor: Option<MonitorHandle>) -> Option<Fullscreen> {
         match self {
-            Self::Windowed => None,
             Self::Exclusive => monitor
                 .and_then(|monitor| monitor.video_modes().next())
                 .map(Fullscreen::Exclusive),
