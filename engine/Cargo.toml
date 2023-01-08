@@ -16,25 +16,26 @@ msrv = "1.65.0"
 crate-type = ["rlib", "dylib"]
 
 [features]
-default = []
+default = ["vulkan"]
 vulkan = ["dep:ash"]
 opengl = []
 
 [dependencies]
-anyhow = { workspace = true }
+anyhow = "1.0.66"
 ash = { version = "0.37.1", features = ["linked"], optional = true }
 bitflags = "1.3.2"
-cfg-if = "1.0.0"
-derive_builder = "0.12.0"
 derive_more = "0.99.17"
-env_logger = { workspace = true }
-log = { workspace = true }
+env_logger = "0.10.0"
+log = "0.4.7"
+# TODO: Make optional image feature
 png = "0.17.6"
 semver = "1.0.16"
+serde = { version = "1.0.152", optional = true }
 thiserror = "1.0.38"
-tobj = "3.2.3"
-tokio = { workspace = true }
-winit = { workspace = true }
+# TODO: Make optional model feature
+tobj = { version = "3.2.3" }
+tokio = { version = "1.23.0", features = ["full"] }
+winit = "0.27.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24.1"

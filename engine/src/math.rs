@@ -1489,7 +1489,9 @@ impl Neg for &Quaternion {
     Copy,
     Clone,
     PartialEq,
+    Eq,
     PartialOrd,
+    Ord,
     derive_more::Add,
     derive_more::AddAssign,
     derive_more::Mul,
@@ -1536,7 +1538,11 @@ impl From<Degrees<f64>> for Radians<f64> {
     Copy,
     Clone,
     PartialEq,
+    Eq,
     PartialOrd,
+    Ord,
+    derive_more::Deref,
+    derive_more::DerefMut,
     derive_more::Add,
     derive_more::AddAssign,
     derive_more::Mul,
@@ -1550,19 +1556,6 @@ impl From<Degrees<f64>> for Radians<f64> {
 #[must_use]
 #[repr(transparent)]
 pub struct Degrees<T>(pub T);
-
-impl<T> Deref for Degrees<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for Degrees<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 
 impl From<Radians<f32>> for Degrees<f32> {
     fn from(radians: Radians<f32>) -> Self {

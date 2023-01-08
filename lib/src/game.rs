@@ -4,10 +4,10 @@ use crate::config::Config;
 use anyhow::Result;
 use pix_engine::{camera::Camera, prelude::*};
 
-#[derive(Debug, Copy, Clone)]
+#[allow(missing_copy_implementations)]
+#[derive(Debug, Clone)]
 #[must_use]
 pub struct Game {
-    focused: bool,
     config: Config,
     camera: Camera,
     projection: Mat4,
@@ -23,7 +23,6 @@ impl Game {
         let near_clip = 0.1;
         let far_clip = 100.0;
         Ok(Self {
-            focused: false,
             config: Config::new(),
             camera: Camera::new(vector!(0.0, 0.5, 3.0)),
             projection: Mat4::identity(),
@@ -40,9 +39,10 @@ impl Game {
     }
 
     /// Called every frame to update game state.
-    pub fn update(&mut self, _delta_time: f32, cx: &mut Context) -> Result<()> {
+    pub fn update(&mut self, delta_time: f32, cx: &mut Context) -> Result<()> {
         // TODO: Reduce framerate when not focused.
 
+        self.handle_events(delta_time, cx);
         self.update_projection(cx);
         let time = cx.elapsed().as_secs_f32();
         // FIXME: temporary
@@ -52,6 +52,55 @@ impl Game {
             Radians(-120f32.to_radians() + time * 20f32.to_radians()),
         );
         Ok(())
+    }
+
+    fn handle_events(&mut self, delta_time: f32, cx: &mut Context) {
+        let speed = 5.0 * delta_time;
+        if cx.key_down(VirtualKeyCode::A) {
+            self.camera.move_left(speed);
+        }
+        if cx.key_down(VirtualKeyCode::D) {
+            self.camera.move_right(speed);
+        }
+        if cx.key_down(VirtualKeyCode::W) {
+            self.camera.move_forward(speed);
+        }
+        if cx.key_down(VirtualKeyCode::S) {
+            self.camera.move_backward(speed);
+        }
+        if cx.key_down(VirtualKeyCode::Left) {
+            self.camera.yaw(Degrees(-20.0 * speed));
+        }
+        if cx.key_down(VirtualKeyCode::Right) {
+            self.camera.yaw(Degrees(20.0 * speed));
+        }
+        if cx.key_down(VirtualKeyCode::Up) {
+            self.camera.pitch(Degrees(-20.0 * speed));
+        }
+        if cx.key_down(VirtualKeyCode::Down) {
+            self.camera.pitch(Degrees(20.0 * speed));
+        }
+        if cx.key_down(VirtualKeyCode::Space) {
+            self.camera.move_up(speed);
+        }
+        if cx.key_down(VirtualKeyCode::X) {
+            self.camera.move_down(speed);
+        }
+
+        if cx.key_typed(VirtualKeyCode::Return) && cx.modifiers_down(ModifiersState::CTRL) {
+            cx.toggle_fullscreen();
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            if cx.key_typed(VirtualKeyCode::Escape) {
+                cx.quit();
+            }
+            // TODO: Temporary
+            if cx.key_typed(VirtualKeyCode::C) {
+                dbg!(&self.camera);
+            }
+        }
     }
 
     /// Called every frame to render game to the screen.
@@ -73,88 +122,49 @@ impl Game {
     }
 
     /// Called on every event.
-    pub fn on_event(&mut self, delta_time: f32, event: Event, cx: &mut Context) {
-        log::trace!("received event: {event:?}");
-
-        if let Event::Focused(focused) = event {
-            self.focused = focused;
-        }
-        if !self.focused {
+    pub fn on_event(&mut self, delta_time: f32, event: Event<'_, ()>, cx: &mut Context) {
+        if !cx.focused() {
             return;
         }
 
-        let speed = 40.0 * delta_time;
-
         match event {
-            Event::Resized(width, height) => {
-                log::debug!("resized event: {width}x{height}");
-                self.is_dirty = true;
-                self.update_projection(cx);
-            }
-            Event::Focused(focused) => self.focused = focused,
-            Event::KeyInput { keycode, state, .. } => {
-                // TODO: Keybindings
-                if state == InputState::Pressed {
-                    match keycode {
-                        KeyCode::Escape => {
-                            #[cfg(debug_assertions)]
-                            cx.quit();
-                        }
-                        KeyCode::Q => self.camera.move_left(speed),
-                        KeyCode::E => self.camera.move_right(speed),
-                        KeyCode::W => self.camera.move_forward(speed),
-                        KeyCode::S => self.camera.move_backward(speed),
-                        KeyCode::A => self.camera.yaw(Degrees(2.0 * speed)),
-                        KeyCode::D => self.camera.yaw(Degrees(-2.0 * speed)),
-                        KeyCode::Up => self.camera.pitch(Degrees(2.0 * speed)),
-                        KeyCode::Down => self.camera.pitch(Degrees(-2.0 * speed)),
-                        // TODO: Temporary
-                        #[cfg(debug_assertions)]
-                        KeyCode::C => {
-                            dbg!(&self.camera);
-                        }
-                        KeyCode::Left => (),
-                        KeyCode::Right => (),
-                        KeyCode::Space => self.camera.move_up(speed),
-                        KeyCode::X => self.camera.move_down(speed),
-                        KeyCode::LAlt => (),
-                        KeyCode::LControl => (),
-                        KeyCode::LShift => (),
-                        KeyCode::RAlt => (),
-                        KeyCode::RControl => (),
-                        KeyCode::RShift => (),
-                        _ => (),
-                    }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(_) => self.is_dirty = true,
+                WindowEvent::MouseInput {
+                    button: _,
+                    state: _,
+                    ..
+                } => {}
+                WindowEvent::CloseRequested | WindowEvent::Destroyed { .. } => {
+                    log::info!("shutting down...");
+                    cx.quit();
                 }
-            }
-            Event::MouseInput {
-                button: _,
-                state: _,
-                ..
-            } => {}
-            Event::MouseMotion { x, y, .. } => {
-                self.camera.yaw(Degrees(
-                    x as f32 * self.config.mouse_sensitivity * delta_time,
-                ));
-                self.camera.pitch(Degrees(
-                    y as f32 * self.config.mouse_sensitivity * delta_time,
-                ));
-            }
-            Event::MouseWheel { x: _, y, .. } => {
-                self.camera.zoom(Degrees(y as f32));
-                self.is_dirty = true;
-            }
-            Event::ControllerInput {
-                button: _,
-                state: _,
-            } => {}
-            Event::Quit | Event::WindowClose { .. } => {
-                log::info!("shutting down...");
-                cx.quit();
-            }
-            _ => {
-                log::trace!("{event:?} not handled");
-            }
+                _ => (),
+            },
+            Event::DeviceEvent { event, .. } => match event {
+                DeviceEvent::MouseMotion { delta: (x, y) } => {
+                    self.camera.yaw(Degrees(
+                        x as f32 * self.config.mouse_sensitivity * delta_time,
+                    ));
+                    self.camera.pitch(Degrees(
+                        y as f32 * self.config.mouse_sensitivity * delta_time,
+                    ));
+                }
+                DeviceEvent::MouseWheel { delta } => {
+                    let y = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y * self.config.scroll_pixels_per_line,
+                        MouseScrollDelta::PixelDelta(position) => position.y as f32,
+                    };
+                    self.camera.zoom(Degrees(y));
+                    self.is_dirty = true;
+                }
+                DeviceEvent::Button {
+                    button: _,
+                    state: _,
+                } => {}
+                _ => (),
+            },
+            _ => (),
         }
     }
 

@@ -1,10 +1,12 @@
 use super::{RendererBackend, Shader};
-use anyhow::{bail, Context, Result};
+use crate::{
+    math::{Mat4, UniformBufferObject},
+    prelude::{PhysicalSize, Window},
+};
+use anyhow::{bail, Context as _, Result};
 use ash::vk;
 use std::{ffi::c_void, fmt, ptr, slice};
-use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::math::{Mat4, UniformBufferObject};
 use command_pool::CommandPool;
 #[cfg(debug_assertions)]
 use debug::{Debug, VALIDATION_LAYER_NAME};
@@ -24,10 +26,9 @@ pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 1] = [VALIDATION_LAYER_NAME.as
 #[cfg(not(debug_assertions))]
 pub(crate) const ENABLED_LAYER_NAMES: [*const i8; 0] = [];
 
-pub(crate) struct RendererState {
+pub(crate) struct Context {
     current_frame: usize,
-    width: u32,
-    height: u32,
+    size: PhysicalSize<u32>,
     resized: bool,
     shaders: Vec<Shader>,
 
@@ -66,7 +67,7 @@ pub(crate) struct RendererState {
     syncs: Syncs,
 }
 
-impl fmt::Debug for RendererState {
+impl fmt::Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: debug
         f.debug_struct("RendererState")
@@ -76,7 +77,7 @@ impl fmt::Debug for RendererState {
     }
 }
 
-impl RendererBackend for RendererState {
+impl RendererBackend for Context {
     /// Initialize Vulkan `RendererState`.
     fn initialize(
         application_name: &str,
@@ -94,8 +95,8 @@ impl RendererBackend for RendererState {
         let device = Device::create(&instance, &surface)?;
         let graphics_queue = device.queue_family(QueueFamily::Graphics)?;
         let present_queue = device.queue_family(QueueFamily::Present)?;
-        let PhysicalSize { width, height } = window.inner_size();
-        let swapchain = Swapchain::create(&instance, &device, &surface, width, height)?;
+        let size = window.inner_size();
+        let swapchain = Swapchain::create(&instance, &device, &surface, size)?;
         let render_pass = Self::create_render_pass(&instance, &device, swapchain.format)?;
         let command_pool = CommandPool::create(
             &device,
@@ -116,7 +117,6 @@ impl RendererBackend for RendererState {
         )?;
         let sampler = Image::create_sampler(&device, texture.mip_levels)?;
 
-        let vk::Extent2D { width, height } = swapchain.extent;
         let uniform_transform = UniformBufferObject::default();
         let (uniform_buffers, uniform_buffers_mapped) =
             device.create_uniform_buffers(&device, &swapchain)?;
@@ -161,10 +161,9 @@ impl RendererBackend for RendererState {
 
         log::info!("initialized vulkan renderer backend successfully");
 
-        Ok(RendererState {
+        Ok(Context {
             current_frame: 0,
-            width,
-            height,
+            size,
             resized: false,
             shaders: shaders.to_vec(),
 
@@ -235,11 +234,10 @@ impl RendererBackend for RendererState {
     }
 
     /// Handle window resized event.
-    fn on_resized(&mut self, width: u32, height: u32) {
-        if self.width != width || self.height != height {
-            log::debug!("received resized event {width}x{height}. pending swapchain recreation.");
-            self.width = width;
-            self.height = height;
+    fn on_resized(&mut self, size: PhysicalSize<u32>) {
+        if self.size != size {
+            log::debug!("received resized event {size:?}. pending swapchain recreation.");
+            self.size = size;
             self.resized = true;
         }
     }
@@ -261,7 +259,7 @@ impl RendererBackend for RendererState {
                 Ok((index, _is_sub_optimal)) => index as usize,
                 Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                     log::warn!("swapchain image out of date");
-                    return self.recreate_swapchain(self.width, self.height);
+                    return self.recreate_swapchain();
                 }
                 Err(err) => bail!(err),
             }
@@ -324,7 +322,7 @@ impl RendererBackend for RendererState {
 
         if is_resized {
             log::warn!("swapchain is suboptimal for surface");
-            self.recreate_swapchain(self.width, self.height)?;
+            self.recreate_swapchain()?;
             self.resized = false;
         }
 
@@ -350,14 +348,14 @@ impl RendererBackend for RendererState {
     }
 }
 
-impl Drop for RendererState {
+impl Drop for Context {
     /// Cleans up all Vulkan resources.
     fn drop(&mut self) {
         self.shutdown();
     }
 }
 
-impl RendererState {
+impl Context {
     /// Create a [`vk::RenderPass`] instance.
     fn create_render_pass(
         instance: &ash::Instance,
@@ -484,14 +482,13 @@ impl RendererState {
     }
 
     /// Destroys the current swapchain and re-creates it with a new width/height.
-    fn recreate_swapchain(&mut self, width: u32, height: u32) -> Result<()> {
-        log::debug!("re-creating swapchain for {width}x{height}");
+    fn recreate_swapchain(&mut self) -> Result<()> {
+        log::debug!("re-creating swapchain: {:?}", self.size);
 
         self.destroy_swapchain();
 
         self.device.update(&self.surface)?;
-        self.swapchain =
-            Swapchain::create(&self.instance, &self.device, &self.surface, width, height)?;
+        self.swapchain = Swapchain::create(&self.instance, &self.device, &self.surface, self.size)?;
         self.render_pass =
             Self::create_render_pass(&self.instance, &self.device, self.swapchain.format)?;
         let (uniform_buffers, uniform_buffers_mapped) = self
@@ -535,7 +532,7 @@ impl RendererState {
         )?;
         self.syncs
             .images_in_flight
-            .resize(self.swapchain.max_frames_in_flight, vk::Fence::null());
+            .resize(self.swapchain.images.len(), vk::Fence::null());
 
         log::debug!("re-created swapchain successfully");
 
@@ -898,7 +895,6 @@ mod device {
     use crate::math::{UniformBufferObject, Vertex};
     use anyhow::{bail, Context, Result};
     use ash::vk;
-    use derive_builder::Builder;
     use derive_more::{Deref, DerefMut};
     use std::{
         collections::HashSet,
@@ -1691,11 +1687,11 @@ mod device {
                 }
             }
 
-            Ok(queue_family_indices.build()?)
+            queue_family_indices.build()
         }
     }
 
-    #[derive(Debug, Copy, Clone, Builder)]
+    #[derive(Debug, Copy, Clone)]
     #[must_use]
     pub(crate) struct QueueFamilyIndices {
         pub(crate) graphics: u32,
@@ -1719,8 +1715,34 @@ mod device {
         }
     }
 
+    #[derive(Default, Debug, Copy, Clone)]
+    #[must_use]
+    struct QueueFamilyIndicesBuilder {
+        graphics: Option<u32>,
+        present: Option<u32>,
+        compute: Option<u32>,
+        transfer: Option<u32>,
+    }
+
     impl QueueFamilyIndicesBuilder {
+        #[inline]
+        fn build(&self) -> Result<QueueFamilyIndices> {
+            match (self.graphics, self.present, self.compute, self.transfer) {
+                (Some(graphics), Some(present), Some(compute), Some(transfer)) => {
+                    Ok(QueueFamilyIndices {
+                        graphics,
+                        present,
+                        compute,
+                        transfer,
+                    })
+                }
+                _ => bail!("missing required queue families"),
+            }
+        }
+
         /// Whether the `QueueFamilyIndices` contains all of the desired queues.
+        #[inline]
+        #[must_use]
         fn is_complete(&self) -> bool {
             self.graphics.is_some()
                 && self.present.is_some()
@@ -1735,6 +1757,7 @@ mod swapchain {
         device::{Device, QueueFamilyIndices},
         surface::Surface,
     };
+    use crate::prelude::PhysicalSize;
     use anyhow::{bail, Context, Result};
     use ash::{extensions::khr, prelude::VkResult, vk};
     use derive_more::{Deref, DerefMut};
@@ -1761,8 +1784,7 @@ mod swapchain {
             instance: &ash::Instance,
             device: &Device,
             surface: &Surface,
-            width: u32,
-            height: u32,
+            size: PhysicalSize<u32>,
         ) -> Result<Self> {
             log::debug!("creating swapchain");
 
@@ -1804,8 +1826,8 @@ mod swapchain {
                     height: max_height,
                 } = capabilities.max_image_extent;
                 vk::Extent2D::builder()
-                    .width(width.clamp(min_width, max_width))
-                    .height(height.clamp(min_height, max_height))
+                    .width(size.width.clamp(min_width, max_width))
+                    .height(size.height.clamp(min_height, max_height))
                     .build()
             } else {
                 capabilities.current_extent

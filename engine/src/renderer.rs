@@ -1,31 +1,28 @@
-use crate::math::Mat4;
+//! Renderer interface for a renderer backend.
+
+use crate::{
+    math::Mat4,
+    prelude::{PhysicalSize, Window},
+};
 use anyhow::{Context as _, Result};
-use cfg_if::cfg_if;
 use std::{borrow::Cow, fmt, path::Path};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, BufReader},
 };
-use winit::window::Window;
 
-cfg_if! {
-    if #[cfg(feature = "vulkan")] {
-        mod vulkan;
-        use vulkan::RendererState;
-    } else if #[cfg(feature = "opengl")] {
-        mod opengl;
-        use opengl::Context;
-    } else {
-        #[derive(Debug)]
-        struct Context;
-        impl RendererBackend for RendererState {
-            fn initialize(application_name: &str, window: &Window) -> Result<Self> { Ok(Self) }
-            fn on_resized(&mut self, width: u32, height: u32) {}
-            fn draw_frame(&mut self) -> Result<()> { Ok(()) }
-        }
-        compile_error!("must select a valid renderer feature: `vulkan` or `opengl`");
-    }
-}
+#[cfg(feature = "opengl")]
+mod opengl;
+#[cfg(feature = "opengl")]
+use opengl::Context;
+
+#[cfg(feature = "vulkan")]
+mod vulkan;
+#[cfg(feature = "vulkan")]
+use vulkan::Context;
+
+#[cfg(not(any(feature = "opengl", feature = "vulkan")))]
+compile_error!("must choose a valid renderer feature flag");
 
 pub trait RendererBackend: Sized {
     /// Initialize the `RendererBackend`.
@@ -40,7 +37,7 @@ pub trait RendererBackend: Sized {
     fn shutdown(&mut self);
 
     /// Handle window resized event.
-    fn on_resized(&mut self, width: u32, height: u32);
+    fn on_resized(&mut self, size: PhysicalSize<u32>);
 
     /// Begin rendering a frame to the screen.
     fn begin_frame(&mut self, delta_time: f32) -> Result<()>;
@@ -57,7 +54,7 @@ pub trait RendererBackend: Sized {
 
 #[derive(Debug)]
 pub struct Renderer {
-    state: RendererState,
+    cx: Context,
 }
 
 impl Renderer {
@@ -69,12 +66,7 @@ impl Renderer {
         shaders: &[Shader],
     ) -> Result<Self> {
         Ok(Self {
-            state: RendererState::initialize(
-                application_name,
-                applcation_version,
-                window,
-                shaders,
-            )?,
+            cx: Context::initialize(application_name, applcation_version, window, shaders)?,
         })
     }
 
@@ -85,18 +77,18 @@ impl Renderer {
 
     /// Handle window resized event.
     #[inline]
-    pub fn on_resized(&mut self, width: u32, height: u32) {
-        self.state.on_resized(width, height);
+    pub fn on_resized(&mut self, size: PhysicalSize<u32>) {
+        self.cx.on_resized(size);
     }
 
     /// Draw a frame to the screen.
     pub fn draw_frame(&mut self, render_state: RenderState) -> Result<()> {
-        self.state.begin_frame(render_state.delta_time)?;
-        self.state
+        self.cx.begin_frame(render_state.delta_time)?;
+        self.cx
             .update_projection_view(render_state.projection, render_state.view);
-        self.state.update_model(render_state.model);
+        self.cx.update_model(render_state.model);
 
-        self.state.end_frame(render_state.delta_time)?;
+        self.cx.end_frame(render_state.delta_time)?;
 
         Ok(())
     }

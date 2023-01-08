@@ -45,7 +45,6 @@ pub mod profiling;
 pub mod config;
 pub mod context;
 pub mod core;
-pub mod event;
 pub mod input;
 pub mod math;
 pub mod platform;
@@ -53,8 +52,14 @@ pub mod renderer;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[allow(variant_size_differences)]
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("invalid image format: bit_depth: {bit_depth:?}, color_type: {color_type:?}")]
+    UnsupportedImageFormat {
+        bit_depth: png::BitDepth,
+        color_type: png::ColorType,
+    },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -64,12 +69,10 @@ pub mod prelude {
         config::Config,
         context::Context,
         core::{Engine, Update},
-        event::{
-            ControllerAxis, ControllerButton, Event, InputState, KeyCode, ModifierKeys, MouseButton,
-        },
         math::{Degrees, Mat4, Radians, Vec2, Vec3},
         matrix,
         renderer::{RenderState, Renderer, Shader, ShaderType},
         vector,
     };
+    pub use winit::{dpi::*, event::*, window::*};
 }

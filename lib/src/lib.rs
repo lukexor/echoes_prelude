@@ -44,8 +44,7 @@ pub mod logger;
 // pub use is required all exposed types for `hot_lib_reloader`
 pub use anyhow::Result;
 pub use game::Game;
-use pix_engine::{context::Context, prelude::Event};
-pub use winit::window::Window;
+pub use pix_engine::{context::Context, prelude::Event};
 
 #[no_mangle]
 /// Initializes the logger correctly when the hot_reload is enabled.
@@ -69,6 +68,6 @@ pub fn audio_samples(game: &mut Game) -> Result<Vec<f32>> {
 }
 
 #[no_mangle]
-pub fn on_event(game: &mut Game, delta_time: f32, event: Event, cx: &mut Context) {
+pub fn on_event(game: &mut Game, delta_time: f32, event: Event<'_, ()>, cx: &mut Context) {
     game.on_event(delta_time, event, cx);
 }

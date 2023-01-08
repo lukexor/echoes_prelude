@@ -37,7 +37,7 @@
 )]
 
 use anyhow::Result;
-use pix_engine::prelude::*;
+use pix_engine::{config::FullscreenMode, prelude::*};
 
 #[cfg(not(feature = "hot_reload"))]
 use echoes_prelude_lib::*;
@@ -77,12 +77,13 @@ async fn main() -> pix_engine::Result<()> {
     let engine = Engine::builder()
         .title(APPLICATION_NAME)
         .version(env!("CARGO_PKG_VERSION"))
-        .width(WINDOW_WIDTH)
-        .height(WINDOW_HEIGHT)
+        .size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+        // .fullscreen(FullscreenMode::Exclusive)
+        .cursor_grab(true)
         .shader(Shader::vertex("primary", VERTEX_SHADER).await?)
         .shader(Shader::fragment("primary", FRAGMENT_SHADER).await?)
-        .build()?;
-    Engine::run(engine, application)
+        .build();
+    engine.run(application)
 }
 
 #[derive(Debug)]
@@ -99,6 +100,8 @@ impl Application {
 }
 
 impl Update for Application {
+    type UserEvent = ();
+
     /// Called on engine start.
     fn on_start(&mut self, cx: &mut Context) -> pix_engine::Result<()> {
         log::info!("application started");
@@ -120,7 +123,7 @@ impl Update for Application {
     }
 
     /// Called on every event.
-    fn on_event(&mut self, delta_time: f32, event: Event, cx: &mut Context) {
+    fn on_event(&mut self, delta_time: f32, event: Event<'_, Self::UserEvent>, cx: &mut Context) {
         on_event(&mut self.game, delta_time, event, cx);
     }
 }
