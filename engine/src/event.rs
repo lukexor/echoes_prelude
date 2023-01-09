@@ -1,17 +1,11 @@
 //! Event types.
 
-use crate::window::{PhysicalPosition, PhysicalSize};
+use crate::window::{PhysicalPosition, PhysicalSize, WindowId};
 use bitflags::bitflags;
 
-mod winit;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[must_use]
-pub struct WindowId(::winit::window::WindowId);
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[must_use]
-pub struct DeviceId(::winit::event::DeviceId);
+pub struct DeviceId(pub(crate) ::winit::event::DeviceId);
 
 pub type Scancode = u32;
 

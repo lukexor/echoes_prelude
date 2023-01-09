@@ -1,10 +1,10 @@
-//! Engine context
+//! Engine context.
 
 use crate::{
     config::Config,
     prelude::{InputState, KeyCode, ModifierKeys, MouseButton, PhysicalSize},
     renderer::{RenderState, Renderer},
-    window::Window,
+    window::{winit::FullscreenModeExt, Window},
     Result,
 };
 use std::time::{Duration, Instant};
@@ -120,7 +120,7 @@ impl Context {
             .then(|| {
                 self.config
                     .fullscreen_mode
-                    .as_monitor(self.window.primary_monitor())
+                    .for_monitor(self.window.primary_monitor())
             })
             .flatten();
         self.window.set_fullscreen(fullscreen);

@@ -144,6 +144,7 @@ impl Game {
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => match event {
+                // TODO: Fixme
                 DeviceEvent::MouseMotion { delta: (x, y) } => {
                     self.camera.yaw(Degrees(
                         x as f32 * self.config.mouse_sensitivity * delta_time,

@@ -1,7 +1,6 @@
 //! Engine configuration.
 
 use std::{env, time::Duration};
-use winit::{monitor::MonitorHandle, window::Fullscreen};
 
 #[derive(Debug, Copy, Clone)]
 #[must_use]
@@ -37,15 +36,4 @@ impl Config {
 pub enum FullscreenMode {
     Exclusive,
     Borderless,
-}
-
-impl FullscreenMode {
-    pub(crate) fn as_monitor(&self, monitor: Option<MonitorHandle>) -> Option<Fullscreen> {
-        match self {
-            Self::Exclusive => monitor
-                .and_then(|monitor| monitor.video_modes().next())
-                .map(Fullscreen::Exclusive),
-            Self::Borderless => Some(Fullscreen::Borderless(monitor)),
-        }
-    }
 }

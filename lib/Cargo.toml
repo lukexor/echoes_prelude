@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2021"
 
 [package.metadata]
-msrv = "1.65.0"
+msrv = "1.66.0"
 
 [lib]
 crate-type = ["rlib", "dylib"]

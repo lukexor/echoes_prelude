@@ -1,3 +1,5 @@
+//! Math types and utilities.
+
 use std::ops::{
     Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
     SubAssign,
@@ -110,6 +112,12 @@ impl Vector<2> {
         self[0] = value;
     }
 
+    /// Update the `x` coordinate with a closure.
+    #[inline]
+    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[0] = f(self[0]);
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
@@ -121,6 +129,12 @@ impl Vector<2> {
     #[inline]
     pub fn set_y(&mut self, value: f32) {
         self[1] = value;
+    }
+
+    /// Update the `y` coordinate with a closure.
+    #[inline]
+    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[1] = f(self[1]);
     }
 }
 
@@ -200,6 +214,12 @@ impl Vector<3> {
         self[0] = value;
     }
 
+    /// Update the `x` coordinate with a closure.
+    #[inline]
+    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[0] = f(self[0]);
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
@@ -213,6 +233,12 @@ impl Vector<3> {
         self[1] = value;
     }
 
+    /// Update the `y` coordinate with a closure.
+    #[inline]
+    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[1] = f(self[1]);
+    }
+
     /// Return the `z` coordinate.
     #[must_use]
     #[inline]
@@ -224,6 +250,12 @@ impl Vector<3> {
     #[inline]
     pub fn set_z(&mut self, value: f32) {
         self[2] = value;
+    }
+
+    /// Update the `z` coordinate with a closure.
+    #[inline]
+    pub fn update_z(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[2] = f(self[2]);
     }
 
     /// Calculate the dot-product between two `Vector`s.
@@ -282,6 +314,12 @@ impl Vector<4> {
         self[0] = value;
     }
 
+    /// Update the `x` coordinate with a closure.
+    #[inline]
+    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[0] = f(self[0]);
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
@@ -293,6 +331,12 @@ impl Vector<4> {
     #[inline]
     pub fn set_y(&mut self, value: f32) {
         self[1] = value;
+    }
+
+    /// Update the `y` coordinate with a closure.
+    #[inline]
+    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[1] = f(self[1]);
     }
 
     /// Return the `z` coordinate.
@@ -308,6 +352,12 @@ impl Vector<4> {
         self[2] = value;
     }
 
+    /// Update the `z` coordinate with a closure.
+    #[inline]
+    pub fn update_z(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[2] = f(self[2]);
+    }
+
     /// Return the `w` coordinate.
     #[must_use]
     #[inline]
@@ -319,6 +369,12 @@ impl Vector<4> {
     #[inline]
     pub fn set_w(&mut self, value: f32) {
         self[3] = value;
+    }
+
+    /// Update the `w` coordinate with a closure.
+    #[inline]
+    pub fn update_w(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[3] = f(self[3]);
     }
 
     /// Calculate the dot-product between two `Vector`s, pairwise.
@@ -414,6 +470,15 @@ impl<const N: usize> Deref for Vector<N> {
 impl<const N: usize> DerefMut for Vector<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl<const N: usize> IntoIterator for Vector<N> {
+    type Item = f32;
+    type IntoIter = std::array::IntoIter<Self::Item, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -1240,6 +1305,12 @@ impl Quaternion {
         self[0] = value;
     }
 
+    /// Update the `x` coordinate with a closure.
+    #[inline]
+    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[0] = f(self[0]);
+    }
+
     /// Return the `y` coordinate.
     #[must_use]
     #[inline]
@@ -1251,6 +1322,12 @@ impl Quaternion {
     #[inline]
     pub fn set_y(&mut self, value: f32) {
         self[1] = value;
+    }
+
+    /// Update the `y` coordinate with a closure.
+    #[inline]
+    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[1] = f(self[1]);
     }
 
     /// Return the `z` coordinate.
@@ -1266,6 +1343,12 @@ impl Quaternion {
         self[2] = value;
     }
 
+    /// Update the `z` coordinate with a closure.
+    #[inline]
+    pub fn update_z(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[2] = f(self[2]);
+    }
+
     /// Return the `w` coordinate.
     #[must_use]
     #[inline]
@@ -1277,6 +1360,12 @@ impl Quaternion {
     #[inline]
     pub fn set_w(&mut self, value: f32) {
         self[3] = value;
+    }
+
+    /// Update the `w` coordinate with a closure.
+    #[inline]
+    pub fn update_w(&mut self, mut f: impl FnMut(f32) -> f32) {
+        self[3] = f(self[3]);
     }
 
     /// Create an identity `Quaternion`.

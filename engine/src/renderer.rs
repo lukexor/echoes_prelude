@@ -1,4 +1,4 @@
-//! Renderer interface for a renderer backend.
+//! Traits and types for renderer backends.
 
 use crate::{math::Mat4, prelude::PhysicalSize, window::Window};
 use anyhow::{Context as _, Result};

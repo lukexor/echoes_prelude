@@ -1,8 +1,11 @@
+//! Core engine logic.
+
 use crate::{
     config::{Config, FullscreenMode},
     context::Context,
     prelude::{Event, PhysicalPosition, PhysicalSize, Position, Size, WindowEvent},
     renderer::{Renderer, Shader},
+    window::winit::FullscreenModeExt,
     Result,
 };
 use anyhow::Context as _;
@@ -154,7 +157,7 @@ impl Engine {
                     .with_resizable(self.resizable)
                     // TODO: Support Exclusive
                     .with_fullscreen(self
-                        .fullscreen.then(|| self.config.fullscreen_mode.as_monitor(event_loop.primary_monitor())).flatten()
+                        .fullscreen.then(|| self.config.fullscreen_mode.for_monitor(event_loop.primary_monitor())).flatten()
                     )
                     .build(event_loop)
                     .context("failed to create window") else {

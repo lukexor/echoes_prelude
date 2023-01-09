@@ -11,7 +11,7 @@ edition = "2021"
 build = "build.rs"
 
 [package.metadata]
-msrv = "1.65.0"
+msrv = "1.66.0"
 
 [features]
 default = ["hot_reload"]
@@ -21,7 +21,7 @@ hot_reload = ["dep:hot-lib-reloader"]
 anyhow = { workspace = true }
 pix-engine = { workspace = true }
 env_logger = { workspace = true }
-hot-lib-reloader = { version = "0.6.4", optional = true }
+hot-lib-reloader = { version = "~0.6.4", optional = true }
 log = { workspace = true }
 echoes_prelude_lib = { path = "lib" }
 tokio = { workspace = true }
@@ -40,7 +40,7 @@ members = [
 [workspace.dependencies]
 anyhow = "1.0.66"
 pix-engine = { path = "engine", features = ["vulkan"] }
-env_logger = "0.10.0"
-derive_more = "0.99.17"
-log = "0.4.7"
+env_logger = "~0.10.0"
+derive_more = "~0.99.17"
+log = "~0.4.7"
 tokio = { version = "1.23.0", features = ["full"] }

@@ -1,3 +1,5 @@
+//! Vulkan renderer backend.
+
 use super::{RendererBackend, Shader};
 use crate::{
     math::{Mat4, UniformBufferObject},
@@ -711,8 +713,9 @@ impl Context {
 mod instance {
     use super::{
         debug::{Debug, VALIDATION_LAYER_NAME},
-        platform, ENABLED_LAYER_NAMES,
+        ENABLED_LAYER_NAMES,
     };
+    use crate::platform;
     use anyhow::{bail, Context, Result};
     use ash::vk;
     use derive_more::{Deref, DerefMut};
@@ -825,12 +828,12 @@ mod instance {
 }
 
 mod surface {
-    use super::platform;
+    use crate::platform;
+    use crate::window::{PhysicalSize, Window};
     use anyhow::Result;
     use ash::{extensions::khr, vk};
     use derive_more::{Deref, DerefMut};
     use std::fmt;
-    use winit::{dpi::PhysicalSize, window::Window};
 
     #[derive(Clone, Deref, DerefMut)]
     #[must_use]
@@ -863,7 +866,7 @@ mod surface {
 
             let handle = platform::create_surface(entry, instance, window)?;
             let loader = khr::Surface::new(entry, instance);
-            let PhysicalSize { width, height } = window.inner_size();
+            let PhysicalSize { width, height } = window.inner_size().into();
 
             log::debug!("surface created successfully");
 
@@ -884,10 +887,11 @@ mod surface {
 }
 
 mod device {
-    use super::{
-        command_pool::CommandPool, platform, swapchain::Swapchain, Surface, ENABLED_LAYER_NAMES,
+    use super::{command_pool::CommandPool, swapchain::Swapchain, Surface, ENABLED_LAYER_NAMES};
+    use crate::{
+        math::{UniformBufferObject, Vertex},
+        platform,
     };
-    use crate::math::{UniformBufferObject, Vertex};
     use anyhow::{bail, Context, Result};
     use ash::vk;
     use derive_more::{Deref, DerefMut};
@@ -3294,175 +3298,5 @@ mod debug {
             _ => log::debug!("{msg_type} {message}"),
         };
         vk::FALSE
-    }
-}
-
-mod platform {
-    use anyhow::{Context, Result};
-    use ash::{
-        extensions::{ext, khr, mvk},
-        vk, Entry, Instance,
-    };
-    use std::collections::HashSet;
-    use std::ffi::CStr;
-    use winit::window::Window;
-
-    /// Return a list of enabled Vulkan [ash::Instance] extensions for macOS.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn required_extensions() -> Vec<*const i8> {
-        vec![
-            khr::Surface::name().as_ptr(),
-            #[cfg(debug_assertions)]
-            ext::DebugUtils::name().as_ptr(),
-            mvk::MacOSSurface::name().as_ptr(),
-            vk::KhrPortabilityEnumerationFn::name().as_ptr(),
-            vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr(),
-        ]
-    }
-
-    /// Return a list of enabled Vulkan [ash::Instance] extensions for Linux.
-    #[cfg(all(unix, not(target_os = "macos"),))]
-    pub(crate) fn enabled_extension_names() -> Vec<*const i8> {
-        vec![
-            khr::Surface::name().as_ptr(),
-            #[cfg(debug_assertions)]
-            ext::DebugUtils::name().as_ptr(),
-            khr::XlibSurface::name().as_ptr(),
-        ]
-    }
-
-    /// Return a list of enabled Vulkan [ash::Instance] extensions for Windows.
-    #[cfg(windows)]
-    pub(crate) fn enabled_extension_names() -> Vec<*const i8> {
-        vec![
-            khr::Surface::name().as_ptr(),
-            #[cfg(debug_assertions)]
-            ext::DebugUtils::name().as_ptr(),
-            khr::Win32Surface::name().as_ptr(),
-        ]
-    }
-
-    /// Return a set of [`vk::InstanceCreateFlags`] for macOS.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn instance_create_flags() -> vk::InstanceCreateFlags {
-        vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
-    }
-
-    /// Return a set of [`vk::InstanceCreateFlags`] for all platforms other than macOS.
-    #[cfg(not(target_os = "macos"))]
-    pub(crate) fn instance_create_flags() -> vk::InstanceCreateFlags {
-        vk::InstanceCreateFlags::default()
-    }
-
-    /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for macOS.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn create_surface(
-        entry: &Entry,
-        instance: &Instance,
-        window: &Window,
-    ) -> Result<vk::SurfaceKHR> {
-        use cocoa::{
-            appkit::{NSView, NSWindow},
-            base::{id as cocoa_id, YES},
-        };
-        use metal::{MetalLayer, MetalLayerRef};
-        use objc::runtime::Object;
-        use std::mem;
-        use winit::platform::macos::WindowExtMacOS;
-
-        log::debug!("creating macOS metal surface");
-
-        let layer = MetalLayer::new();
-        layer.set_edge_antialiasing_mask(0);
-        layer.set_presents_with_transaction(false);
-        layer.remove_all_animations();
-
-        // SAFETY: TODO
-        let wnd: cocoa_id = unsafe { mem::transmute(window.ns_window()) };
-        let view = unsafe { wnd.contentView() };
-        unsafe { layer.set_contents_scale(view.backingScaleFactor()) };
-        let metal_layer_ref: *const MetalLayerRef = layer.as_ref();
-        unsafe { view.setLayer(metal_layer_ref as *mut Object) };
-        unsafe { view.setWantsLayer(YES) };
-
-        let surface_create_info = vk::MacOSSurfaceCreateInfoMVK::builder().view(window.ns_view());
-
-        let macos_surface = mvk::MacOSSurface::new(entry, instance);
-        // SAFETY: All create_info values are set correctly above with valid lifetimes.
-        unsafe { macos_surface.create_mac_os_surface(&surface_create_info, None) }
-            .context("failed to create surface")
-    }
-
-    /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for Linux.
-    #[cfg(all(unix, not(target_os = "macos"),))]
-    pub(crate) fn create_surface(
-        entry: &Entry,
-        instance: &Instance,
-        window: &Window,
-    ) -> Result<vk::SurfaceKHR> {
-        use std::ptr;
-        use winit::platform::unix::WindowExtUnix;
-
-        log::debug!("creating Linux XLIB surface");
-
-        let x11_display = window
-            .xlib_display()
-            .context("failed to get XLIB display")?;
-        let x11_window = winadow.xlib_window().context("failed to get XLIB window")?;
-        let surface_create_info = vk::XlibSurfaceCreateInfoKHR::builder()
-            .window(x11_window as vk::Window)
-            .dpy(x11_display as *mut vk::Display);
-        let xlib_surface = khr::XlibSurface::new(entry, instance);
-        // SAFETY: All create_info values are set correctly above with valid lifetimes.
-        unsafe { xlib_surface.create_xlib_surface(&surface_create_info, None) }
-            .context("failed to create surface")
-    }
-
-    /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for Windows.
-    #[cfg(windows)]
-    pub(crate) fn create_surface(
-        entry: &Entry,
-        instance: &Instance,
-        window: &Window,
-    ) -> Result<vk::SurfaceKHR> {
-        use std::os::raw::c_void;
-        use std::ptr;
-        use winapi::um::libloaderapi::GetModuleHandleW;
-        use winit::platform::windows::WindowExtWindows;
-
-        log::debug!("creating win32 surface");
-
-        let hinstance = GetModuleHandleW(ptr::null()) as *const c_void;
-        let surface_create_info = vk::Win32SurfaceCreateInfoKHR::builder()
-            .hinstance(hinstance)
-            .hwnd(window.hwnd());
-        let win32_surface = khr::Win32Surface::new(entry, instance);
-        // SAFETY: All create_info values are set correctly above with valid lifetimes.
-        unsafe { win32_surface.create_win32_surface(&surface_create_info, None) }
-            .context("failed to create surface")
-    }
-
-    /// Return a list of required [`vk::PhysicalDevice`] extensions for macOS.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn required_device_extensions(
-        supported_extensions: &HashSet<&CStr>,
-    ) -> Vec<*const i8> {
-        let mut required_extensions = vec![
-            khr::Swapchain::name().as_ptr(),
-            vk::KhrPortabilitySubsetFn::name().as_ptr(),
-        ];
-        if supported_extensions.contains(ext::MetalSurface::name()) {
-            required_extensions.push(ext::MetalSurface::name().as_ptr());
-        }
-        required_extensions
-    }
-
-    /// Return a list of required [`vk::PhysicalDevice`] extensions for all platforms other than
-    /// macOS.
-    #[cfg(not(target_os = "macos"))]
-    pub(crate) fn required_device_extensions(
-        _supported_extensions: &HashSet<&CStr>,
-    ) -> Vec<*const i8> {
-        vec![khr::Swapchain::name().as_ptr()]
     }
 }

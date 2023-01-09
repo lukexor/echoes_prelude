@@ -1,3 +1,5 @@
+//! Camera functionality.
+
 use crate::{
     math::{Degrees, Mat4, Matrix, Vec3},
     vector,

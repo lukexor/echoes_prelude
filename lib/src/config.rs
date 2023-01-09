@@ -1,3 +1,6 @@
+//! Game configuration options.
+
+//! Game configuration preferences, modified via the Config menu in-game.
 #[derive(Debug, Copy, Clone)]
 #[must_use]
 pub struct Config {

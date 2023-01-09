@@ -1,5 +1,4 @@
-//! Hot-reloadable library crate for `echoes_prelude`.
-
+#![doc = include_str!("../README.md")]
 #![warn(
     anonymous_parameters,
     bare_trait_objects,
@@ -46,7 +45,6 @@ pub mod config;
 pub mod context;
 pub mod core;
 pub mod event;
-pub mod input;
 pub mod math;
 pub mod platform;
 pub mod renderer;

@@ -58,7 +58,7 @@ mod hot_echoes_prelude_lib {
     pub(crate) fn _subscribe() -> hot_lib_reloader::LibReloadObserver {}
 }
 
-const APPLICATION_NAME: &str = "Echoes: Prelude";
+const APPLICATION_NAME: &str = "Echoes: Prelude in Shadow";
 const WINDOW_WIDTH: u32 = 1440;
 const WINDOW_HEIGHT: u32 = 900;
 
@@ -90,12 +90,12 @@ async fn main() -> pix_engine::Result<()> {
 
 #[derive(Debug)]
 #[must_use]
-pub struct Application {
+struct Application {
     game: Game,
 }
 
 impl Application {
-    pub fn initialize() -> Result<Self> {
+    fn initialize() -> Result<Self> {
         let game = Game::new()?;
         Ok(Self { game })
     }

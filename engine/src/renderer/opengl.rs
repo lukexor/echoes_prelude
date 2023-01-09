@@ -1,3 +1,5 @@
+//! OpenGL renderer backend.
+
 use super::Shader;
 use crate::{
     math::Mat4,
