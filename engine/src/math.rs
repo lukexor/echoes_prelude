@@ -1,264 +1,672 @@
 //! Math types and utilities.
 
-use std::ops::{
-    Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
-    SubAssign,
+use std::{
+    mem,
+    ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[repr(C)]
-#[must_use]
-pub struct Vertex {
-    pub position: Vec3,
-    pub color: Vec3,
-    pub texcoord: Vec2,
-}
-
-impl Vertex {
-    /// Create a new `Vertex` instance.
-    pub fn new(position: Vec3, color: Vec3, texcoord: Vec2) -> Self {
-        Self {
-            position,
-            color,
-            texcoord,
+macro_rules! impl_vector {
+    ($VecDim:ident, $dim:expr => $($field:ident),+) => {
+        #[doc = concat!("A ", stringify!($dim), "-dimensional vector")]
+        #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        #[must_use]
+        pub struct $VecDim {
+            $(pub $field: f32),+
         }
-    }
+
+        impl Default for $VecDim {
+            fn default() -> Self {
+                Self::origin()
+            }
+        }
+
+        impl $VecDim {
+            #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector from given coordinates.")]
+            #[inline]
+            pub fn new($($field: f32),+) -> Self {
+                Self { $($field),+ }
+            }
+
+            #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector at the origin.")]
+            #[inline]
+            pub fn origin() -> Self {
+                Self { $($field: 0.0),+ }
+            }
+
+            #[doc = concat!("Create a ", stringify!($dim), "-dimensional unit vector.")]
+            #[inline]
+            pub fn unit() -> Self {
+                Self { $($field: 1.0),+ }
+            }
+
+            /// Converts the vector into an array reference of `f32`.
+            #[must_use]
+            #[inline]
+            pub fn as_array(&self) -> &[f32; $dim] {
+                let array: &[f32; $dim] = unsafe { mem::transmute(self) };
+                array
+            }
+
+            /// Converts the vector into a mutable array reference of `f32`.
+            #[must_use]
+            #[inline]
+            pub fn as_array_mut(&mut self) -> &mut [f32; $dim] {
+                let array: &mut [f32; $dim] = unsafe { mem::transmute(self) };
+                array
+            }
+
+            /// Converts the vector into an array of `f32`.
+            #[must_use]
+            #[inline]
+            pub fn to_array(self) -> [f32; $dim] {
+                let array: [f32; $dim] = unsafe { mem::transmute(self) };
+                array
+            }
+
+            /// Returns whether two vectors are equal given an epsilon.
+            #[must_use]
+            #[inline]
+            pub fn compare(&self, rhs: Self, epsilon: f32) -> bool {
+                self.iter()
+                    .zip(rhs.iter())
+                    .all(|(a, b)| (a - b).abs() <= epsilon)
+            }
+
+            /// Calculate the squared magnitude of the vector.
+            #[must_use]
+            #[inline]
+            pub fn magnitude_squared(&self) -> f32 {
+                self.iter().map(|val| val * val).sum()
+            }
+
+            /// Calculate the magnitude of the vector.
+            #[must_use]
+            #[inline]
+            pub fn magnitude(&self) -> f32 {
+                self.magnitude_squared().sqrt()
+            }
+
+            /// Normalize the vector into a unit vector.
+            #[inline]
+            pub fn normalize(&mut self) {
+                let magnitude = self.magnitude();
+                if magnitude != 0.0 {
+                    self.iter_mut().for_each(|val| *val *= magnitude.recip());
+                }
+            }
+
+            /// Create a normalized copy of the vector.
+            #[inline]
+            pub fn normalized(&self) -> Self {
+                let mut vector = *self;
+                vector.normalize();
+                vector
+            }
+
+            /// Create the Euclidean distance between two vectors.
+            #[must_use]
+            #[inline]
+            pub fn distance(&self, vector: Self) -> f32 {
+                (*self - vector).magnitude()
+            }
+
+            /// Create an iterator over the vector dimensions.
+            #[inline]
+            fn iter(&self) ->  std::slice::Iter<'_, f32> {
+                self.as_array().iter()
+            }
+
+            /// Create a mutable iterator over the vector dimensions.
+            #[inline]
+            fn iter_mut(&mut self) -> std::slice::IterMut<'_, f32> {
+                self.as_array_mut().iter_mut()
+            }
+        }
+
+        impl IntoIterator for $VecDim {
+            type Item = f32;
+            type IntoIter = std::array::IntoIter<Self::Item, $dim>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.to_array().into_iter()
+            }
+        }
+
+        impl IntoIterator for &$VecDim {
+            type Item = f32;
+            type IntoIter = std::array::IntoIter<Self::Item, $dim>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.to_array().into_iter()
+            }
+        }
+
+        impl Index<usize> for $VecDim {
+            type Output = f32;
+
+            fn index(&self, index: usize) -> &f32 {
+                self.as_array().index(index)
+            }
+        }
+
+        impl IndexMut<usize> for $VecDim {
+            fn index_mut(&mut self, index: usize) -> &mut f32 {
+                self.as_array_mut().index_mut(index)
+            }
+        }
+
+        impl From<[f32; $dim]> for $VecDim {
+            fn from(array: [f32; $dim]) -> Self {
+                let v: Self = unsafe { mem::transmute(array) };
+                v
+            }
+        }
+
+        impl From<&[f32; $dim]> for &$VecDim {
+            fn from(array: &[f32; $dim]) -> Self {
+                let v: &Self = unsafe { mem::transmute(array) };
+                v
+            }
+        }
+
+        impl From<&mut [f32; $dim]> for &mut $VecDim {
+            fn from(array: &mut [f32; $dim]) -> Self {
+                let v: &mut Self = unsafe { mem::transmute(array) };
+                v
+            }
+        }
+
+        impl Add for $VecDim {
+            type Output = $VecDim;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                let mut vector = self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val += rhs);
+                vector
+            }
+        }
+
+        impl Add for &$VecDim {
+            type Output = $VecDim;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                let mut vector = *self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val += rhs);
+                vector
+            }
+        }
+
+        impl AddAssign for $VecDim {
+            fn add_assign(&mut self, rhs: Self) {
+                self.iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val += rhs);
+            }
+        }
+
+        impl Sub for $VecDim {
+            type Output = $VecDim;
+
+            fn sub(self, rhs: Self) -> Self::Output {
+                let mut vector = self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val -= rhs);
+                vector
+            }
+        }
+
+        impl Sub for &$VecDim {
+            type Output = $VecDim;
+
+            fn sub(self, rhs: Self) -> Self::Output {
+                let mut vector = *self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val -= rhs);
+                vector
+            }
+        }
+
+        impl SubAssign for $VecDim {
+            fn sub_assign(&mut self, rhs: Self) {
+                self.iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val -= rhs);
+            }
+        }
+
+        impl Mul for $VecDim {
+            type Output = $VecDim;
+
+            fn mul(self, rhs: Self) -> Self::Output {
+                let mut vector = self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val *= rhs);
+                vector
+            }
+        }
+
+        impl Mul for &$VecDim {
+            type Output = $VecDim;
+
+            fn mul(self, rhs: Self) -> Self::Output {
+                let mut vector = *self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val *= rhs);
+                vector
+            }
+        }
+
+        impl Mul<f32> for $VecDim {
+            type Output = $VecDim;
+
+            fn mul(self, rhs: f32) -> Self::Output {
+                let mut vector = self;
+                vector.iter_mut().for_each(|val| *val *= rhs);
+                vector
+            }
+        }
+
+        impl Mul<f32> for &$VecDim {
+            type Output = $VecDim;
+
+            fn mul(self, rhs: f32) -> Self::Output {
+                let mut vector = *self;
+                vector.iter_mut().for_each(|val| *val *= rhs);
+                vector
+            }
+        }
+
+        impl Mul<$VecDim> for f32 {
+            type Output = $VecDim;
+
+            fn mul(self, rhs: $VecDim) -> Self::Output {
+                let mut vector = rhs;
+                vector.iter_mut().for_each(|val| *val *= self);
+                vector
+            }
+        }
+
+        impl Mul<&$VecDim> for f32 {
+            type Output = $VecDim;
+
+            fn mul(self, rhs: &$VecDim) -> Self::Output {
+                let mut vector = *rhs;
+                vector.iter_mut().for_each(|val| *val *= self);
+                vector
+            }
+        }
+
+        impl MulAssign for $VecDim {
+            fn mul_assign(&mut self, rhs: Self) {
+                self.iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val *= rhs);
+            }
+        }
+
+        impl MulAssign<f32> for $VecDim {
+            fn mul_assign(&mut self, rhs: f32) {
+                self.iter_mut().for_each(|val| *val *= rhs);
+            }
+        }
+
+        impl Div for $VecDim {
+            type Output = $VecDim;
+
+            fn div(self, rhs: Self) -> Self::Output {
+                let mut vector = self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val /= rhs);
+                vector
+            }
+        }
+
+        impl Div for &$VecDim {
+            type Output = $VecDim;
+
+            fn div(self, rhs: Self) -> Self::Output {
+                let mut vector = *self;
+                vector
+                    .iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val /= rhs);
+                vector
+            }
+        }
+
+        impl Div<f32> for $VecDim {
+            type Output = $VecDim;
+
+            fn div(self, rhs: f32) -> Self::Output {
+                let mut vector = self;
+                vector.iter_mut().for_each(|val| *val /= rhs);
+                vector
+            }
+        }
+
+        impl Div<f32> for &$VecDim {
+            type Output = $VecDim;
+
+            fn div(self, rhs: f32) -> Self::Output {
+                let mut vector = *self;
+                vector.iter_mut().for_each(|val| *val /= rhs);
+                vector
+            }
+        }
+
+        impl Div<$VecDim> for f32 {
+            type Output = $VecDim;
+
+            fn div(self, rhs: $VecDim) -> Self::Output {
+                let mut vector = rhs;
+                vector.iter_mut().for_each(|val| *val /= self);
+                vector
+            }
+        }
+
+        impl Div<&$VecDim> for f32 {
+            type Output = $VecDim;
+
+            fn div(self, rhs: &$VecDim) -> Self::Output {
+                let mut vector = *rhs;
+                vector.iter_mut().for_each(|val| *val /= self);
+                vector
+            }
+        }
+
+        impl DivAssign for $VecDim {
+            fn div_assign(&mut self, rhs: Self) {
+                self.iter_mut()
+                    .zip(rhs.iter())
+                    .for_each(|(val, rhs)| *val /= rhs);
+            }
+        }
+
+        impl DivAssign<f32> for $VecDim {
+            fn div_assign(&mut self, rhs: f32) {
+                self.iter_mut().for_each(|val| *val /= rhs);
+            }
+        }
+
+        impl Neg for $VecDim {
+            type Output = $VecDim;
+
+            fn neg(self) -> Self::Output {
+                let mut vector = self;
+                vector.iter_mut().for_each(|val| *val = val.neg());
+                vector
+            }
+        }
+
+        impl Neg for &$VecDim {
+            type Output = $VecDim;
+
+            fn neg(self) -> Self::Output {
+                let mut vector = *self;
+                vector.iter_mut().for_each(|val| *val = val.neg());
+                vector
+            }
+        }
+    };
 }
 
-#[derive(Default, Debug, Copy, Clone)]
-#[repr(C)]
-#[must_use]
-pub struct UniformBufferObject {
-    // pub model: Mat4,
-    pub view: Mat4,
-    pub projection: Mat4,
-}
+impl_vector!(Vec1, 1 => x);
+impl_vector!(Vec2, 2 => x, y);
+impl_vector!(Vec3, 3 => x, y, z);
+impl_vector!(Vec4, 4 => x, y, z, w);
 
-/// A N-dimensional `Vector`.
-#[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
-#[must_use]
-#[repr(transparent)]
-pub struct Vector<const N: usize = 2>([f32; N]);
-
-pub type Vec1 = Vector<1>;
-pub type Vec2 = Vector<2>;
-pub type Vec3 = Vector<3>;
-pub type Vec4 = Vector<4>;
-
-impl<const N: usize> Default for Vector<N> {
-    fn default() -> Self {
-        Self::origin()
-    }
-}
-
-/// Constructs a new [Vector].
+/// Constructs a new 1D [Vector].
 #[macro_export]
-macro_rules! vector {
+macro_rules! vec1 {
     () => {
-        $crate::math::Vector::origin()
+        $crate::math::Vec1::origin()
     };
-    ($($v:expr),* $(,)?) => {
-        $crate::math::Vector::new([$($v,)*])
+    ($val:expr) => {
+        $crate::math::Vec1::from($val)
     };
 }
 
-impl Vector<2> {
-    /// Create a 2D `Vector` from a 3D `Vector`.
+/// Constructs a new 2D [Vector].
+#[macro_export]
+macro_rules! vec2 {
+    () => {
+        $crate::math::Vec2::origin()
+    };
+    ($val:expr) => {
+        $crate::math::Vec2::from($val)
+    };
+    ($val:expr, $y:expr $(,)?) => {{
+        let v = $crate::vec1!($val);
+        $crate::math::Vec2::new(v.x, $y)
+    }};
+}
+
+/// Constructs a new 3D [Vector].
+#[macro_export]
+macro_rules! vec3 {
+    () => {
+        $crate::math::Vec3::origin()
+    };
+    ($val:expr) => {
+        $crate::math::Vec3::from($val)
+    };
+    ($val:expr, $z:expr $(,)?) => {{
+        let v = $crate::vec2!($val);
+        $crate::math::Vec3::new(v.x, v.y, $z)
+    }};
+    ($val:expr, $y:expr, $z:expr $(,)?) => {{
+        let v = $crate::vec1!($val);
+        $crate::math::Vec3::new(v.x, $y, $z)
+    }};
+}
+
+/// Constructs a new 4D [Vector].
+#[macro_export]
+macro_rules! vec4 {
+    () => {
+        $crate::math::Vec4::origin()
+    };
+    ($val:expr) => {
+        $crate::math::Vec4::from($val)
+    };
+    ($val:expr, $w:expr $(,)?) => {{
+        let v = $crate::vec3!($val);
+        $crate::math::Vec4::new(v.x, v.y, v.z, $w)
+    }};
+    ($val:expr, $z:expr, $w:expr $(,)?) => {{
+        let v = $crate::vec2!($val);
+        $crate::math::Vec4::new(v.x, v.y, $z, $w)
+    }};
+    ($val:expr, $y:expr, $z:expr, $w:expr $(,)?) => {{
+        let v = $crate::vec1!($val);
+        $crate::math::Vec4::new(v.x, $y, $z, $w)
+    }};
+}
+
+impl From<f32> for Vec1 {
+    fn from(x: f32) -> Self {
+        Self { x }
+    }
+}
+
+impl Vec2 {
+    /// Return the `x` component as an array.
     #[inline]
-    pub fn from_3d(vector: Vector<3>) -> Self {
-        vector!(vector.x(), vector.y())
+    #[must_use]
+    pub fn x(&self) -> [f32; 1] {
+        [self.x]
     }
 
-    /// Create a 2D `Vector` from a 4D `Vector`.
+    /// Return the `x` and `y` components as an array.
     #[inline]
-    pub fn from_4d(vector: Vector<4>) -> Self {
-        vector!(vector.x(), vector.y())
+    #[must_use]
+    pub fn xy(&self) -> [f32; 2] {
+        [self.x, self.y]
     }
 
-    /// Create a 2D unit `Vector` pointing up.
+    /// Create a 2D vector from a 3D vector.
+    #[inline]
+    pub fn from_vec3(vector: Vec3) -> Self {
+        vec2!(vector.xy())
+    }
+
+    /// Create a 2D vector from a 4D vector.
+    #[inline]
+    pub fn from_vec4(vector: Vec4) -> Self {
+        vec2!(vector.xy())
+    }
+
+    /// Create a 3D vector from a 2D vector.
+    #[inline]
+    pub fn to_vec3(self, z: f32) -> Vec3 {
+        vec3!(self.xy(), z)
+    }
+
+    /// Create a 4D vector from a 2D vector.
+    #[inline]
+    pub fn to_vec4(self, z: f32, w: f32) -> Vec4 {
+        vec4!(self.xy(), z, w)
+    }
+
+    /// Create a 2D unit vector pointing up.
     #[inline]
     pub fn up() -> Self {
-        vector!(0.0, 1.0)
+        vec2!(0.0, 1.0)
     }
 
-    /// Create a 2D unit `Vector` pointing down.
+    /// Create a 2D unit vector pointing down.
     #[inline]
     pub fn down() -> Self {
-        vector!(0.0, -1.0)
+        vec2!(0.0, -1.0)
     }
 
-    /// Create a 2D unit `Vector` pointing left.
+    /// Create a 2D unit vector pointing left.
     #[inline]
     pub fn left() -> Self {
-        vector!(-1.0, 0.0)
+        vec2!(-1.0, 0.0)
     }
 
-    /// Create a 2D unit `Vector` pointing right.
+    /// Create a 2D unit vector pointing right.
     #[inline]
     pub fn right() -> Self {
-        vector!(1.0, 0.0)
-    }
-
-    /// Return the `x` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn x(&self) -> f32 {
-        self[0]
-    }
-
-    /// Set the `x` coordinate.
-    #[inline]
-    pub fn set_x(&mut self, value: f32) {
-        self[0] = value;
-    }
-
-    /// Update the `x` coordinate with a closure.
-    #[inline]
-    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[0] = f(self[0]);
-    }
-
-    /// Return the `y` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn y(&self) -> f32 {
-        self[1]
-    }
-
-    /// Set the `y` coordinate.
-    #[inline]
-    pub fn set_y(&mut self, value: f32) {
-        self[1] = value;
-    }
-
-    /// Update the `y` coordinate with a closure.
-    #[inline]
-    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[1] = f(self[1]);
+        vec2!(1.0, 0.0)
     }
 }
 
-impl Vector<3> {
-    /// Create a 3D `Vector` from a 2D `Vector`.
+impl Vec3 {
+    /// Return the `x` component as an array.
     #[inline]
-    pub fn from_2d(vector: Vector<2>, z: f32) -> Self {
-        vector!(vector.x(), vector.y(), z)
+    #[must_use]
+    pub fn x(&self) -> [f32; 1] {
+        [self.x]
     }
 
-    /// Create a 3D `Vector` from a 4D `Vector`.
+    /// Return the `x` and `y` components as an array.
     #[inline]
-    pub fn from_4d(vector: Vector<4>) -> Self {
-        vector!(vector.x(), vector.y(), vector.z())
+    #[must_use]
+    pub fn xy(&self) -> [f32; 2] {
+        [self.x, self.y]
     }
 
-    /// Create a 3D `Vector` from separate RGB values.
+    /// Return the `x`, `y`, and `z` components as an array.
+    #[inline]
+    #[must_use]
+    pub fn xyz(&self) -> [f32; 3] {
+        [self.x, self.y, self.z]
+    }
+
+    /// Create a 3D vector from a 2D vector.
+    #[inline]
+    pub fn from_vec2(vector: Vec2, z: f32) -> Self {
+        vec3!(vector.xy(), z)
+    }
+
+    /// Create a 3D vector from a 4D vector.
+    #[inline]
+    pub fn from_vec4(vector: Vec4) -> Self {
+        vec3!(vector.xy(), vector.z)
+    }
+
+    /// Create a 2D vector from a 3D vector.
+    #[inline]
+    pub fn to_vec2(self) -> Vec2 {
+        vec2!(self.x, self.y)
+    }
+
+    /// Create a 4D vector from a 3D vector.
+    #[inline]
+    pub fn to_vec4(self, w: f32) -> Vec4 {
+        vec4!(self.xyz(), w)
+    }
+
+    /// Create a 3D vector from separate RGB values.
     #[inline]
     pub fn from_rgb(r: u32, g: u32, b: u32) -> Self {
-        vector!(r as f32, g as f32, b as f32) / 255.0
+        vec3!(r as f32, g as f32, b as f32) / 255.0
     }
 
-    /// Create separate RGB values from the `Vector`.
+    /// Create separate RGB values from the vector.
     #[inline]
     #[must_use]
     pub fn to_rgb(&self) -> [u32; 3] {
         let rgb = *self * 255.0;
-        [rgb[0] as u32, rgb[1] as u32, rgb[2] as u32]
+        [rgb.x as u32, rgb.y as u32, rgb.z as u32]
     }
 
-    /// Create a 3D unit `Vector` pointing up.
+    /// Create a 3D unit vector pointing up.
     #[inline]
     pub fn up() -> Self {
-        vector!(0.0, 1.0, 0.0)
+        vec3!(0.0, 1.0, 0.0)
     }
 
-    /// Create a 3D unit `Vector` pointing down.
+    /// Create a 3D unit vector pointing down.
     #[inline]
     pub fn down() -> Self {
-        vector!(0.0, -1.0, 0.0)
+        vec3!(0.0, -1.0, 0.0)
     }
 
-    /// Create a 3D unit `Vector` pointing left.
+    /// Create a 3D unit vector pointing left.
     #[inline]
     pub fn left() -> Self {
-        vector!(-1.0, 0.0, 0.0)
+        vec3!(-1.0, 0.0, 0.0)
     }
 
-    /// Create a 3D unit `Vector` pointing right.
+    /// Create a 3D unit vector pointing right.
     #[inline]
     pub fn right() -> Self {
-        vector!(1.0, 0.0, 0.0)
+        vec3!(1.0, 0.0, 0.0)
     }
 
-    /// Create a 3D unit `Vector` pointing forward.
+    /// Create a 3D unit vector pointing forward.
     #[inline]
     pub fn forward() -> Self {
-        vector!(0.0, 0.0, -1.0)
+        vec3!(0.0, 0.0, -1.0)
     }
 
-    /// Create a 3D unit `Vector` pointing backward.
+    /// Create a 3D unit vector pointing backward.
     #[inline]
     pub fn backward() -> Self {
-        vector!(0.0, 0.0, 1.0)
+        vec3!(0.0, 0.0, 1.0)
     }
 
-    /// Return the `x` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn x(&self) -> f32 {
-        self[0]
-    }
-
-    /// Set the `x` coordinate.
-    #[inline]
-    pub fn set_x(&mut self, value: f32) {
-        self[0] = value;
-    }
-
-    /// Update the `x` coordinate with a closure.
-    #[inline]
-    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[0] = f(self[0]);
-    }
-
-    /// Return the `y` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn y(&self) -> f32 {
-        self[1]
-    }
-
-    /// Set the `y` coordinate.
-    #[inline]
-    pub fn set_y(&mut self, value: f32) {
-        self[1] = value;
-    }
-
-    /// Update the `y` coordinate with a closure.
-    #[inline]
-    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[1] = f(self[1]);
-    }
-
-    /// Return the `z` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn z(&self) -> f32 {
-        self[2]
-    }
-
-    /// Set the `z` coordinate.
-    #[inline]
-    pub fn set_z(&mut self, value: f32) {
-        self[2] = value;
-    }
-
-    /// Update the `z` coordinate with a closure.
-    #[inline]
-    pub fn update_z(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[2] = f(self[2]);
-    }
-
-    /// Calculate the dot-product between two `Vector`s.
+    /// Calculate the dot-product between two vectors.
     #[must_use]
     #[inline]
     pub fn dot(&self, rhs: Self) -> f32 {
@@ -268,515 +676,162 @@ impl Vector<3> {
             .sum()
     }
 
-    /// Calculate the cross-product between two `Vector`s.
+    /// Calculate the cross-product between two vectors.
     #[inline]
     pub fn cross(&self, rhs: Self) -> Self {
-        let [x, y, z] = self.0;
-        let [ox, oy, oz] = rhs.0;
-        vector!(y * oz - z * oy, z * ox - x * oz, x * oy - y * ox)
+        vec3!(
+            self.y * rhs.z - self.z * rhs.y,
+            self.z * rhs.x - self.x * rhs.z,
+            self.x * rhs.y - self.y * rhs.x
+        )
     }
 
-    /// Create a transformed `Vector` by applying a `Matrix`.
+    /// Create a transformed vector by applying a matrix.
     #[inline]
-    pub fn transformed(&self, matrix: Matrix<4, 4>) -> Self {
-        let [x, y, z] = self.0;
-        vector!(
-            x * matrix[(0, 0)] + y * matrix[(1, 0)] + z * matrix[(2, 0)] + 1.0 * matrix[(3, 0)],
-            x * matrix[(0, 1)] + y * matrix[(1, 1)] + z * matrix[(2, 1)] + 1.0 * matrix[(3, 1)],
-            x * matrix[(0, 2)] + y * matrix[(1, 2)] + z * matrix[(2, 2)] + 1.0 * matrix[(3, 2)],
+    pub fn transformed(&self, matrix: Mat4) -> Self {
+        vec3!(
+            self.x * matrix[(0, 0)]
+                + self.y * matrix[(1, 0)]
+                + self.z * matrix[(2, 0)]
+                + 1.0 * matrix[(3, 0)],
+            self.x * matrix[(0, 1)]
+                + self.y * matrix[(1, 1)]
+                + self.z * matrix[(2, 1)]
+                + 1.0 * matrix[(3, 1)],
+            self.x * matrix[(0, 2)]
+                + self.y * matrix[(1, 2)]
+                + self.z * matrix[(2, 2)]
+                + 1.0 * matrix[(3, 2)],
         )
     }
 }
 
-impl Vector<4> {
-    /// Create a 4D `Vector` from a 2D `Vector`.
+impl Vec4 {
+    /// Return the `x` component as an array.
     #[inline]
-    pub fn from_2d(vector: Vector<2>, z: f32, w: f32) -> Self {
-        vector!(vector.x(), vector.y(), z, w)
-    }
-
-    /// Create a 4D `Vector` from a 3D `Vector`.
-    #[inline]
-    pub fn from_3d(vector: Vector<3>, w: f32) -> Self {
-        vector!(vector.x(), vector.y(), vector.z(), w)
-    }
-
-    /// Return the `x` coordinate.
     #[must_use]
-    #[inline]
-    pub fn x(&self) -> f32 {
-        self[0]
+    pub fn x(&self) -> [f32; 1] {
+        [self.x]
     }
 
-    /// Set the `x` coordinate.
+    /// Return the `x` and `y` components as an array.
     #[inline]
-    pub fn set_x(&mut self, value: f32) {
-        self[0] = value;
-    }
-
-    /// Update the `x` coordinate with a closure.
-    #[inline]
-    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[0] = f(self[0]);
-    }
-
-    /// Return the `y` coordinate.
     #[must_use]
-    #[inline]
-    pub fn y(&self) -> f32 {
-        self[1]
+    pub fn xy(&self) -> [f32; 2] {
+        [self.x, self.y]
     }
 
-    /// Set the `y` coordinate.
+    /// Return the `x`, `y`, and `z` components as an array.
     #[inline]
-    pub fn set_y(&mut self, value: f32) {
-        self[1] = value;
-    }
-
-    /// Update the `y` coordinate with a closure.
-    #[inline]
-    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[1] = f(self[1]);
-    }
-
-    /// Return the `z` coordinate.
     #[must_use]
-    #[inline]
-    pub fn z(&self) -> f32 {
-        self[2]
+    pub fn xyz(&self) -> [f32; 3] {
+        [self.x, self.y, self.z]
     }
 
-    /// Set the `z` coordinate.
+    /// Return the `x`, `y`, `z`, and `w` components as an array.
     #[inline]
-    pub fn set_z(&mut self, value: f32) {
-        self[2] = value;
-    }
-
-    /// Update the `z` coordinate with a closure.
-    #[inline]
-    pub fn update_z(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[2] = f(self[2]);
-    }
-
-    /// Return the `w` coordinate.
     #[must_use]
-    #[inline]
-    pub fn w(&self) -> f32 {
-        self[3]
+    pub fn xyzw(&self) -> [f32; 4] {
+        [self.x, self.y, self.z, self.w]
     }
 
-    /// Set the `w` coordinate.
+    /// Create a 4D vector from a 2D vector.
     #[inline]
-    pub fn set_w(&mut self, value: f32) {
-        self[3] = value;
+    pub fn from_vec2(vector: Vec2, z: f32, w: f32) -> Self {
+        vec4!(vector.xy(), z, w)
     }
 
-    /// Update the `w` coordinate with a closure.
+    /// Create a 4D vector from a 3D vector.
     #[inline]
-    pub fn update_w(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[3] = f(self[3]);
+    pub fn from_vec3(vector: Vec3, w: f32) -> Self {
+        vec4!(vector.xy(), vector.z, w)
     }
 
-    /// Calculate the dot-product between two `Vector`s, pairwise.
+    /// Create a 2D vector from a 4D vector.
+    #[inline]
+    pub fn to_vec2(self) -> Vec2 {
+        vec2!(self.xy())
+    }
+
+    /// Create a 3D vector from a 4D vector.
+    #[inline]
+    pub fn to_vec3(self) -> Vec3 {
+        vec3!(self.xyz())
+    }
+
+    /// Calculate the dot-product between two vectors, pairwise.
     #[must_use]
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    pub fn dot_pairwise(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> f32 {
-        a.0 * b.0 + a.1 * b.1 + a.2 * b.2 + a.3 * b.3
+    pub fn dot_pairwise(a: [f32; 4], b: [f32; 4]) -> f32 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
     }
 }
 
-impl<const N: usize> Vector<N> {
-    /// Create a N-dimentional `Vector` from given coordinates.
-    #[inline]
-    pub fn new(coordinates: [f32; N]) -> Self {
-        Self(coordinates)
-    }
+/// A 4x4 matrix.
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[must_use]
+pub struct Mat4 {
+    col0: Vec4,
+    col1: Vec4,
+    col2: Vec4,
+    col3: Vec4,
+}
 
-    /// Create a N-dimensional `Vector` at the origin.
-    #[inline]
-    pub fn origin() -> Self {
-        Self([0.0; N])
+impl Default for Mat4 {
+    fn default() -> Self {
+        Self {
+            col0: vec4!(1.0, 0.0, 0.0, 0.0),
+            col1: vec4!(0.0, 1.0, 0.0, 0.0),
+            col2: vec4!(0.0, 0.0, 1.0, 0.0),
+            col3: vec4!(0.0, 0.0, 0.0, 1.0),
+        }
     }
+}
 
-    /// Create a N-dimensional unit `Vector`.
-    #[inline]
-    pub fn unit() -> Self {
-        Self([1.0; N])
-    }
+/// Constructs a new [Mat4].
+#[macro_export]
+macro_rules! mat4 {
+    () => {
+        $crate::math::Mat4::identity()
+    };
+    ($val:expr) => {
+        $crate::math::Mat4::from($val)
+    };
+    ($c0:expr, $c1:expr, $(,)?) => {
+        $crate::math::Mat4::new(
+            $c0,
+            $c1,
+            vec4!(0.0, 0.0, 1.0, 0.0),
+            vec4!(0.0, 0.0, 0.0, 1.0),
+        )
+    };
+    ($c0:expr, $c1:expr, $c2:expr $(,)?) => {
+        $crate::math::Mat4::new($c0, $c1, $c2, vec4!(0.0, 0.0, 0.0, 1.0))
+    };
+    ($c0:expr, $c1:expr, $c2:expr, $c3:expr $(,)?) => {
+        $crate::math::Mat4::new($c0, $c1, $c2, $c3)
+    };
+}
 
-    /// Converts the `Vector` into an array of `f32`.
-    #[must_use]
+impl Mat4 {
+    /// Create a 4x4 matrix from given columns.
     #[inline]
-    pub fn to_array(self) -> [f32; N] {
-        self.0
-    }
-
-    /// Returns whether two `Vector`s are equal given an epsilon.
-    #[must_use]
-    #[inline]
-    pub fn compare(&self, rhs: Self, epsilon: f32) -> bool {
-        self.iter()
-            .zip(rhs.iter())
-            .all(|(a, b)| (a - b).abs() <= epsilon)
-    }
-
-    /// Calculate the squared magnitude of the `Vector`.
-    #[must_use]
-    #[inline]
-    pub fn magnitude_squared(&self) -> f32 {
-        self.iter().map(|val| val * val).sum()
-    }
-
-    /// Calculate the magnitude of the `Vector`.
-    #[must_use]
-    #[inline]
-    pub fn magnitude(&self) -> f32 {
-        self.magnitude_squared().sqrt()
-    }
-
-    /// Normalize the `Vector` into a unit `Vector`.
-    #[inline]
-    pub fn normalize(&mut self) {
-        let magnitude = self.magnitude();
-        if magnitude != 0.0 {
-            self.iter_mut().for_each(|val| *val *= magnitude.recip());
+    pub fn new(
+        col0: impl Into<Vec4>,
+        col1: impl Into<Vec4>,
+        col2: impl Into<Vec4>,
+        col3: impl Into<Vec4>,
+    ) -> Self {
+        Self {
+            col0: col0.into(),
+            col1: col1.into(),
+            col2: col2.into(),
+            col3: col3.into(),
         }
     }
 
-    /// Create a normalized copy of the `Vector`.
-    #[inline]
-    pub fn normalized(&self) -> Self {
-        let mut vector = *self;
-        vector.normalize();
-        vector
-    }
-
-    /// Create the Euclidean distance between two `Vector`s.
-    #[must_use]
-    #[inline]
-    pub fn distance(&self, vector: Self) -> f32 {
-        (*self - vector).magnitude()
-    }
-}
-
-impl<const N: usize> Deref for Vector<N> {
-    type Target = [f32; N];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<const N: usize> DerefMut for Vector<N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<const N: usize> IntoIterator for Vector<N> {
-    type Item = f32;
-    type IntoIter = std::array::IntoIter<Self::Item, N>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<const N: usize> IntoIterator for &Vector<N> {
-    type Item = f32;
-    type IntoIter = std::array::IntoIter<Self::Item, N>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<const N: usize> Add for Vector<N> {
-    type Output = Vector<N>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let mut vector = self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val += rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Add for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let mut vector = *self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val += rhs);
-        vector
-    }
-}
-
-impl<const N: usize> AddAssign for Vector<N> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val += rhs);
-    }
-}
-
-impl<const N: usize> Sub for Vector<N> {
-    type Output = Vector<N>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        let mut vector = self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val -= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Sub for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        let mut vector = *self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val -= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> SubAssign for Vector<N> {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val -= rhs);
-    }
-}
-
-impl<const N: usize> Mul for Vector<N> {
-    type Output = Vector<N>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let mut vector = self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val *= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Mul for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let mut vector = *self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val *= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Mul<f32> for Vector<N> {
-    type Output = Vector<N>;
-
-    fn mul(self, rhs: f32) -> Self::Output {
-        let mut vector = self;
-        vector.iter_mut().for_each(|val| *val *= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Mul<f32> for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn mul(self, rhs: f32) -> Self::Output {
-        let mut vector = *self;
-        vector.iter_mut().for_each(|val| *val *= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Mul<Vector<N>> for f32 {
-    type Output = Vector<N>;
-
-    fn mul(self, rhs: Vector<N>) -> Self::Output {
-        let mut vector = rhs;
-        vector.iter_mut().for_each(|val| *val *= self);
-        vector
-    }
-}
-
-impl<const N: usize> Mul<&Vector<N>> for f32 {
-    type Output = Vector<N>;
-
-    fn mul(self, rhs: &Vector<N>) -> Self::Output {
-        let mut vector = *rhs;
-        vector.iter_mut().for_each(|val| *val *= self);
-        vector
-    }
-}
-
-impl<const N: usize> MulAssign for Vector<N> {
-    fn mul_assign(&mut self, rhs: Self) {
-        self.iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val *= rhs);
-    }
-}
-
-impl<const N: usize> MulAssign<f32> for Vector<N> {
-    fn mul_assign(&mut self, rhs: f32) {
-        self.iter_mut().for_each(|val| *val *= rhs);
-    }
-}
-
-impl<const N: usize> Div for Vector<N> {
-    type Output = Vector<N>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        let mut vector = self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val /= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Div for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        let mut vector = *self;
-        vector
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val /= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Div<f32> for Vector<N> {
-    type Output = Vector<N>;
-
-    fn div(self, rhs: f32) -> Self::Output {
-        let mut vector = self;
-        vector.iter_mut().for_each(|val| *val /= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Div<f32> for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn div(self, rhs: f32) -> Self::Output {
-        let mut vector = *self;
-        vector.iter_mut().for_each(|val| *val /= rhs);
-        vector
-    }
-}
-
-impl<const N: usize> Div<Vector<N>> for f32 {
-    type Output = Vector<N>;
-
-    fn div(self, rhs: Vector<N>) -> Self::Output {
-        let mut vector = rhs;
-        vector.iter_mut().for_each(|val| *val /= self);
-        vector
-    }
-}
-
-impl<const N: usize> Div<&Vector<N>> for f32 {
-    type Output = Vector<N>;
-
-    fn div(self, rhs: &Vector<N>) -> Self::Output {
-        let mut vector = *rhs;
-        vector.iter_mut().for_each(|val| *val /= self);
-        vector
-    }
-}
-
-impl<const N: usize> DivAssign for Vector<N> {
-    fn div_assign(&mut self, rhs: Self) {
-        self.iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val /= rhs);
-    }
-}
-
-impl<const N: usize> DivAssign<f32> for Vector<N> {
-    fn div_assign(&mut self, rhs: f32) {
-        self.iter_mut().for_each(|val| *val /= rhs);
-    }
-}
-
-impl<const N: usize> Neg for Vector<N> {
-    type Output = Vector<N>;
-
-    fn neg(self) -> Self::Output {
-        let mut vector = self;
-        vector.iter_mut().for_each(|val| *val = val.neg());
-        vector
-    }
-}
-
-impl<const N: usize> Neg for &Vector<N> {
-    type Output = Vector<N>;
-
-    fn neg(self) -> Self::Output {
-        let mut vector = *self;
-        vector.iter_mut().for_each(|val| *val = val.neg());
-        vector
-    }
-}
-
-/// A NxM `Matrix`.
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[must_use]
-#[repr(transparent)]
-pub struct Matrix<const N: usize = 4, const M: usize = 4>([[f32; M]; N]);
-
-pub type Mat4 = Matrix<4, 4>;
-
-impl<const N: usize, const M: usize> Default for Matrix<N, M> {
-    fn default() -> Self {
-        Self([[0.0; M]; N])
-    }
-}
-
-/// Constructs a new [Matrix].
-#[macro_export]
-macro_rules! matrix {
-    () => {
-        $crate::math::Matrix::identity()
-    };
-    ($([$($v:expr),* $(,)?]),* $(,)?) => {
-        $crate::math::Matrix::new([$([$($v),*]),*])
-    };
-    ($($v:expr),* $(,)?) => {
-        $crate::math::Matrix::new([$($v.to_array()),*])
-    };
-}
-
-impl<const N: usize, const M: usize> Matrix<N, M> {
-    /// Create a N-dimentional `Vector` from given coordinates.
-    #[inline]
-    pub fn new(coordinates: [[f32; M]; N]) -> Self {
-        Self(coordinates)
-    }
-}
-
-impl Matrix<4, 4> {
-    /// Create an orthographic projection `Matrix`.
+    /// Create an orthographic projection matrix.
     #[inline]
     pub fn orthographic(
         left: f32,
@@ -802,7 +857,7 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create a perspective projection `Matrix`.
+    /// Create a perspective projection matrix.
     #[inline]
     pub fn perspective(
         fov: Radians<f32>,
@@ -824,16 +879,24 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create a look-at `Matrix`.
+    /// Create a look-at matrix.
     #[inline]
-    pub fn look_at(position: Vector<3>, target: Vector<3>, up: Vector<3>) -> Self {
+    pub fn look_at(
+        position: impl Into<Vec3>,
+        target: impl Into<Vec3>,
+        up: impl Into<Vec3>,
+    ) -> Self {
+        let position = position.into();
+        let target = target.into();
+        let up = up.into();
+
         let z_axis = (target - position).normalized();
         let x_axis = z_axis.cross(up).normalized();
         let y_axis = x_axis.cross(z_axis);
-        matrix!(
-            [x_axis.x(), y_axis.x(), -z_axis.x(), 0.0],
-            [x_axis.y(), y_axis.y(), -z_axis.y(), 0.0],
-            [x_axis.z(), y_axis.z(), -z_axis.z(), 0.0],
+        mat4!(
+            [x_axis.x, y_axis.x, -z_axis.x, 0.0],
+            [x_axis.y, y_axis.y, -z_axis.y, 0.0],
+            [x_axis.z, y_axis.z, -z_axis.z, 0.0],
             [
                 -x_axis.dot(position),
                 -y_axis.dot(position),
@@ -843,69 +906,114 @@ impl Matrix<4, 4> {
         )
     }
 
-    /// Create a translation `Matrix` for the given position.
+    /// Create a translation matrix for the given position.
     #[inline]
-    pub fn translation(position: Vector<3>) -> Self {
+    pub fn translation(position: impl Into<Vec3>) -> Self {
+        let position = position.into();
         let mut matrix = Self::identity();
-        matrix[(3, 0)] = position.x();
-        matrix[(3, 1)] = position.y();
-        matrix[(3, 2)] = position.z();
+        matrix[(3, 0)] = position.x;
+        matrix[(3, 1)] = position.y;
+        matrix[(3, 2)] = position.z;
         matrix
     }
 
-    /// Create a scale `Matrix` for the given scale.
+    /// Create a scale matrix for the given scale.
     #[inline]
-    pub fn scale(scale: Vector<3>) -> Self {
+    pub fn scale(scale: impl Into<Vec3>) -> Self {
+        let scale = scale.into();
         let mut matrix = Self::identity();
-        matrix[(0, 0)] = scale.x();
-        matrix[(1, 1)] = scale.y();
-        matrix[(2, 2)] = scale.z();
+        matrix[(0, 0)] = scale.x;
+        matrix[(1, 1)] = scale.y;
+        matrix[(2, 2)] = scale.z;
         matrix
     }
 
-    /// Create a rotation `Matrix` from a `Quaternion`.
+    /// Create a rotation matrix for all axes for the given angles in degrees.
+    #[inline]
+    pub fn rotation(rotation: impl Into<Vec3>) -> Self {
+        let rotation = rotation.into();
+        let rotate_x = Self::rotation_x(rotation.x.into());
+        let rotate_y = Self::rotation_y(rotation.y.into());
+        let rotate_z = Self::rotation_z(rotation.z.into());
+        rotate_x * rotate_y * rotate_z
+    }
+
+    /// Create a rotation matrix for about the x-axis for the given angle in degrees.
+    #[inline]
+    pub fn rotation_x(angle: Angle<f32>) -> Self {
+        let mut matrix = Self::identity();
+        let (sin, cos) = angle.to_radians().sin_cos();
+        matrix[(1, 1)] = cos;
+        matrix[(1, 2)] = sin;
+        matrix[(2, 1)] = -sin;
+        matrix[(2, 2)] = cos;
+        matrix
+    }
+
+    /// Create a rotation matrix for about the y-axis for the given angle in degrees.
+    #[inline]
+    pub fn rotation_y(angle: Angle<f32>) -> Self {
+        let mut matrix = Self::identity();
+        let (sin, cos) = angle.to_radians().sin_cos();
+        matrix[(0, 0)] = cos;
+        matrix[(0, 2)] = -sin;
+        matrix[(2, 0)] = sin;
+        matrix[(2, 2)] = cos;
+        matrix
+    }
+
+    /// Create a rotation matrix for about the z-axis for the given angle in degrees.
+    #[inline]
+    pub fn rotation_z(angle: Angle<f32>) -> Self {
+        let mut matrix = Self::identity();
+        let (sin, cos) = angle.to_radians().sin_cos();
+        matrix[(0, 0)] = cos;
+        matrix[(0, 1)] = sin;
+        matrix[(1, 0)] = -sin;
+        matrix[(1, 1)] = cos;
+        matrix
+    }
+
+    /// Create a rotation matrix from a `Quaternion`.
     pub fn from_quaternion(&self, quaternion: Quaternion) -> Self {
         let q = quaternion.normalized();
         let mut matrix = Self::identity();
 
-        matrix[(0, 0)] = 1.0 - 2.0 * q.y() * q.y() - 2.0 * q.z() * q.z();
-        matrix[(0, 1)] = 2.0 * q.x() * q.y() - 2.0 * q.z() * q.w();
-        matrix[(0, 2)] = 2.0 * q.x() * q.z() - 2.0 * q.y() * q.w();
+        matrix[(0, 0)] = 1.0 - 2.0 * q.y * q.y - 2.0 * q.z * q.z;
+        matrix[(0, 1)] = 2.0 * q.x * q.y - 2.0 * q.z * q.w;
+        matrix[(0, 2)] = 2.0 * q.x * q.z - 2.0 * q.y * q.w;
 
-        matrix[(1, 0)] = 2.0 * q.x() * q.y() + 2.0 * q.z() * q.w();
-        matrix[(1, 1)] = 1.0 - 2.0 * q.x() * q.x() - 2.0 * q.z() * q.z();
-        matrix[(1, 2)] = 2.0 * q.y() * q.z() - 2.0 * q.x() * q.w();
+        matrix[(1, 0)] = 2.0 * q.x * q.y + 2.0 * q.z * q.w;
+        matrix[(1, 1)] = 1.0 - 2.0 * q.x * q.x - 2.0 * q.z * q.z;
+        matrix[(1, 2)] = 2.0 * q.y * q.z - 2.0 * q.x * q.w;
 
-        matrix[(2, 0)] = 2.0 * q.x() * q.z() - 2.0 * q.y() * q.w();
-        matrix[(0, 0)] = 2.0 * q.y() * q.z() + 2.0 * q.x() * q.w();
-        matrix[(2, 2)] = 1.0 - 2.0 * q.x() * q.x() - 2.0 * q.y() * q.y();
+        matrix[(2, 0)] = 2.0 * q.x * q.z - 2.0 * q.y * q.w;
+        matrix[(0, 0)] = 2.0 * q.y * q.z + 2.0 * q.x * q.w;
+        matrix[(2, 2)] = 1.0 - 2.0 * q.x * q.x - 2.0 * q.y * q.y;
 
         matrix
     }
 
-    /// Create a rotation `Matrix` from a `Quaternion` around a center point.
-    pub fn from_quaternion_center(&self, quaternion: Quaternion, center: Vector<3>) -> Self {
+    /// Create a rotation matrix from a `Quaternion` around a center point.
+    pub fn from_quaternion_center(&self, quaternion: Quaternion, center: Vec3) -> Self {
         let q = quaternion;
         let c = center;
         let mut matrix = Self::default();
 
-        matrix[(0, 0)] = (q.x() * q.x()) - (q.y() * q.y()) - (q.z() * q.z()) + (q.w() * q.w());
-        matrix[(0, 1)] = 2.0 * ((q.x() * q.y()) + (q.z() * q.w()));
-        matrix[(0, 2)] = 2.0 * ((q.x() * q.z()) - (q.y() * q.w()));
-        matrix[(0, 3)] =
-            c.x() - c.x() * matrix[(0, 0)] - c.y() * matrix[(0, 1)] - c.z() * matrix[(0, 2)];
+        matrix[(0, 0)] = (q.x * q.x) - (q.y * q.y) - (q.z * q.z) + (q.w * q.w);
+        matrix[(0, 1)] = 2.0 * ((q.x * q.y) + (q.z * q.w));
+        matrix[(0, 2)] = 2.0 * ((q.x * q.z) - (q.y * q.w));
+        matrix[(0, 3)] = c.x - c.x * matrix[(0, 0)] - c.y * matrix[(0, 1)] - c.z * matrix[(0, 2)];
 
-        matrix[(1, 0)] = 2.0 * ((q.x() * q.y()) - (q.z() * q.w()));
-        matrix[(1, 1)] = -(q.x() * q.x()) + (q.y() * q.y()) - (q.z() * q.z()) + (q.w() * q.w());
-        matrix[(1, 2)] = 2.0 * ((q.y() * q.z()) + (q.x() * q.w()));
-        matrix[(1, 3)] =
-            c.y() - c.x() * matrix[(1, 0)] - c.y() * matrix[(1, 1)] - c.z() * matrix[(1, 2)];
+        matrix[(1, 0)] = 2.0 * ((q.x * q.y) - (q.z * q.w));
+        matrix[(1, 1)] = -(q.x * q.x) + (q.y * q.y) - (q.z * q.z) + (q.w * q.w);
+        matrix[(1, 2)] = 2.0 * ((q.y * q.z) + (q.x * q.w));
+        matrix[(1, 3)] = c.y - c.x * matrix[(1, 0)] - c.y * matrix[(1, 1)] - c.z * matrix[(1, 2)];
 
-        matrix[(2, 0)] = 2.0 * ((q.x() * q.z()) + (q.y() * q.w()));
-        matrix[(2, 1)] = 2.0 * ((q.y() * q.z()) - (q.x() * q.w()));
-        matrix[(2, 2)] = -(q.x() * q.x()) - (q.y() * q.y()) + (q.z() * q.z()) + (q.w() * q.w());
-        matrix[(2, 3)] =
-            c.z() - c.x() * matrix[(2, 0)] - c.y() * matrix[(2, 1)] - c.z() * matrix[(2, 2)];
+        matrix[(2, 0)] = 2.0 * ((q.x * q.z) + (q.y * q.w));
+        matrix[(2, 1)] = 2.0 * ((q.y * q.z) - (q.x * q.w));
+        matrix[(2, 2)] = -(q.x * q.x) - (q.y * q.y) + (q.z * q.z) + (q.w * q.w);
+        matrix[(2, 3)] = c.z - c.x * matrix[(2, 0)] - c.y * matrix[(2, 1)] - c.z * matrix[(2, 2)];
 
         matrix[(3, 0)] = 0.0;
         matrix[(3, 1)] = 0.0;
@@ -915,88 +1023,69 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create a rotation `Matrix` for all axes for the given angles.
+    /// Return matrix columns as a single array reference of `Vec4`.
     #[inline]
-    pub fn rotation(x_angle: Radians<f32>, y_angle: Radians<f32>, z_angle: Radians<f32>) -> Self {
-        let rotate_x = Self::rotation_x(x_angle);
-        let rotate_y = Self::rotation_y(y_angle);
-        let rotate_z = Self::rotation_z(z_angle);
-        rotate_x * rotate_y * rotate_z
+    pub fn as_array(&self) -> &[Vec4; 4] {
+        let array: &[Vec4; 4] = unsafe { mem::transmute(self) };
+        array
     }
 
-    /// Create a rotation `Matrix` for about the x-axis for the given angle.
+    /// Return matrix columns as a single mutable array reference of `Vec4`.
     #[inline]
-    pub fn rotation_x(angle: Radians<f32>) -> Self {
-        let mut matrix = Self::identity();
-        let (sin, cos) = angle.sin_cos();
-        matrix[(1, 1)] = cos;
-        matrix[(1, 2)] = sin;
-        matrix[(2, 1)] = -sin;
-        matrix[(2, 2)] = cos;
-        matrix
+    pub fn as_array_mut(&mut self) -> &mut [Vec4; 4] {
+        let array: &mut [Vec4; 4] = unsafe { mem::transmute(self) };
+        array
     }
 
-    /// Create a rotation `Matrix` for about the y-axis for the given angle.
+    /// Create an iterator over the matrix columns.
     #[inline]
-    pub fn rotation_y(angle: Radians<f32>) -> Self {
-        let mut matrix = Self::identity();
-        let (sin, cos) = angle.sin_cos();
-        matrix[(0, 0)] = cos;
-        matrix[(0, 2)] = -sin;
-        matrix[(2, 0)] = sin;
-        matrix[(2, 2)] = cos;
-        matrix
+    pub fn iter(&self) -> std::slice::Iter<'_, Vec4> {
+        self.as_array().iter()
     }
 
-    /// Create a rotation `Matrix` for about the z-axis for the given angle.
+    /// Create a mutable iterator over the matrix columns.
     #[inline]
-    pub fn rotation_z(angle: Radians<f32>) -> Self {
-        let mut matrix = Self::identity();
-        let (sin, cos) = angle.sin_cos();
-        matrix[(0, 0)] = cos;
-        matrix[(0, 1)] = sin;
-        matrix[(1, 0)] = -sin;
-        matrix[(1, 1)] = cos;
-        matrix
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Vec4> {
+        self.as_array_mut().iter_mut()
     }
 
-    /// Create an up unit `Vector` relative to the `Matrix`.
+    /// Create an up unit vector relative to the matrix.
     #[inline]
-    pub fn up(&self) -> Vector<3> {
-        vector!(self[(0, 1)], self[(1, 1)], self[(2, 1)]).normalized()
+    pub fn up(&self) -> Vec3 {
+        vec3!(self[(0, 1)], self[(1, 1)], self[(2, 1)]).normalized()
     }
 
-    /// Create a down unit `Vector` relative to the `Matrix`.
+    /// Create a down unit vector relative to the matrix.
     #[inline]
-    pub fn down(&self) -> Vector<3> {
-        vector!(-self[(0, 1)], -self[(1, 1)], -self[(2, 1)]).normalized()
+    pub fn down(&self) -> Vec3 {
+        vec3!(-self[(0, 1)], -self[(1, 1)], -self[(2, 1)]).normalized()
     }
 
-    /// Create a left unit `Vector` relative to the `Matrix`.
+    /// Create a left unit vector relative to the matrix.
     #[inline]
-    pub fn left(&self) -> Vector<3> {
-        vector!(-self[(0, 0)], -self[(1, 0)], -self[(2, 0)]).normalized()
+    pub fn left(&self) -> Vec3 {
+        vec3!(-self[(0, 0)], -self[(1, 0)], -self[(2, 0)]).normalized()
     }
 
-    /// Create a right unit `Vector` relative to the `Matrix`.
+    /// Create a right unit vector relative to the matrix.
     #[inline]
-    pub fn right(&self) -> Vector<3> {
-        vector!(self[(0, 0)], self[(1, 0)], self[(2, 0)]).normalized()
+    pub fn right(&self) -> Vec3 {
+        vec3!(self[(0, 0)], self[(1, 0)], self[(2, 0)]).normalized()
     }
 
-    /// Create a forward unit `Vector` relative to the `Matrix`.
+    /// Create a forward unit vector relative to the matrix.
     #[inline]
-    pub fn forward(&self) -> Vector<3> {
-        vector!(-self[(0, 2)], -self[(1, 2)], -self[(2, 2)]).normalized()
+    pub fn forward(&self) -> Vec3 {
+        vec3!(-self[(0, 2)], -self[(1, 2)], -self[(2, 2)]).normalized()
     }
 
-    /// Create a backward unit `Vector` relative to the `Matrix`.
+    /// Create a backward unit vector relative to the matrix.
     #[inline]
-    pub fn backward(&self) -> Vector<3> {
-        vector!(self[(0, 2)], self[(1, 2)], self[(2, 2)]).normalized()
+    pub fn backward(&self) -> Vec3 {
+        vec3!(self[(0, 2)], self[(1, 2)], self[(2, 2)]).normalized()
     }
 
-    /// Create a copy of the `Matrix` inverted about the x-axis.
+    /// Create a copy of the matrix inverted about the x-axis.
     #[inline]
     pub fn inverted_x(&self) -> Self {
         let mut matrix = *self;
@@ -1004,7 +1093,7 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create a copy of the `Matrix` inverted about the y-axis.
+    /// Create a copy of the matrix inverted about the y-axis.
     #[inline]
     pub fn inverted_y(&self) -> Self {
         let mut matrix = *self;
@@ -1012,7 +1101,7 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create a copy of the `Matrix` inverted about the z-axis.
+    /// Create a copy of the matrix inverted about the z-axis.
     #[inline]
     pub fn inverted_z(&self) -> Self {
         let mut matrix = *self;
@@ -1020,7 +1109,7 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create a transposed copy of the `Matrix`.
+    /// Create a transposed copy of the matrix.
     pub fn transposed(&self) -> Self {
         let mut matrix = Self::identity();
         matrix[(0, 0)] = self[(0, 0)];
@@ -1042,7 +1131,7 @@ impl Matrix<4, 4> {
         matrix
     }
 
-    /// Create an inversed copy of the `Matrix`.
+    /// Create an inversed copy of the matrix.
     pub fn inverse(&self) -> Self {
         let m = self;
 
@@ -1071,7 +1160,7 @@ impl Matrix<4, 4> {
         let t22 = m[(0, 0)] * m[(1, 1)];
         let t23 = m[(1, 0)] * m[(0, 1)];
 
-        let mut matrix = Matrix::default();
+        let mut matrix = Mat4::default();
 
         matrix[(0, 0)] = (t0 * m[(1, 1)] + t3 * m[(2, 1)] + t4 * m[(3, 1)])
             - (t1 * m[(1, 1)] + t2 * m[(2, 1)] + t5 * m[(3, 1)]);
@@ -1133,140 +1222,180 @@ impl Matrix<4, 4> {
     }
 }
 
-impl Mul for Matrix<4, 4> {
-    type Output = Matrix;
+impl Mul for Mat4 {
+    type Output = Mat4;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        // TODO: Better way to clean this up?
         let mat4_mul = |m: Mat4, v: Vec4| {
-            vector!(
-                v.x() * m[(0, 0)] + v.y() * m[(1, 0)] + v.z() * m[(2, 0)] + v.w() * m[(3, 0)],
-                v.x() * m[(0, 1)] + v.y() * m[(1, 1)] + v.z() * m[(2, 1)] + v.w() * m[(3, 1)],
-                v.x() * m[(0, 2)] + v.y() * m[(1, 2)] + v.z() * m[(2, 2)] + v.w() * m[(3, 2)],
-                v.x() * m[(0, 3)] + v.y() * m[(1, 3)] + v.z() * m[(2, 3)] + v.w() * m[(3, 3)],
+            vec4!(
+                v.x * m[(0, 0)] + v.y * m[(1, 0)] + v.z * m[(2, 0)] + v.w * m[(3, 0)],
+                v.x * m[(0, 1)] + v.y * m[(1, 1)] + v.z * m[(2, 1)] + v.w * m[(3, 1)],
+                v.x * m[(0, 2)] + v.y * m[(1, 2)] + v.z * m[(2, 2)] + v.w * m[(3, 2)],
+                v.x * m[(0, 3)] + v.y * m[(1, 3)] + v.z * m[(2, 3)] + v.w * m[(3, 3)],
             )
         };
-        matrix!(
+        mat4!(
             mat4_mul(
                 self,
-                vector!(rhs[(0, 0)], rhs[(0, 1)], rhs[(0, 2)], rhs[(0, 3)])
+                vec4!(rhs[(0, 0)], rhs[(0, 1)], rhs[(0, 2)], rhs[(0, 3)])
             ),
             mat4_mul(
                 self,
-                vector!(rhs[(1, 0)], rhs[(1, 1)], rhs[(1, 2)], rhs[(1, 3)])
+                vec4!(rhs[(1, 0)], rhs[(1, 1)], rhs[(1, 2)], rhs[(1, 3)])
             ),
             mat4_mul(
                 self,
-                vector!(rhs[(2, 0)], rhs[(2, 1)], rhs[(2, 2)], rhs[(2, 3)])
+                vec4!(rhs[(2, 0)], rhs[(2, 1)], rhs[(2, 2)], rhs[(2, 3)])
             ),
             mat4_mul(
                 self,
-                vector!(rhs[(3, 0)], rhs[(3, 1)], rhs[(3, 2)], rhs[(3, 3)])
+                vec4!(rhs[(3, 0)], rhs[(3, 1)], rhs[(3, 2)], rhs[(3, 3)])
             ),
         )
     }
 }
 
-impl Mul<Vector<3>> for Matrix<4, 4> {
-    type Output = Vector<3>;
+impl Mul<Vec3> for Mat4 {
+    type Output = Vec3;
 
-    fn mul(self, v: Vector<3>) -> Self::Output {
+    fn mul(self, v: Vec3) -> Self::Output {
         let m = self;
-        vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + m[(0, 3)],
-            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + m[(1, 3)],
-            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + m[(2, 3)],
+        vec3!(
+            v.x * m[(0, 0)] + v.y * m[(0, 1)] + v.z * m[(0, 2)] + m[(0, 3)],
+            v.x * m[(1, 0)] + v.y * m[(1, 1)] + v.z * m[(1, 2)] + m[(1, 3)],
+            v.x * m[(2, 0)] + v.y * m[(2, 1)] + v.z * m[(2, 2)] + m[(2, 3)],
         )
     }
 }
 
-impl Mul<Matrix<4, 4>> for Vector<3> {
-    type Output = Vector<3>;
+impl Mul<Mat4> for Vec3 {
+    type Output = Vec3;
 
-    fn mul(self, m: Matrix<4, 4>) -> Self::Output {
+    fn mul(self, m: Mat4) -> Self::Output {
         let v = self;
-        vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + m[(0, 3)],
-            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + m[(1, 3)],
-            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + m[(2, 3)],
+        vec3!(
+            v.x * m[(0, 0)] + v.y * m[(0, 1)] + v.z * m[(0, 2)] + m[(0, 3)],
+            v.x * m[(1, 0)] + v.y * m[(1, 1)] + v.z * m[(1, 2)] + m[(1, 3)],
+            v.x * m[(2, 0)] + v.y * m[(2, 1)] + v.z * m[(2, 2)] + m[(2, 3)],
         )
     }
 }
 
-impl Mul<Vector<4>> for Matrix<4, 4> {
-    type Output = Vector<4>;
+impl Mul<Vec4> for Mat4 {
+    type Output = Vec4;
 
-    fn mul(self, v: Vector<4>) -> Self::Output {
+    fn mul(self, v: Vec4) -> Self::Output {
         let m = self;
-        vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + v.w() * m[(0, 3)],
-            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + v.w() * m[(1, 3)],
-            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + v.w() * m[(2, 3)],
-            v.x() * m[(3, 0)] + v.y() * m[(3, 1)] + v.z() * m[(3, 2)] + v.w() * m[(3, 3)],
+        vec4!(
+            v.x * m[(0, 0)] + v.y * m[(0, 1)] + v.z * m[(0, 2)] + v.w * m[(0, 3)],
+            v.x * m[(1, 0)] + v.y * m[(1, 1)] + v.z * m[(1, 2)] + v.w * m[(1, 3)],
+            v.x * m[(2, 0)] + v.y * m[(2, 1)] + v.z * m[(2, 2)] + v.w * m[(2, 3)],
+            v.x * m[(3, 0)] + v.y * m[(3, 1)] + v.z * m[(3, 2)] + v.w * m[(3, 3)],
         )
     }
 }
 
-impl Mul<Matrix<4, 4>> for Vector<4> {
-    type Output = Vector<4>;
+impl Mul<Mat4> for Vec4 {
+    type Output = Vec4;
 
-    fn mul(self, m: Matrix<4, 4>) -> Self::Output {
+    fn mul(self, m: Mat4) -> Self::Output {
         let v = self;
-        vector!(
-            v.x() * m[(0, 0)] + v.y() * m[(0, 1)] + v.z() * m[(0, 2)] + v.w() * m[(0, 3)],
-            v.x() * m[(1, 0)] + v.y() * m[(1, 1)] + v.z() * m[(1, 2)] + v.w() * m[(1, 3)],
-            v.x() * m[(2, 0)] + v.y() * m[(2, 1)] + v.z() * m[(2, 2)] + v.w() * m[(2, 3)],
-            v.x() * m[(3, 0)] + v.y() * m[(3, 1)] + v.z() * m[(3, 2)] + v.w() * m[(3, 3)],
+        vec4!(
+            v.x * m[(0, 0)] + v.y * m[(0, 1)] + v.z * m[(0, 2)] + v.w * m[(0, 3)],
+            v.x * m[(1, 0)] + v.y * m[(1, 1)] + v.z * m[(1, 2)] + v.w * m[(1, 3)],
+            v.x * m[(2, 0)] + v.y * m[(2, 1)] + v.z * m[(2, 2)] + v.w * m[(2, 3)],
+            v.x * m[(3, 0)] + v.y * m[(3, 1)] + v.z * m[(3, 2)] + v.w * m[(3, 3)],
         )
     }
 }
 
-impl<const N: usize, const M: usize> Matrix<N, M> {
-    /// Construct an identity `Matrix`.
+impl Mat4 {
+    /// Construct an identity matrix.
     #[inline]
     pub fn identity() -> Self {
-        assert_eq!(N, M, "matrix is not symmetrical");
-        let mut matrix = Self::default();
-        for n in 0..N {
-            matrix[(n, n)] = 1.0;
-        }
-        matrix
+        Self::default()
     }
 }
 
-impl<const N: usize, const M: usize> Deref for Matrix<N, M> {
-    type Target = [[f32; M]; N];
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Index<usize> for Mat4 {
+    type Output = Vec4;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.as_array().index(index)
     }
 }
 
-impl<const N: usize, const M: usize> DerefMut for Matrix<N, M> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl IndexMut<usize> for Mat4 {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.as_array_mut().index_mut(index)
     }
 }
 
-impl<const N: usize, const M: usize> Index<(usize, usize)> for Matrix<N, M> {
+impl Index<(usize, usize)> for Mat4 {
     type Output = f32;
 
-    // TODO: Make this a two-dimensional index
     fn index(&self, (n, m): (usize, usize)) -> &Self::Output {
-        &self.0[n][m]
+        self.index(n).index(m)
     }
 }
 
-impl<const N: usize, const M: usize> IndexMut<(usize, usize)> for Matrix<N, M> {
+impl IndexMut<(usize, usize)> for Mat4 {
     fn index_mut(&mut self, (n, m): (usize, usize)) -> &mut Self::Output {
-        &mut self.0[n][m]
+        self.index_mut(n).index_mut(m)
+    }
+}
+
+impl From<[f32; 16]> for Mat4 {
+    fn from(array: [f32; 16]) -> Self {
+        let v: Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<&[f32; 16]> for &Mat4 {
+    fn from(array: &[f32; 16]) -> Self {
+        let v: &Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<&mut [f32; 16]> for &mut Mat4 {
+    fn from(array: &mut [f32; 16]) -> Self {
+        let v: &mut Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<[[f32; 4]; 4]> for Mat4 {
+    fn from(array: [[f32; 4]; 4]) -> Self {
+        let v: Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<&[[f32; 4]; 4]> for &Mat4 {
+    fn from(array: &[[f32; 4]; 4]) -> Self {
+        let v: &Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<&mut [[f32; 4]; 4]> for &mut Mat4 {
+    fn from(array: &mut [[f32; 4]; 4]) -> Self {
+        let v: &mut Self = unsafe { mem::transmute(array) };
+        v
     }
 }
 
 /// A `Quaternion`.
 #[derive(Debug, Copy, Clone)]
 #[must_use]
-#[repr(transparent)]
-pub struct Quaternion([f32; 4]);
+pub struct Quaternion {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
 
 impl Default for Quaternion {
     fn default() -> Self {
@@ -1274,112 +1403,63 @@ impl Default for Quaternion {
     }
 }
 
+/// Constructs a new 4D [Quaternion].
+#[macro_export]
+macro_rules! quaternion {
+    () => {
+        $crate::math::Quaternion::identity()
+    };
+    ($val:expr) => {
+        $crate::math::Quaternion::from($val)
+    };
+    ($x:expr, $y:expr $(,)?) => {
+        $crate::math::Quaternion::new($x, $y, 0.0, 0.0)
+    };
+    ($x:expr, $y:expr, $z:expr $(,)?) => {
+        $crate::math::Quaternion::new($x, $y, $z, 0.0)
+    };
+    ($x:expr, $y:expr, $z:expr, $w:expr $(,)?) => {
+        $crate::math::Quaternion::new($x, $y, $z, $w)
+    };
+}
+
 impl Quaternion {
     /// Create an identity `Quaternion`.
     #[inline]
+    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+        Self { x, y, z, w }
+    }
+
+    /// Create an identity `Quaternion`.
+    #[inline]
     pub fn identity() -> Self {
-        Self([0.0, 0.0, 0.0, 1.0])
+        Self::new(0.0, 0.0, 0.0, 1.0)
     }
 
     /// Create a `Quaternion` from an axis and angle.
     #[inline]
-    pub fn from_axis_angle(axis: Vector<3>, angle: Radians<f32>, normalize: bool) -> Self {
-        let frac_angle_two = 0.5 * *angle;
+    pub fn from_axis_angle(axis: impl Into<Vec3>, angle: f32, normalize: bool) -> Self {
+        let axis = axis.into();
+        let frac_angle_two = 0.5 * angle;
         let (sin, cos) = frac_angle_two.sin_cos();
-        let quaternion = Self([sin * axis.x(), sin * axis.y(), sin * axis.z(), cos]);
+        let quaternion = Self::new(sin * axis.x, sin * axis.y, sin * axis.z, cos);
         normalize
             .then(|| quaternion.normalized())
             .unwrap_or(quaternion)
-    }
-
-    /// Return the `x` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn x(&self) -> f32 {
-        self[0]
-    }
-
-    /// Set the `x` coordinate.
-    #[inline]
-    pub fn set_x(&mut self, value: f32) {
-        self[0] = value;
-    }
-
-    /// Update the `x` coordinate with a closure.
-    #[inline]
-    pub fn update_x(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[0] = f(self[0]);
-    }
-
-    /// Return the `y` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn y(&self) -> f32 {
-        self[1]
-    }
-
-    /// Set the `y` coordinate.
-    #[inline]
-    pub fn set_y(&mut self, value: f32) {
-        self[1] = value;
-    }
-
-    /// Update the `y` coordinate with a closure.
-    #[inline]
-    pub fn update_y(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[1] = f(self[1]);
-    }
-
-    /// Return the `z` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn z(&self) -> f32 {
-        self[2]
-    }
-
-    /// Set the `z` coordinate.
-    #[inline]
-    pub fn set_z(&mut self, value: f32) {
-        self[2] = value;
-    }
-
-    /// Update the `z` coordinate with a closure.
-    #[inline]
-    pub fn update_z(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[2] = f(self[2]);
-    }
-
-    /// Return the `w` coordinate.
-    #[must_use]
-    #[inline]
-    pub fn w(&self) -> f32 {
-        self[3]
-    }
-
-    /// Set the `w` coordinate.
-    #[inline]
-    pub fn set_w(&mut self, value: f32) {
-        self[3] = value;
-    }
-
-    /// Update the `w` coordinate with a closure.
-    #[inline]
-    pub fn update_w(&mut self, mut f: impl FnMut(f32) -> f32) {
-        self[3] = f(self[3]);
     }
 
     /// Create an identity `Quaternion`.
     #[must_use]
     #[inline]
     pub fn normal(&self) -> f32 {
-        self.0.iter().map(|val| val * val).sum::<f32>().sqrt()
+        self.iter().map(|val| val * val).sum::<f32>().sqrt()
     }
 
     /// Normalize the `Quaternion` into a unit `Quaternion`.
     #[inline]
     pub fn normalize(&mut self) {
         let normal = self.normal();
-        self.0.iter_mut().for_each(|val| *val /= normal);
+        self.iter_mut().for_each(|val| *val /= normal);
     }
 
     /// Create a normalized copy of the `Quaternion`.
@@ -1393,7 +1473,7 @@ impl Quaternion {
     /// Create a conjugate of the `Quaternion`.
     #[inline]
     pub fn conjugate(&self) -> Self {
-        Self([-self.x(), -self.y(), -self.z(), self.w()])
+        Self::new(-self.x, -self.y, -self.z, self.w)
     }
 
     /// Create an inversed copy of the `Quaternion`.
@@ -1406,9 +1486,8 @@ impl Quaternion {
     #[must_use]
     #[inline]
     pub fn dot(&self, rhs: Self) -> f32 {
-        self.0
-            .iter()
-            .zip(rhs.0.iter())
+        self.iter()
+            .zip(rhs.iter())
             .map(|(val, rhs)| val * rhs)
             .sum()
     }
@@ -1440,18 +1519,94 @@ impl Quaternion {
 
         q0 * s0 + q1 * s1
     }
-}
 
-impl Deref for Quaternion {
-    type Target = [f32; 4];
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    /// Converts the `Quaternion` into an array reference of `f32`.
+    #[must_use]
+    #[inline]
+    pub fn as_array(&self) -> &[f32; 4] {
+        let array: &[f32; 4] = unsafe { mem::transmute(self) };
+        array
+    }
+
+    /// Converts the `Quaternion` into a mutable array reference of `f32`.
+    #[must_use]
+    #[inline]
+    pub fn as_array_mut(&mut self) -> &mut [f32; 4] {
+        let array: &mut [f32; 4] = unsafe { mem::transmute(self) };
+        array
+    }
+
+    /// Converts the `Quaternion` into an array of `f32`.
+    #[must_use]
+    #[inline]
+    pub fn to_array(self) -> [f32; 4] {
+        let array: [f32; 4] = unsafe { mem::transmute(self) };
+        array
+    }
+
+    /// Create an iterator over the `Quaternion` dimensions.
+    #[inline]
+    fn iter(&self) -> std::slice::Iter<'_, f32> {
+        self.as_array().iter()
+    }
+
+    /// Create a mutable iterator over the `Quaternion` dimensions.
+    #[inline]
+    fn iter_mut(&mut self) -> std::slice::IterMut<'_, f32> {
+        self.as_array_mut().iter_mut()
     }
 }
 
-impl DerefMut for Quaternion {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl IntoIterator for Quaternion {
+    type Item = f32;
+    type IntoIter = std::array::IntoIter<Self::Item, 4>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.to_array().into_iter()
+    }
+}
+
+impl IntoIterator for &Quaternion {
+    type Item = f32;
+    type IntoIter = std::array::IntoIter<Self::Item, 4>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.to_array().into_iter()
+    }
+}
+
+impl Index<usize> for Quaternion {
+    type Output = f32;
+
+    fn index(&self, index: usize) -> &f32 {
+        self.as_array().index(index)
+    }
+}
+
+impl IndexMut<usize> for Quaternion {
+    fn index_mut(&mut self, index: usize) -> &mut f32 {
+        self.as_array_mut().index_mut(index)
+    }
+}
+
+impl From<[f32; 4]> for Quaternion {
+    fn from(array: [f32; 4]) -> Self {
+        let v: Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<&[f32; 4]> for &Quaternion {
+    fn from(array: &[f32; 4]) -> Self {
+        let v: &Self = unsafe { mem::transmute(array) };
+        v
+    }
+}
+
+impl From<&mut [f32; 4]> for &mut Quaternion {
+    fn from(array: &mut [f32; 4]) -> Self {
+        let v: &mut Self = unsafe { mem::transmute(array) };
+        v
     }
 }
 
@@ -1511,11 +1666,11 @@ impl Mul for Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let x = self.x() * rhs.w() + self.y() * rhs.z() - self.z() * rhs.y() + self.w() * rhs.x();
-        let y = -self.x() * rhs.z() + self.y() * rhs.w() + self.z() * rhs.x() + self.w() * rhs.y();
-        let z = self.x() * rhs.y() - self.y() * rhs.x() + self.z() * rhs.w() + self.w() * rhs.z();
-        let w = -self.x() * rhs.x() - self.y() * rhs.y() - self.z() * rhs.z() + self.w() * rhs.w();
-        Self([x, y, z, w])
+        let x = self.x * rhs.w + self.y * rhs.z - self.z * rhs.y + self.w * rhs.x;
+        let y = -self.x * rhs.z + self.y * rhs.w + self.z * rhs.x + self.w * rhs.y;
+        let z = self.x * rhs.y - self.y * rhs.x + self.z * rhs.w + self.w * rhs.z;
+        let w = -self.x * rhs.x - self.y * rhs.y - self.z * rhs.z + self.w * rhs.w;
+        Self::new(x, y, z, w)
     }
 }
 
@@ -1523,11 +1678,11 @@ impl Mul for &Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let x = self.x() * rhs.w() + self.y() * rhs.z() - self.z() * rhs.y() + self.w() * rhs.x();
-        let y = -self.x() * rhs.z() + self.y() * rhs.w() + self.z() * rhs.x() + self.w() * rhs.y();
-        let z = self.x() * rhs.y() - self.y() * rhs.x() + self.z() * rhs.w() + self.w() * rhs.z();
-        let w = -self.x() * rhs.x() - self.y() * rhs.y() - self.z() * rhs.z() + self.w() * rhs.w();
-        Quaternion([x, y, z, w])
+        let x = self.x * rhs.w + self.y * rhs.z - self.z * rhs.y + self.w * rhs.x;
+        let y = -self.x * rhs.z + self.y * rhs.w + self.z * rhs.x + self.w * rhs.y;
+        let z = self.x * rhs.y - self.y * rhs.x + self.z * rhs.w + self.w * rhs.z;
+        let w = -self.x * rhs.x - self.y * rhs.y - self.z * rhs.z + self.w * rhs.w;
+        Quaternion::new(x, y, z, w)
     }
 }
 
@@ -1581,6 +1736,8 @@ impl Neg for &Quaternion {
     Eq,
     PartialOrd,
     Ord,
+    derive_more::Deref,
+    derive_more::DerefMut,
     derive_more::Add,
     derive_more::AddAssign,
     derive_more::Mul,
@@ -1595,19 +1752,6 @@ impl Neg for &Quaternion {
 #[repr(transparent)]
 pub struct Radians<T>(pub T);
 
-impl<T> Deref for Radians<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for Radians<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl From<Degrees<f32>> for Radians<f32> {
     fn from(degrees: Degrees<f32>) -> Self {
         Radians(degrees.to_radians())
@@ -1620,7 +1764,18 @@ impl From<Degrees<f64>> for Radians<f64> {
     }
 }
 
-/// An angle in degrees.
+impl From<&Degrees<f32>> for Radians<f32> {
+    fn from(degrees: &Degrees<f32>) -> Self {
+        Radians(degrees.to_radians())
+    }
+}
+
+impl From<&Degrees<f64>> for Radians<f64> {
+    fn from(degrees: &Degrees<f64>) -> Self {
+        Radians(degrees.to_radians())
+    }
+}
+
 #[derive(
     Default,
     Debug,
@@ -1658,6 +1813,59 @@ impl From<Radians<f64>> for Degrees<f64> {
     }
 }
 
+impl From<&Radians<f32>> for Degrees<f32> {
+    fn from(radians: &Radians<f32>) -> Self {
+        Degrees(radians.to_degrees())
+    }
+}
+
+impl From<&Radians<f64>> for Degrees<f64> {
+    fn from(radians: &Radians<f64>) -> Self {
+        Degrees(radians.to_degrees())
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[must_use]
+pub enum Angle<T> {
+    Radians(Radians<T>),
+    Degrees(Degrees<T>),
+}
+
+impl<T: Default> Default for Angle<T> {
+    fn default() -> Self {
+        Self::Degrees(Degrees(T::default()))
+    }
+}
+
+impl<T> From<T> for Angle<T> {
+    fn from(value: T) -> Self {
+        Self::Degrees(Degrees(value))
+    }
+}
+
+impl Angle<f32> {
+    /// Convert this angle to radians.
+    #[inline]
+    pub fn to_radians(&self) -> Radians<f32> {
+        match self {
+            Angle::Radians(radians) => *radians,
+            Angle::Degrees(degrees) => degrees.into(),
+        }
+    }
+}
+
+impl Angle<f64> {
+    /// Convert this angle to radians.
+    #[inline]
+    pub fn to_radians(&self) -> Radians<f64> {
+        match self {
+            Angle::Radians(radians) => *radians,
+            Angle::Degrees(degrees) => degrees.into(),
+        }
+    }
+}
+
 /// Convert a value from one range to another range.
 #[inline]
 #[must_use]
@@ -1683,13 +1891,13 @@ pub fn u32_to_rgb(value: u32) -> [u32; 3] {
 mod tests {
     #[test]
     fn matrix_multiply_matrix() {
-        let m1 = matrix!(
+        let m1 = mat4!(
             [1.0, 2.0, 3.0, 4.0],
             [5.0, 6.0, 7.0, 8.0],
             [1.0, 2.0, 3.0, 4.0],
             [5.0, 6.0, 7.0, 8.0]
         );
-        let m2 = matrix!(
+        let m2 = mat4!(
             [1.0, 2.0, 3.0, 4.0],
             [5.0, 6.0, 7.0, 8.0],
             [1.0, 2.0, 3.0, 4.0],
@@ -1697,7 +1905,7 @@ mod tests {
         );
         assert_eq!(
             m1 * m2,
-            matrix!(
+            mat4!(
                 [34.0, 44.0, 54.0, 64.0],
                 [82.0, 108.0, 134.0, 160.0],
                 [34.0, 44.0, 54.0, 64.0],
@@ -1708,19 +1916,19 @@ mod tests {
 
     #[test]
     fn matrix_multiply_vector() {
-        let m = matrix!(
+        let m = mat4!(
             [1.0, 2.0, 3.0, 4.0],
             [5.0, 6.0, 7.0, 8.0],
             [1.0, 2.0, 3.0, 4.0],
             [5.0, 6.0, 7.0, 8.0]
         );
-        let v = vector!(1.0, 2.0, 3.0, 4.0);
-        assert_eq!(m * v, vector!(30.0, 70.0, 30.0, 70.0));
+        let v = vec4!(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(m * v, vec4!(30.0, 70.0, 30.0, 70.0));
     }
 
     #[test]
     fn matrix_forward() {
-        let m = matrix!(
+        let m = mat4!(
             [1.0, 2.0, 3.0, 4.0],
             [5.0, 6.0, 7.0, 8.0],
             [1.0, 2.0, 3.0, 4.0],
@@ -1728,6 +1936,6 @@ mod tests {
         );
         assert!(m
             .forward()
-            .compare(vector!(-0.366_508, -0.855_186, -0.366_508), 0.0002));
+            .compare(vec3!(-0.366_508, -0.855_186, -0.366_508), 0.0002));
     }
 }

@@ -29,7 +29,7 @@ pub enum Event<T> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[must_use]
 pub enum WindowEvent {
-    Resized(PhysicalSize),
+    Resized(PhysicalSize<u32>),
     Moved(PhysicalPosition<i32>),
     CloseRequested,
     Destroyed,
@@ -75,7 +75,7 @@ pub enum WindowEvent {
     },
     ScaleFactorChanged {
         scale_factor: f64,
-        new_inner_size: PhysicalSize,
+        new_inner_size: PhysicalSize<u32>,
     },
     Occluded(bool),
     Unhandled,

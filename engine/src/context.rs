@@ -1,53 +1,66 @@
 //! Engine context.
 
+use self::input::{KeyState, MouseState};
 use crate::{
-    config::Config,
-    prelude::{InputState, KeyCode, ModifierKeys, MouseButton, PhysicalSize},
-    renderer::{RenderState, Renderer},
-    window::{winit::FullscreenModeExt, Window},
-    Result,
+    config::{Config, Fullscreen},
+    prelude::{InputState, KeyCode, ModifierKeys, MouseButton},
+    render::Renderer,
+    window::{winit::FullscreenModeExt, EventLoopProxy, Window},
 };
 use std::time::{Duration, Instant};
 
+mod input;
+
 #[derive(Debug)]
 #[must_use]
-pub struct Context {
+pub struct Context<T: 'static> {
     pub(crate) title: String,
     pub(crate) window: Window,
     pub(crate) focused: bool,
     pub(crate) start: Instant,
     pub(crate) last_frame_time: Instant,
+    pub(crate) delta_time: Duration,
     pub(crate) target_frame_rate: Duration,
     pub(crate) fps_counter: usize,
     pub(crate) fps_timer: Duration,
     pub(crate) suspended: bool,
     pub(crate) should_quit: bool,
+    pub(crate) is_quitting: bool,
     pub(crate) key_state: KeyState,
     pub(crate) mouse_state: MouseState,
     pub(crate) modifiers_state: ModifierKeys,
     pub(crate) config: Config,
     pub(crate) renderer: Renderer,
+    pub(crate) event_proxy: EventLoopProxy<T>,
 }
 
-impl Context {
+impl<T> Context<T> {
     /// Create a new engine `Context`.
-    pub(crate) fn new(config: Config, window: Window, renderer: Renderer) -> Self {
+    pub(crate) fn new(
+        config: Config,
+        window: Window,
+        renderer: Renderer,
+        event_proxy: EventLoopProxy<T>,
+    ) -> Self {
         Self {
             title: String::new(),
             window,
             focused: false,
             start: Instant::now(),
             last_frame_time: Instant::now(),
+            delta_time: Duration::default(),
             target_frame_rate: Duration::from_secs(1) / config.target_fps,
             fps_counter: 0,
             fps_timer: Duration::default(),
             suspended: false,
             should_quit: false,
+            is_quitting: false,
             key_state: KeyState::default(),
             mouse_state: MouseState::default(),
             modifiers_state: ModifierKeys::empty(),
             config,
             renderer,
+            event_proxy,
         }
     }
 
@@ -65,6 +78,13 @@ impl Context {
         !self.suspended
     }
 
+    /// Returns the delta time in seconds since last frame.
+    #[inline]
+    #[must_use]
+    pub fn delta_time(&self) -> f32 {
+        self.delta_time.as_secs_f32()
+    }
+
     /// Whether any engine window has focus.
     #[inline]
     #[must_use]
@@ -78,15 +98,11 @@ impl Context {
         self.should_quit = true;
     }
 
-    /// Handle window resized event.
+    /// Begin engine shutdown.
     #[inline]
-    pub fn on_resized(&mut self, size: PhysicalSize) {
-        self.renderer.on_resized(size);
-    }
-
-    /// Draw a frame to the screen.
-    pub fn draw_frame(&mut self, state: RenderState) -> Result<()> {
-        Ok(self.renderer.draw_frame(state)?)
+    pub fn send_event(&mut self, event: T) {
+        // If event loop is closed, it means app is quitting
+        let _ = self.event_proxy.send_event(event);
     }
 
     /// Time since the engine started running.
@@ -112,18 +128,18 @@ impl Context {
 
     /// Toggle fullscreen.
     #[inline]
-    pub fn toggle_fullscreen(&self) {
-        let fullscreen = self
-            .window
-            .fullscreen()
-            .is_none()
-            .then(|| {
-                self.config
-                    .fullscreen_mode
-                    .for_monitor(self.window.primary_monitor())
-            })
-            .flatten();
-        self.window.set_fullscreen(fullscreen);
+    pub fn toggle_fullscreen(&mut self, fullscreen: Fullscreen) {
+        let mode = match self.window.fullscreen() {
+            Some(_) => {
+                self.config.fullscreen = None;
+                None
+            }
+            None => {
+                self.config.fullscreen = Some(fullscreen);
+                fullscreen.for_monitor(self.window.primary_monitor())
+            }
+        };
+        self.window.set_fullscreen(mode);
     }
 
     /// Whether a given key is pressed.
@@ -213,107 +229,5 @@ impl Context {
     #[must_use]
     pub fn modifiers_down(&self, modifiers: ModifierKeys) -> bool {
         self.modifiers_state.contains(modifiers)
-    }
-}
-
-#[derive(Debug, Clone)]
-#[must_use]
-pub struct KeyState {
-    state: Vec<InputState>,
-    previous_state: Vec<InputState>,
-}
-
-impl Default for KeyState {
-    fn default() -> Self {
-        // FIXME: Replace with https://doc.rust-lang.org/std/mem/fn.variant_count.html when stable
-        let size = 256;
-        Self {
-            state: vec![InputState::Released; size],
-            previous_state: vec![InputState::Released; size],
-        }
-    }
-}
-
-impl KeyState {
-    #[inline]
-    pub(crate) fn key_input(&mut self, keycode: KeyCode, state: InputState) {
-        self.state[Self::keycode_index(keycode)] = state;
-    }
-
-    #[inline]
-    pub(crate) fn update(&mut self) {
-        self.previous_state = self.state.clone();
-    }
-
-    #[inline]
-    pub(crate) fn state(&self, keycode: KeyCode) -> InputState {
-        self.state[Self::keycode_index(keycode)]
-    }
-
-    #[inline]
-    pub(crate) fn previous_state(&self, keycode: KeyCode) -> InputState {
-        self.previous_state[Self::keycode_index(keycode)]
-    }
-
-    #[inline]
-    fn keycode_index(keycode: KeyCode) -> usize {
-        keycode as usize
-    }
-}
-
-#[derive(Debug, Clone)]
-#[must_use]
-pub struct MouseState {
-    previous_state: Vec<InputState>,
-    state: Vec<InputState>,
-    last_click: Option<Instant>,
-}
-
-impl Default for MouseState {
-    fn default() -> Self {
-        // FIXME: Replace with https://doc.rust-lang.org/std/mem/fn.variant_count.html when stable
-        let size = 16;
-        Self {
-            state: vec![InputState::Released; size],
-            previous_state: vec![InputState::Released; size],
-            last_click: None,
-        }
-    }
-}
-
-impl MouseState {
-    pub(crate) fn mouse_input(&mut self, button: MouseButton, state: InputState) {
-        let id = Self::button_index(button);
-        self.previous_state[id] = self.state[id];
-        self.state[id] = state;
-        if self.previous_state[id] == InputState::Pressed && self.state[id] == InputState::Released
-        {
-            self.last_click = Some(Instant::now());
-        }
-    }
-
-    #[inline]
-    pub(crate) fn update(&mut self) {
-        self.previous_state = self.state.clone();
-    }
-
-    #[inline]
-    pub(crate) fn state(&self, button: MouseButton) -> InputState {
-        self.state[Self::button_index(button)]
-    }
-
-    #[inline]
-    pub(crate) fn previous_state(&self, button: MouseButton) -> InputState {
-        self.previous_state[Self::button_index(button)]
-    }
-
-    #[inline]
-    fn button_index(button: MouseButton) -> usize {
-        match button {
-            MouseButton::Left => 0,
-            MouseButton::Right => 1,
-            MouseButton::Middle => 2,
-            MouseButton::Other(button) => 3 + button as usize,
-        }
     }
 }

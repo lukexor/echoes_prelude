@@ -6,6 +6,8 @@
 pub struct Config {
     pub mouse_sensitivity: f32,
     pub scroll_pixels_per_line: f32,
+    pub near_clip: f32,
+    pub far_clip: f32,
 }
 
 impl Default for Config {
@@ -13,6 +15,8 @@ impl Default for Config {
         Self {
             mouse_sensitivity: 10.0,
             scroll_pixels_per_line: 12.0,
+            near_clip: 0.1,
+            far_clip: 1000.0,
         }
     }
 }

@@ -2,33 +2,41 @@
 name = "echoes_prelude"
 authors = ["Luke Petherbridge <me@lukeworks.tech>"]
 categories = ["games"]
-description = "A cross-platform 2D platformer RPG."
+description = "A cross-platform 2D platformer RPG set in the far distant future."
 keywords = ["game"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/lukexor/echos-prelude.git"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
 
 [package.metadata]
 msrv = "1.66.0"
 
 [features]
-default = ["hot_reload"]
 hot_reload = ["dep:hot-lib-reloader"]
 
 [dependencies]
 anyhow = { workspace = true }
 pix-engine = { workspace = true }
-env_logger = { workspace = true }
 hot-lib-reloader = { version = "~0.6.4", optional = true }
-log = { workspace = true }
 echoes_prelude_lib = { path = "lib" }
 tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
-[profile.dev]
+[profile.dev-opt]
+inherits = "dev"
+opt-level = 2
+
+[profile.release-debug]
+inherits = "release"
+debug = true
 debug-assertions = true
-opt-level = 1
+
+[profile.release-lto]
+inherits = "release"
+lto = true
+codegen-units = 1
 
 [workspace]
 resolver = "2"
@@ -39,8 +47,8 @@ members = [
 
 [workspace.dependencies]
 anyhow = "1.0.66"
-pix-engine = { path = "engine", features = ["vulkan"] }
-env_logger = "~0.10.0"
+pix-engine = { path = "engine" }
 derive_more = "~0.99.17"
-log = "~0.4.7"
 tokio = { version = "1.23.0", features = ["full"] }
+tracing = { version = "~0.1", features = ["log"] }
+tracing-subscriber = { version = "~0.3.7", features = ["env-filter"] }

@@ -8,7 +8,8 @@ pub struct Config {
     pub(crate) limit_frame_rate: bool,
     pub(crate) target_fps: u32,
     pub(crate) double_click_speed: Duration,
-    pub(crate) fullscreen_mode: FullscreenMode,
+    pub(crate) fullscreen: Option<Fullscreen>,
+    pub(crate) cursor_grab: bool,
 }
 
 impl Default for Config {
@@ -20,7 +21,8 @@ impl Default for Config {
                 .and_then(|target_fps| target_fps.parse::<u32>().ok())
                 .unwrap_or(60),
             double_click_speed: Duration::from_millis(400),
-            fullscreen_mode: FullscreenMode::Exclusive,
+            fullscreen: None,
+            cursor_grab: false,
         }
     }
 }
@@ -33,7 +35,7 @@ impl Config {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[must_use]
-pub enum FullscreenMode {
+pub enum Fullscreen {
     Exclusive,
     Borderless,
 }

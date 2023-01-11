@@ -2,9 +2,20 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use pix_engine::{camera::Camera, prelude::*};
+use pix_engine::{
+    camera::Camera,
+    config::Fullscreen,
+    mesh::{Mesh, Texture, Vertex, DEFAULT_MATERIAL},
+    prelude::*,
+};
 
-pub type GameEvent = ();
+const VERTEX_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.vert.spv");
+const FRAGMENT_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.frag.spv");
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum GameEvent {
+    Debug, // FIXME: Temporary
+}
 
 #[allow(missing_copy_implementations)]
 #[derive(Debug, Clone)]
@@ -13,51 +24,108 @@ pub struct Game {
     config: Config,
     camera: Camera,
     projection: Mat4,
-    is_dirty: bool,
-    model: Mat4, // FIXME: temporary
-    near_clip: f32,
-    far_clip: f32,
+    projection_dirty: bool,
 }
 
 impl Game {
     /// Create the `Game` instance.
     pub fn new() -> Result<Self> {
-        let near_clip = 0.1;
-        let far_clip = 100.0;
         Ok(Self {
             config: Config::new(),
-            camera: Camera::new(vector!(0.0, 0.5, 3.0)),
+            camera: Camera::new([0.0, 0.5, 3.0]),
             projection: Mat4::identity(),
-            is_dirty: true,
-            model: Mat4::identity(), // FIXME: temporary
-            near_clip,
-            far_clip,
+            projection_dirty: true,
         })
     }
 
     /// Initialize the `Game` instance.
-    pub fn initialize(&mut self, cx: &mut Context) {
-        self.update_projection(cx);
+    pub async fn initialize(&mut self, cx: &mut Context<GameEvent>) -> Result<()> {
+        self.update_projection(cx.width(), cx.height());
+
+        // FIXME: tmp
+        let mut vertices = vec![Vertex::default(); 3];
+        vertices[0].position = vec3![1.0, 1.0, 0.0];
+        vertices[1].position = vec3![-1.0, 1.0, 0.0];
+        vertices[2].position = vec3![0.0, -1.0, 0.0];
+        // All green
+        vertices[0].color = vec3![0.0, 1.0, 0.0];
+        vertices[1].color = vec3![0.0, 1.0, 0.0];
+        vertices[2].color = vec3![0.0, 1.0, 0.0];
+
+        // TODO:
+        // cx.load_material();
+        cx.load_mesh(Mesh::from_file("viking_room", "lib/assets/models/viking_room.obj").await?)?;
+        cx.load_texture(
+            Texture::from_file("viking_room", "lib/assets/textures/viking_room.png").await?,
+            DEFAULT_MATERIAL,
+        )?;
+        cx.load_object(
+            "viking_room",
+            DEFAULT_MATERIAL,
+            Mat4::rotation(vec3!(-90.0, 0.0, 0.0)),
+        )?;
+
+        // cx.load_mesh(
+        //     Mesh::from_file("provence_house", "lib/assets/models/provence_house.obj").await?,
+        // )?;
+        // cx.load_texture(
+        //     Texture::from_file("provence_house", "lib/assets/textures/provence_house.png").await?,
+        //     DEFAULT_MATERIAL,
+        // )?;
+        // cx.load_object(
+        //     "provence_house",
+        //     DEFAULT_MATERIAL,
+        //     Mat4::translation([5.0, 5.0, 0.0]) * Mat4::rotation([-90.0, 0.0, 0.0]),
+        // )?;
+
+        cx.load_mesh(Mesh::new("triangle", vertices, vec![0, 1, 2]))?;
+        for x in -20..=20 {
+            for y in -20..=20 {
+                cx.load_object(
+                    "triangle",
+                    DEFAULT_MATERIAL,
+                    Mat4::translation(vec3!(x as f32, 0.0, y as f32))
+                        * Mat4::scale(vec3!(0.2, 0.2, 0.2)),
+                )?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Called every frame to update game state.
-    pub fn update(&mut self, delta_time: f32, cx: &mut Context) -> Result<()> {
+    pub fn update(&mut self, cx: &mut Context<GameEvent>) -> Result<()> {
         // TODO: Reduce framerate when not focused.
 
-        self.handle_events(delta_time, cx);
-        self.update_projection(cx);
-        let time = cx.elapsed().as_secs_f32();
+        self.handle_input(cx);
+        self.update_projection(cx.width(), cx.height());
+        cx.set_projection(self.projection);
+        cx.set_view(self.camera.view());
+
         // FIXME: temporary
-        self.model = Mat4::rotation(
-            Radians(-90f32.to_radians()),
-            Radians(0.0),
-            Radians(-120f32.to_radians() + time * 20f32.to_radians()),
+        let time = cx.elapsed().as_secs_f32();
+        let flash = time.sin().abs();
+        cx.set_clear_color([0.0, 0.0, flash, 1.0]);
+        cx.set_object_transform(
+            "viking_room",
+            Mat4::rotation(vec3!(-90.0, 0.0, -120.0 + time * 20.0)),
         );
         Ok(())
     }
 
-    fn handle_events(&mut self, delta_time: f32, cx: &mut Context) {
-        let speed = 5.0 * delta_time;
+    /// Called every frame to render game to the screen.
+    pub fn render(&mut self, cx: &mut Context<GameEvent>) -> Result<()> {
+        cx.draw_frame()?;
+        Ok(())
+    }
+
+    fn handle_input(&mut self, cx: &mut Context<GameEvent>) {
+        // FIXME: temporary
+        if cx.key_typed(KeyCode::T) {
+            cx.send_event(GameEvent::Debug);
+        }
+
+        let speed = 5.0 * cx.delta_time();
         if cx.key_down(KeyCode::A) {
             self.camera.move_left(speed);
         }
@@ -82,15 +150,15 @@ impl Game {
         if cx.key_down(KeyCode::Down) {
             self.camera.pitch(Degrees(20.0 * speed));
         }
-        if cx.key_down(KeyCode::Space) {
-            self.camera.move_up(speed);
-        }
-        if cx.key_down(KeyCode::X) {
+        if cx.modifiers_down(ModifierKeys::SHIFT) && cx.key_down(KeyCode::Space) {
             self.camera.move_down(speed);
+        } else if cx.key_down(KeyCode::Space) {
+            self.camera.move_up(speed);
         }
 
         if cx.key_typed(KeyCode::Return) && cx.modifiers_down(ModifierKeys::CTRL) {
-            cx.toggle_fullscreen();
+            // TODO: Use config
+            cx.toggle_fullscreen(Fullscreen::Borderless);
         }
 
         #[cfg(debug_assertions)]
@@ -105,18 +173,6 @@ impl Game {
         }
     }
 
-    /// Called every frame to render game to the screen.
-    pub fn render(&mut self, delta_time: f32, cx: &mut Context) -> Result<()> {
-        cx.draw_frame(RenderState {
-            delta_time,
-            projection: self.projection,
-            view: self.camera.view(),
-            // FIXME: temporary
-            model: self.model,
-        })?;
-        Ok(())
-    }
-
     /// Called every frame to retrieve audio samples to be played.
     pub fn audio_samples(&mut self) -> Result<Vec<f32>> {
         // TODO audio_samples https://github.com/RustAudio/cpal?
@@ -124,33 +180,29 @@ impl Game {
     }
 
     /// Called on every event.
-    pub fn on_event(&mut self, delta_time: f32, event: Event<GameEvent>, cx: &mut Context) {
+    pub fn on_event(&mut self, cx: &mut Context<GameEvent>, event: Event<GameEvent>) {
         if !cx.focused() {
             return;
         }
 
         match event {
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(_) => self.is_dirty = true,
+                WindowEvent::Resized(_) => self.projection_dirty = true,
                 WindowEvent::MouseInput {
                     button: _,
                     state: _,
                     ..
                 } => {}
-                WindowEvent::CloseRequested | WindowEvent::Destroyed { .. } => {
-                    log::info!("shutting down...");
-                    cx.quit();
-                }
+                WindowEvent::CloseRequested | WindowEvent::Destroyed { .. } => cx.quit(),
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => match event {
-                // TODO: Fixme
                 DeviceEvent::MouseMotion { delta: (x, y) } => {
                     self.camera.yaw(Degrees(
-                        x as f32 * self.config.mouse_sensitivity * delta_time,
+                        x as f32 * self.config.mouse_sensitivity * cx.delta_time(),
                     ));
                     self.camera.pitch(Degrees(
-                        y as f32 * self.config.mouse_sensitivity * delta_time,
+                        y as f32 * self.config.mouse_sensitivity * cx.delta_time(),
                     ));
                 }
                 DeviceEvent::MouseWheel { delta } => {
@@ -159,7 +211,7 @@ impl Game {
                         MouseScrollDelta::PixelDelta(position) => position.y as f32,
                     };
                     self.camera.zoom(Degrees(y));
-                    self.is_dirty = true;
+                    self.projection_dirty = true;
                 }
                 DeviceEvent::Button {
                     button: _,
@@ -171,18 +223,19 @@ impl Game {
         }
     }
 
-    /// Update the projection matrix.
+    /// Update the projection/view matrices.
     #[inline]
-    fn update_projection(&mut self, cx: &Context) {
-        if self.is_dirty {
-            self.projection = Mat4::perspective(
-                self.camera.fov().into(),
-                cx.width() as f32 / cx.height() as f32,
-                self.near_clip,
-                self.far_clip,
-            )
-            .inverted_y();
-            self.is_dirty = false;
+    fn update_projection(&mut self, width: u32, height: u32) {
+        if !self.projection_dirty {
+            return;
         }
+        self.projection = Mat4::perspective(
+            self.camera.fov().into(),
+            width as f32 / height as f32,
+            self.config.near_clip,
+            self.config.far_clip,
+        )
+        .inverted_y();
+        self.projection_dirty = false;
     }
 }

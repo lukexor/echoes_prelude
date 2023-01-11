@@ -11,38 +11,35 @@ mod vulkan {
         extensions::{ext, khr, mvk},
         vk, Entry, Instance,
     };
-    use std::{collections::HashSet, ffi::CStr};
+    use std::ffi::CStr;
 
-    /// Return a set of [`vk::InstanceCreateFlags`] for macOS.
-    pub(crate) fn instance_create_flags() -> vk::InstanceCreateFlags {
-        vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
-    }
+    /// Set of [`vk::InstanceCreateFlags`] for macOS.
+    pub(crate) const INSTANCE_CREATE_FLAGS: vk::InstanceCreateFlags =
+        vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR;
 
-    /// Return a list of required Vulkan [ash::Instance] extensions for macOS.
-    pub(crate) fn required_extensions() -> Vec<*const i8> {
-        vec![
-            khr::Surface::name().as_ptr(),
-            #[cfg(debug_assertions)]
-            ext::DebugUtils::name().as_ptr(),
-            mvk::MacOSSurface::name().as_ptr(),
-            vk::KhrPortabilityEnumerationFn::name().as_ptr(),
-            vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr(),
-        ]
-    }
+    /// Count of required Vulkan [`ash::Instance`] extensions for macOS.
+    #[cfg(debug_assertions)]
+    const REQUIRED_EXTENSIONS_COUNT: usize = 6;
+    #[cfg(not(debug_assertions))]
+    const REQUIRED_EXTENSIONS_COUNT: usize = 5;
+
+    /// List of required Vulkan [ash::Instance] extensions for macOS.
+    pub(crate) const REQUIRED_EXTENSIONS: [&CStr; REQUIRED_EXTENSIONS_COUNT] = [
+        khr::Surface::name(),
+        mvk::MacOSSurface::name(),
+        ext::MetalSurface::name(),
+        vk::KhrPortabilityEnumerationFn::name(),
+        vk::KhrGetPhysicalDeviceProperties2Fn::name(),
+        #[cfg(debug_assertions)]
+        ext::DebugUtils::name(),
+    ];
+
+    /// Count of required Vulkan [`vk::PhysicalDevice`] extensions for macOS.
+    const REQUIRED_DEVICE_EXTENSIONS_COUNT: usize = 2;
 
     /// Return a list of required [`vk::PhysicalDevice`] extensions for macOS.
-    pub(crate) fn required_device_extensions(
-        supported_extensions: &HashSet<&CStr>,
-    ) -> Vec<*const i8> {
-        let mut required_extensions = vec![
-            khr::Swapchain::name().as_ptr(),
-            vk::KhrPortabilitySubsetFn::name().as_ptr(),
-        ];
-        if supported_extensions.contains(ext::MetalSurface::name()) {
-            required_extensions.push(ext::MetalSurface::name().as_ptr());
-        }
-        required_extensions
-    }
+    pub(crate) const REQUIRED_DEVICE_EXTENSIONS: [&CStr; REQUIRED_DEVICE_EXTENSIONS_COUNT] =
+        [khr::Swapchain::name(), vk::KhrPortabilitySubsetFn::name()];
 
     /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for macOS.
     pub(crate) fn create_surface(
@@ -59,14 +56,13 @@ mod vulkan {
         use std::mem;
         use winit::platform::macos::WindowExtMacOS;
 
-        log::debug!("creating macOS metal surface");
+        tracing::debug!("creating macOS surface");
 
         let layer = MetalLayer::new();
         layer.set_edge_antialiasing_mask(0);
         layer.set_presents_with_transaction(false);
         layer.remove_all_animations();
 
-        // SAFETY: TODO
         let wnd: cocoa_id = unsafe { mem::transmute(window.ns_window()) };
         let view = unsafe { wnd.contentView() };
         unsafe { layer.set_contents_scale(view.backingScaleFactor()) };
@@ -78,7 +74,11 @@ mod vulkan {
 
         let macos_surface = mvk::MacOSSurface::new(entry, instance);
         // SAFETY: All create_info values are set correctly above with valid lifetimes.
-        unsafe { macos_surface.create_mac_os_surface(&surface_create_info, None) }
-            .context("failed to create surface")
+        let surface = unsafe { macos_surface.create_mac_os_surface(&surface_create_info, None) }
+            .context("failed to create surface")?;
+
+        tracing::debug!("created macOS surface successfully");
+
+        Ok(surface)
     }
 }

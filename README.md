@@ -1,9 +1,10 @@
-# Echoes: Prelude in Shadow
+# Echoes: Prelude in the Abyss
 
-It's a dark, rainy night with a crescent moon rising high, barely visible
-through gaps in the clouds. In the silence of a graveyard, something stirs. A
-slow grinding of stone against stone rings out from a crumbling crypt atop a
-hill.
+In the far-distant future, humanity will have thrown off the shackles of
+their physical existence, preferring to dedicate their consciousness to
+the limitless possibilities of cyberspace. Their bodies float idly in
+deprivation tanks filled with viscous fluid monitored and kept healthy by
+automated systems.
 
-Venture into the dark and listen closely to the echoes of the past, obscured in
-shadow and mystery.
+It's a utopia for those in the simulation, everything existing in harmony, but
+something stirs within. Echoes of human consciousness that do not belong.

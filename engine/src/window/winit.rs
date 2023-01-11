@@ -1,6 +1,7 @@
 //! Winit window backend.
 
-use crate::config::FullscreenMode;
+use super::Positioned;
+use crate::config::Fullscreen;
 use crate::event::{
     DeviceEvent, DeviceId, Event, InputState, KeyCode, ModifierKeys, MouseButton, MouseScrollDelta,
     TouchPhase, WindowEvent,
@@ -27,7 +28,7 @@ impl From<Size> for winit::dpi::Size {
     }
 }
 
-impl From<winit::dpi::PhysicalSize<u32>> for PhysicalSize {
+impl From<winit::dpi::PhysicalSize<u32>> for PhysicalSize<u32> {
     fn from(size: winit::dpi::PhysicalSize<u32>) -> Self {
         Self {
             width: size.width,
@@ -36,8 +37,8 @@ impl From<winit::dpi::PhysicalSize<u32>> for PhysicalSize {
     }
 }
 
-impl From<PhysicalSize> for winit::dpi::PhysicalSize<u32> {
-    fn from(size: PhysicalSize) -> Self {
+impl From<PhysicalSize<u32>> for winit::dpi::PhysicalSize<u32> {
+    fn from(size: PhysicalSize<u32>) -> Self {
         Self {
             width: size.width,
             height: size.height,
@@ -45,7 +46,7 @@ impl From<PhysicalSize> for winit::dpi::PhysicalSize<u32> {
     }
 }
 
-impl From<winit::dpi::LogicalSize<f64>> for LogicalSize {
+impl From<winit::dpi::LogicalSize<f64>> for LogicalSize<f64> {
     fn from(size: winit::dpi::LogicalSize<f64>) -> Self {
         Self {
             width: size.width,
@@ -54,8 +55,8 @@ impl From<winit::dpi::LogicalSize<f64>> for LogicalSize {
     }
 }
 
-impl From<LogicalSize> for winit::dpi::LogicalSize<f64> {
-    fn from(size: LogicalSize) -> Self {
+impl From<LogicalSize<f64>> for winit::dpi::LogicalSize<f64> {
+    fn from(size: LogicalSize<f64>) -> Self {
         Self {
             width: size.width,
             height: size.height,
@@ -450,7 +451,7 @@ pub(crate) trait FullscreenModeExt {
     ) -> Option<winit::window::Fullscreen>;
 }
 
-impl FullscreenModeExt for FullscreenMode {
+impl FullscreenModeExt for Fullscreen {
     fn for_monitor(
         &self,
         monitor: Option<winit::monitor::MonitorHandle>,
@@ -460,6 +461,45 @@ impl FullscreenModeExt for FullscreenMode {
                 .and_then(|monitor| monitor.video_modes().next())
                 .map(winit::window::Fullscreen::Exclusive),
             Self::Borderless => Some(winit::window::Fullscreen::Borderless(monitor)),
+        }
+    }
+}
+
+pub(crate) trait PositionedExt {
+    fn for_monitor(
+        &self,
+        monitor: Option<winit::monitor::MonitorHandle>,
+        window_size: Size,
+    ) -> Position;
+}
+
+impl PositionedExt for Positioned {
+    fn for_monitor(
+        &self,
+        monitor: Option<winit::monitor::MonitorHandle>,
+        window_size: Size,
+    ) -> Position {
+        match self {
+            Positioned::Center => {
+                if let Some(monitor) = monitor {
+                    let ::winit::dpi::PhysicalSize {
+                        width: monitor_width,
+                        height: monitor_height,
+                    } = monitor.size();
+                    let window_size = window_size.to_physical(monitor.scale_factor());
+                    let PhysicalSize {
+                        width: window_width,
+                        height: window_height,
+                    } = window_size;
+                    Position::Physical(PhysicalPosition {
+                        x: (monitor_width as i32) / 2 - (window_width as i32 / 2),
+                        y: (monitor_height as i32) / 2 - (window_height as i32 / 2),
+                    })
+                } else {
+                    Position::default()
+                }
+            }
+            Positioned::Position(position) => *position,
         }
     }
 }

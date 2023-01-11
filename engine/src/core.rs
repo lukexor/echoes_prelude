@@ -1,11 +1,14 @@
 //! Core engine logic.
 
 use crate::{
-    config::{Config, FullscreenMode},
+    config::{Config, Fullscreen},
     context::Context,
-    prelude::{Event, PhysicalPosition, PhysicalSize, Position, Size, WindowEvent},
-    renderer::{Renderer, Shader},
-    window::winit::FullscreenModeExt,
+    prelude::{Event, Size, WindowEvent},
+    render::{RenderSettings, Renderer},
+    window::{
+        winit::{FullscreenModeExt, PositionedExt},
+        Positioned, WindowCreateInfo,
+    },
     Result,
 };
 use anyhow::Context as _;
@@ -21,22 +24,22 @@ use winit::{
     window::{CursorGrabMode, WindowBuilder},
 };
 
-pub trait Update {
+pub trait OnUpdate {
     type UserEvent: 'static + fmt::Debug;
 
     /// Called on engine start.
-    fn on_start(&mut self, _cx: &mut Context) -> Result<()> {
+    fn on_start(&mut self, _cx: &mut Context<Self::UserEvent>) -> Result<()> {
         Ok(())
     }
 
     /// Called every frame.
-    fn on_update(&mut self, delta_time: f32, cx: &mut Context) -> Result<()>;
+    fn on_update(&mut self, cx: &mut Context<Self::UserEvent>) -> Result<()>;
 
     /// Called on engine shutdown.
-    fn on_stop(&mut self, _cx: &mut Context) {}
+    fn on_stop(&mut self, _cx: &mut Context<Self::UserEvent>) {}
 
     /// Called on every event.
-    fn on_event(&mut self, _delta_time: f32, _event: Event<Self::UserEvent>, _cx: &mut Context) {}
+    fn on_event(&mut self, _cx: &mut Context<Self::UserEvent>, _event: Event<Self::UserEvent>) {}
 }
 
 #[derive(Default, Debug)]
@@ -59,47 +62,32 @@ impl EngineBuilder {
     }
 
     pub fn inner_size(&mut self, size: impl Into<Size>) -> &mut Self {
-        self.0.size = size.into();
+        self.0.window_create_info.size = size.into();
         self
     }
 
-    pub fn position(&mut self, position: impl Into<Position>) -> &mut Self {
-        self.0.position = position.into();
+    pub fn positioned(&mut self, position: impl Into<Positioned>) -> &mut Self {
+        self.0.window_create_info.positioned = position.into();
         self
     }
 
     pub fn cursor_grab(&mut self, cursor_grab: bool) -> &mut Self {
-        self.0.cursor_grab = cursor_grab;
+        self.0.config.cursor_grab = cursor_grab;
         self
     }
 
-    pub fn fullscreen(&mut self, fullscreen: bool) -> &mut Self {
-        self.0.fullscreen = fullscreen;
-        self
-    }
-
-    pub fn fullscreen_mode(&mut self, mode: FullscreenMode) -> &mut Self {
-        self.0.config.fullscreen_mode = mode;
+    pub fn fullscreen(&mut self, fullscreen: impl Into<Option<Fullscreen>>) -> &mut Self {
+        self.0.config.fullscreen = fullscreen.into();
         self
     }
 
     pub fn resizable(&mut self, resizable: bool) -> &mut Self {
-        self.0.resizable = resizable;
+        self.0.window_create_info.resizable = resizable;
         self
     }
 
     pub fn config(&mut self, config: Config) -> &mut Self {
         self.0.config = config;
-        self
-    }
-
-    pub fn shader(&mut self, shader: Shader) -> &mut Self {
-        self.0.shaders.push(shader);
-        self
-    }
-
-    pub fn shaders(&mut self, shaders: impl IntoIterator<Item = Shader>) -> &mut Self {
-        self.0.shaders.extend(shaders);
         self
     }
 
@@ -113,13 +101,8 @@ impl EngineBuilder {
 pub struct Engine {
     title: Cow<'static, str>,
     version: Cow<'static, str>,
-    size: Size,
-    position: Position,
-    cursor_grab: bool,
-    fullscreen: bool,
-    resizable: bool,
+    window_create_info: WindowCreateInfo,
     config: Config,
-    shaders: Vec<Shader>,
 }
 
 impl Default for Engine {
@@ -127,13 +110,8 @@ impl Default for Engine {
         Self {
             title: "".into(),
             version: "1.0.0".into(),
-            size: PhysicalSize::new(1024, 768).into(),
-            position: PhysicalPosition::default().into(),
-            cursor_grab: true,
-            fullscreen: false,
-            resizable: true,
+            window_create_info: WindowCreateInfo::default(),
             config: Config::default(),
-            shaders: vec![],
         }
     }
 }
@@ -143,72 +121,75 @@ impl Engine {
         EngineBuilder::default()
     }
 
-    pub fn run<A: Update + 'static>(self, mut app: A) -> Result<()> {
+    pub fn run<A: OnUpdate + 'static>(self, mut app: A) -> Result<()> {
         let event_loop = EventLoopBuilder::<A::UserEvent>::with_user_event().build();
+        let event_proxy = event_loop.create_proxy();
         let mut cx = None;
 
-        log::debug!("starting `Engine::on_update` loop.");
+        tracing::debug!("starting `Engine::on_update` loop.");
         event_loop.run(move |event, event_loop, control_flow| {
             if matches!(event, WinitEvent::NewEvents(StartCause::Init)) {
                 let Ok(window) = WindowBuilder::new()
                     .with_title(self.title.clone())
-                    .with_inner_size(self.size)
-                    .with_position(self.position)
-                    .with_resizable(self.resizable)
+                    .with_inner_size(self.window_create_info.size)
+                    .with_position(self.window_create_info.positioned.for_monitor(event_loop.primary_monitor(), self.window_create_info.size))
+                    .with_resizable(self.window_create_info.resizable)
                     // TODO: Support Exclusive
                     .with_fullscreen(self
-                        .fullscreen.then(|| self.config.fullscreen_mode.for_monitor(event_loop.primary_monitor())).flatten()
+                        .config.fullscreen.and_then(|fullscreen| fullscreen.for_monitor(event_loop.primary_monitor()))
                     )
                     .build(event_loop)
-                    .context("failed to create window") else {
+                    .context("failed to create window")
+                    .map_err(|err| tracing::error!("{err}")) else {
                         control_flow.set_exit_with_code(1);
                         return;
                     };
-                let Ok(renderer) =
-                    Renderer::initialize(&self.title, &self.version, &window, &self.shaders) else {
-                        control_flow.set_exit_with_code(2);
-                        return;
-                    };
-                let mut new_cx = Context::new(self.config, window, renderer);
+
+                let settings = RenderSettings::default();
+                let Ok(renderer) = Renderer::initialize(&self.title, &self.version, &window, &settings)
+                    .map_err(|err| tracing::error!("{err}")) else {
+                    control_flow.set_exit_with_code(2);
+                    return;
+                };
+                let mut new_cx = Context::new(self.config, window, renderer, event_proxy.clone());
 
                 let on_start = app.on_start(&mut new_cx);
                 if on_start.is_err() || new_cx.should_quit() {
-                    log::debug!("quitting after on_start with `Engine::on_stop`");
+                    tracing::debug!("quitting after on_start with `Engine::on_stop`");
                     if let Err(ref err) = on_start {
-                        log::error!("{err}");
+                        tracing::error!("{err}");
                     }
                     app.on_stop(&mut new_cx);
                     control_flow.set_exit_with_code(3);
+                } else {
+                    cx = Some(new_cx);
                 }
-                cx = Some(new_cx);
             }
 
             if let Some(cx) = &mut cx {
                 let current_time = Instant::now();
-                let delta_time = current_time - cx.last_frame_time;
+                cx.delta_time = current_time - cx.last_frame_time;
 
                 match event {
                     WinitEvent::MainEventsCleared if cx.is_running() => {
-                        let on_update = app.on_update(delta_time.as_secs_f32(), cx);
+                        let on_update = app.on_update(cx);
                         if let Err(err) = on_update {
-                            log::error!("{err:?}");
+                            tracing::error!("{err}");
                             control_flow.set_exit_with_code(1);
                             return;
                         }
 
                         let end_time = Instant::now();
                         let elapsed = end_time - current_time;
-                        cx.fps_timer += delta_time;
+                        cx.fps_timer += cx.delta_time;
                         let remaining = cx
                             .target_frame_rate
                             .checked_sub(elapsed)
                             .unwrap_or_default();
-                        if remaining.as_millis() > 0 {
-                            if self.config.limit_frame_rate {
-                                thread::sleep(remaining - Duration::from_millis(1));
-                            }
-                            cx.fps_counter += 1;
+                        if remaining.as_millis() > 0 && self.config.limit_frame_rate {
+                            thread::sleep(remaining - Duration::from_millis(1));
                         }
+                        cx.fps_counter += 1;
 
                         let one_second = Duration::from_secs(1);
                         if cx.fps_timer > one_second {
@@ -225,7 +206,7 @@ impl Engine {
                         cx.last_frame_time = current_time;
                     }
                     _ => {
-                        log::trace!("received event: {event:?}");
+                        tracing::trace!("received event: {event:?}");
                         let event = event.into();
                         if let Event::WindowEvent {
                             window_id: _,
@@ -234,7 +215,11 @@ impl Engine {
                         {
                             match event {
                                 WindowEvent::Resized(size) => cx.on_resized(size),
-                                WindowEvent::KeyboardInput { keycode: Some(keycode), state, .. } => {
+                                WindowEvent::KeyboardInput {
+                                    keycode: Some(keycode),
+                                    state,
+                                    ..
+                                } => {
                                     cx.key_state.key_input(keycode, state);
                                 }
                                 WindowEvent::MouseInput { button, state, .. } => {
@@ -242,7 +227,7 @@ impl Engine {
                                 }
                                 WindowEvent::Focused(focused) => {
                                     cx.focused = focused;
-                                    if self.cursor_grab && cx.focused {
+                                    if self.config.cursor_grab && cx.focused {
                                         cx.window.set_cursor_visible(false);
                                         if let Err(err) = cx
                                             .window
@@ -251,7 +236,7 @@ impl Engine {
                                                 cx.window.set_cursor_grab(CursorGrabMode::Locked)
                                             })
                                         {
-                                            log::error!("failed to grab cursor: {err:?}");
+                                            tracing::error!("failed to grab cursor: {err}");
                                         }
                                     }
                                 }
@@ -262,16 +247,20 @@ impl Engine {
                                 _ => (),
                             }
                         }
-                        app.on_event(delta_time.as_secs_f32(), event, cx);
+                        app.on_event(cx, event);
                     }
                 }
 
-                if cx.should_quit() {
-                    log::debug!("shutting down with `Engine::on_stop`");
+                if cx.should_quit() && !cx.is_quitting {
+                    cx.is_quitting = true;
+                    tracing::debug!("shutting down with `Engine::on_stop`");
                     app.on_stop(cx);
+                    // on_stop allows aborting the quit request
                     if cx.should_quit() {
-                        log::info!("shutting down...");
+                        tracing::debug!("shutting down...");
                         control_flow.set_exit();
+                    } else {
+                        cx.is_quitting = false;
                     }
                 }
             }

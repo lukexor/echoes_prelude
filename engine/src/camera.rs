@@ -1,8 +1,8 @@
 //! Camera functionality.
 
 use crate::{
-    math::{Degrees, Mat4, Matrix, Vec3},
-    vector,
+    math::{Degrees, Mat4, Vec3},
+    vec3,
 };
 
 const DEFAULT_YAW: Degrees<f32> = Degrees(-90.0);
@@ -12,6 +12,14 @@ const DEFAULT_FOV: Degrees<f32> = Degrees(45.0);
 const PITCH_LIMIT: Degrees<f32> = Degrees(89.0);
 const FOV_MIN: Degrees<f32> = Degrees(1.0);
 const FOV_MAX: Degrees<f32> = Degrees(45.0);
+
+#[derive(Default, Debug, Copy, Clone)]
+#[repr(C)]
+#[must_use]
+pub struct CameraData {
+    pub projection: Mat4,
+    pub view: Mat4,
+}
 
 #[derive(Default, Debug, Copy, Clone)]
 #[must_use]
@@ -30,7 +38,8 @@ pub struct Camera {
 
 impl Camera {
     /// Create a new `Camera` at a given position and rotation.
-    pub fn new(position: Vec3) -> Self {
+    pub fn new(position: impl Into<Vec3>) -> Self {
+        let position = position.into();
         let mut camera = Self {
             position,
             target: Vec3::forward(),
@@ -40,7 +49,7 @@ impl Camera {
             yaw: DEFAULT_YAW,
             pitch: DEFAULT_PITCH,
             fov: DEFAULT_FOV,
-            view: Matrix::translation(position).inverse(),
+            view: Mat4::translation(position).inverse(),
             is_dirty: true,
         };
         camera.update_view();
@@ -153,7 +162,7 @@ impl Camera {
         }
         let (yaw_sin, yaw_cos) = self.yaw.to_radians().sin_cos();
         let (pitch_sin, pitch_cos) = self.pitch.to_radians().sin_cos();
-        self.target = vector!(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalized();
+        self.target = vec3!(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalized();
         self.right = self.target.cross(self.world_up).normalized();
         self.up = self.right.cross(self.target).normalized();
         self.view = Mat4::look_at(self.position, self.position + self.target, self.up);

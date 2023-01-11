@@ -37,13 +37,15 @@
 )]
 
 use anyhow::Result;
-use pix_engine::{config::FullscreenMode, prelude::*};
+use pix_engine::{prelude::*, window::Positioned};
 
 use echoes_prelude_lib::game::GameEvent;
 #[cfg(not(feature = "hot_reload"))]
 use echoes_prelude_lib::*;
 #[cfg(feature = "hot_reload")]
 use hot_echoes_prelude_lib::*;
+use tokio::{runtime::Handle, task};
+use tracing::Instrument;
 
 #[cfg(feature = "hot_reload")]
 #[hot_lib_reloader::hot_module(
@@ -62,30 +64,29 @@ const APPLICATION_NAME: &str = "Echoes: Prelude in Shadow";
 const WINDOW_WIDTH: u32 = 1440;
 const WINDOW_HEIGHT: u32 = 900;
 
-const VERTEX_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.vert.spv");
-const FRAGMENT_SHADER: &str = concat!(env!("OUT_DIR"), "/primary.frag.spv");
-
 #[tokio::main]
-async fn main() -> pix_engine::Result<()> {
-    logger::initialize()?;
-
+async fn main() -> Result<()> {
     // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
-    #[cfg(feature = "hot_reload")]
-    initialize_logger(); // Required to properly initialize logger with hot_reload
+    // TODO: Re-init logger on hot reload
+    let _trace = trace::initialize();
 
+    let span = tracing::info_span!("application");
+    run_application().instrument(span).await
+}
+
+async fn run_application() -> Result<()> {
     let application = Application::initialize()?;
     let engine = Engine::builder()
         .title(APPLICATION_NAME)
         .version(env!("CARGO_PKG_VERSION"))
         .inner_size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+        .positioned(Positioned::Center)
         // TODO: pull from saved configuration
-        .fullscreen(false)
-        .fullscreen_mode(FullscreenMode::Borderless)
+        // .fullscreen(Fullscreen::Borderless)
         .cursor_grab(true)
-        .shader(Shader::vertex("primary", VERTEX_SHADER).await?)
-        .shader(Shader::fragment("primary", FRAGMENT_SHADER).await?)
         .build();
-    engine.run(application)
+    engine.run(application)?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -101,31 +102,33 @@ impl Application {
     }
 }
 
-impl Update for Application {
+impl OnUpdate for Application {
     type UserEvent = GameEvent;
 
     /// Called on engine start.
-    fn on_start(&mut self, cx: &mut Context) -> pix_engine::Result<()> {
-        log::info!("application started");
-        self.game.initialize(cx);
+    fn on_start(&mut self, cx: &mut Context<Self::UserEvent>) -> pix_engine::Result<()> {
+        tracing::info!("application started");
+        task::block_in_place(|| {
+            Handle::current().block_on(async { self.game.initialize(cx).await })
+        })?;
         Ok(())
     }
 
     /// Called every frame.
-    fn on_update(&mut self, delta_time: f32, cx: &mut Context) -> pix_engine::Result<()> {
-        update(&mut self.game, delta_time, cx)?;
-        render(&mut self.game, delta_time, cx)?;
+    fn on_update(&mut self, cx: &mut Context<Self::UserEvent>) -> pix_engine::Result<()> {
+        update(&mut self.game, cx)?;
+        render(&mut self.game, cx)?;
         let _ = audio_samples(&mut self.game)?;
         Ok(())
     }
 
     /// Called on engine shutdown.
-    fn on_stop(&mut self, _cx: &mut Context) {
-        log::info!("application shutting down");
+    fn on_stop(&mut self, _cx: &mut Context<Self::UserEvent>) {
+        tracing::info!("application shutting down");
     }
 
     /// Called on every event.
-    fn on_event(&mut self, delta_time: f32, event: Event<Self::UserEvent>, cx: &mut Context) {
-        on_event(&mut self.game, delta_time, event, cx);
+    fn on_event(&mut self, cx: &mut Context<Self::UserEvent>, event: Event<Self::UserEvent>) {
+        on_event(&mut self.game, cx, event);
     }
 }

@@ -14,8 +14,10 @@ macro_rules! time {
 macro_rules! timeLog {
     ($label:ident) => {
         match $label {
-            Some(label) => log::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32()),
-            None => log::warn!("Timer `{}` has been terminated.", stringify!($label)),
+            Some(label) => {
+                tracing::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32())
+            }
+            None => tracing::warn!("Timer `{}` has been terminated.", stringify!($label)),
         };
     };
 }
@@ -25,8 +27,10 @@ macro_rules! timeLog {
 macro_rules! timeEnd {
     ($label:ident) => {{
         match $label.take() {
-            Some(label) => log::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32()),
-            None => log::warn!("Timer `{}` has been terminated.", stringify!($label)),
+            Some(label) => {
+                tracing::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32())
+            }
+            None => tracing::warn!("Timer `{}` has been terminated.", stringify!($label)),
         };
     }};
 }

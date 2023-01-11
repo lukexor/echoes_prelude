@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/lukexor/echos-prelude.git"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [package.metadata]
 msrv = "1.66.0"
@@ -18,5 +19,6 @@ crate-type = ["rlib", "dylib"]
 [dependencies]
 anyhow = { workspace = true }
 pix-engine = { workspace = true }
-env_logger = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = "~0.2.2"

@@ -36,9 +36,11 @@
     variant_size_differences
 )]
 
-use thiserror::Error;
+use std::io;
 
 pub mod camera;
+pub mod mesh;
+pub mod scene;
 #[macro_use]
 pub mod profiling;
 pub mod config;
@@ -47,36 +49,58 @@ pub mod core;
 pub mod event;
 pub mod math;
 pub mod platform;
-pub mod renderer;
+pub mod render;
+pub mod shader;
 pub mod window;
 
+/// Results that can be returned from this crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Errors that can be returned from this crate.
 #[allow(variant_size_differences)]
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("invalid image format: bit_depth: {bit_depth:?}, color_type: {color_type:?}")]
     UnsupportedImageFormat {
         bit_depth: png::BitDepth,
         color_type: png::ColorType,
     },
+    #[error("renderer error: {0}")]
+    Renderer(anyhow::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
+#[macro_export]
+macro_rules! hash_map {
+    ($($key:expr => $value:expr),* $(,)?) => {{
+        let mut map = std::collections::hash_map::HashMap::with_capacity(4);
+        $(
+        map.insert($key, $value);
+        )*
+        map
+    }};
+}
+
 pub mod prelude {
+    //! Most commonly used exports for setting up an application.
+
     pub use crate::{
         config::Config,
         context::Context,
-        core::{Engine, Update},
+        core::{Engine, OnUpdate},
         event::{
             DeviceEvent, Event, InputState, KeyCode, ModifierKeys, MouseButton, MouseScrollDelta,
             WindowEvent,
         },
         math::{Degrees, Mat4, Radians, Vec2, Vec3},
-        matrix,
-        renderer::{RenderState, Renderer, Shader, ShaderType},
-        vector,
+        render::{Render, RenderState},
+        shader::{Shader, ShaderStage},
         window::{PhysicalPosition, PhysicalSize, Position, Size},
     };
+
+    // Macros
+    pub use crate::{mat4, vec2, vec3, vec4};
 }
