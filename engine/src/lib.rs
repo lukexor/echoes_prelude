@@ -39,18 +39,24 @@
 use std::io;
 
 pub mod camera;
+#[cfg(feature = "imgui")]
+pub mod imgui;
 pub mod mesh;
 pub mod scene;
 #[macro_use]
 pub mod profiling;
+pub mod color;
 pub mod config;
 pub mod context;
 pub mod core;
 pub mod event;
 pub mod math;
+pub mod matrix;
+pub mod num;
 pub mod platform;
 pub mod render;
 pub mod shader;
+pub mod vector;
 pub mod window;
 
 /// Results that can be returned from this crate.
@@ -67,6 +73,8 @@ pub enum Error {
     },
     #[error("renderer error: {0}")]
     Renderer(anyhow::Error),
+    #[error("platform error: {0}")]
+    Platform(anyhow::Error),
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]
@@ -76,7 +84,7 @@ pub enum Error {
 #[macro_export]
 macro_rules! hash_map {
     ($($key:expr => $value:expr),* $(,)?) => {{
-        let mut map = std::collections::hash_map::HashMap::with_capacity(4);
+        let mut map = ::fnv::FnvHashMap::with_capacity_and_hasher(4, Default::default());
         $(
         map.insert($key, $value);
         )*
@@ -87,6 +95,8 @@ macro_rules! hash_map {
 pub mod prelude {
     //! Most commonly used exports for setting up an application.
 
+    #[cfg(feature = "imgui")]
+    pub use crate::imgui;
     pub use crate::{
         config::Config,
         context::Context,
@@ -95,9 +105,11 @@ pub mod prelude {
             DeviceEvent, Event, InputState, KeyCode, ModifierKeys, MouseButton, MouseScrollDelta,
             WindowEvent,
         },
-        math::{Degrees, Mat4, Radians, Vec2, Vec3},
-        render::{Render, RenderState},
+        matrix::Mat4,
+        num::{Degrees, Radians},
+        render::Render,
         shader::{Shader, ShaderStage},
+        vector::{Vec2, Vec3, Vec4},
         window::{PhysicalPosition, PhysicalSize, Position, Size},
     };
 

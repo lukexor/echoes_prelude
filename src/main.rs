@@ -38,14 +38,13 @@
 
 use anyhow::Result;
 use pix_engine::{prelude::*, window::Positioned};
+use tokio::{runtime::Handle, task};
+use tracing::Instrument;
 
-use echoes_prelude_lib::game::GameEvent;
 #[cfg(not(feature = "hot_reload"))]
 use echoes_prelude_lib::*;
 #[cfg(feature = "hot_reload")]
 use hot_echoes_prelude_lib::*;
-use tokio::{runtime::Handle, task};
-use tracing::Instrument;
 
 #[cfg(feature = "hot_reload")]
 #[hot_lib_reloader::hot_module(
@@ -56,8 +55,9 @@ mod hot_echoes_prelude_lib {
     pub(crate) use echoes_prelude_lib::*;
     hot_functions_from_file!("engine/src/lib.rs");
 
+    // TODO: React to reloads to re-initialize if needed
     #[lib_change_subscription]
-    pub(crate) fn _subscribe() -> hot_lib_reloader::LibReloadObserver {}
+    pub(crate) fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
 }
 
 const APPLICATION_NAME: &str = "Echoes: Prelude in Shadow";
@@ -106,7 +106,7 @@ impl OnUpdate for Application {
     type UserEvent = GameEvent;
 
     /// Called on engine start.
-    fn on_start(&mut self, cx: &mut Context<Self::UserEvent>) -> pix_engine::Result<()> {
+    fn on_start(&mut self, cx: &mut Context<'_, Self::UserEvent>) -> pix_engine::Result<()> {
         tracing::info!("application started");
         task::block_in_place(|| {
             Handle::current().block_on(async { self.game.initialize(cx).await })
@@ -115,20 +115,19 @@ impl OnUpdate for Application {
     }
 
     /// Called every frame.
-    fn on_update(&mut self, cx: &mut Context<Self::UserEvent>) -> pix_engine::Result<()> {
-        update(&mut self.game, cx)?;
-        render(&mut self.game, cx)?;
+    fn on_update(&mut self, cx: &mut Context<'_, Self::UserEvent>) -> pix_engine::Result<()> {
+        on_update(&mut self.game, cx)?;
         let _ = audio_samples(&mut self.game)?;
         Ok(())
     }
 
     /// Called on engine shutdown.
-    fn on_stop(&mut self, _cx: &mut Context<Self::UserEvent>) {
+    fn on_stop(&mut self, _cx: &mut Context<'_, Self::UserEvent>) {
         tracing::info!("application shutting down");
     }
 
     /// Called on every event.
-    fn on_event(&mut self, cx: &mut Context<Self::UserEvent>, event: Event<Self::UserEvent>) {
+    fn on_event(&mut self, cx: &mut Context<'_, Self::UserEvent>, event: Event<Self::UserEvent>) {
         on_event(&mut self.game, cx, event);
     }
 }

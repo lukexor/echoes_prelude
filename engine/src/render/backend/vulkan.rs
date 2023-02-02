@@ -1,10 +1,10 @@
 //! Vulkan renderer backend
 
-use self::debug::Debug;
 #[cfg(debug_assertions)]
 use self::debug::VALIDATION_LAYER_NAME;
 use self::{
     buffer::{padded_uniform_buffer_size, AllocatedBuffer},
+    debug::Debug,
     device::{Device, QueueFamily},
     frame::Frame,
     image::AllocatedImage,
@@ -17,19 +17,20 @@ use super::{RenderBackend, RenderSettings};
 use crate::{
     camera::CameraData,
     hash_map,
-    math::{Mat4, Vec4},
     mesh::{Mesh, ObjectData, Texture, DEFAULT_MATERIAL},
-    platform, render_bail,
+    platform,
+    prelude::*,
+    render::{DrawCmd, DrawData},
+    render_bail,
     scene::SceneData,
-    vec4,
-    window::{PhysicalSize, Window},
+    window::Window,
     Error, Result,
 };
 use anyhow::Context as _;
 use ash::vk;
+use fnv::FnvHashMap;
 use semver::Version;
 use std::{
-    collections::HashMap,
     ffi::{CStr, CString},
     fmt, mem, ptr, slice,
 };
@@ -49,11 +50,12 @@ pub(crate) const ENABLED_LAYER_NAMES: [&CStr; 1] = [VALIDATION_LAYER_NAME];
 #[cfg(not(debug_assertions))]
 pub(crate) const ENABLED_LAYER_NAMES: [&CStr; 0] = [];
 
-pub(crate) struct RenderContext {
+pub(crate) struct Context {
     size: PhysicalSize<u32>,
     resized: bool,
     frame_number: usize,
     current_frame: usize,
+    settings: RenderSettings,
 
     _entry: ash::Entry,
     instance: ash::Instance,
@@ -63,7 +65,7 @@ pub(crate) struct RenderContext {
     device: Device,
     swapchain: Swapchain,
     frames: Vec<Frame>,
-    render_pass: vk::RenderPass,
+    render_passes: Vec<vk::RenderPass>,
 
     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
     global_descriptor_pool: vk::DescriptorPool,
@@ -80,31 +82,35 @@ pub(crate) struct RenderContext {
     scene_attributes: SceneData,
     scene_buffer: AllocatedBuffer,
     objects: Vec<Object>,
-    materials: HashMap<String, Material>,
-    meshes: HashMap<String, AllocatedMesh>,
-    textures: HashMap<String, AllocatedImage>,
+    materials: FnvHashMap<String, Material>,
+    meshes: FnvHashMap<String, AllocatedMesh>,
+    textures: FnvHashMap<String, AllocatedImage>,
 
     sampler: vk::Sampler,
-    color_image: AllocatedImage,
+    color_image: Option<AllocatedImage>,
     depth_image: AllocatedImage,
-    framebuffers: Vec<vk::Framebuffer>,
+    primary_framebuffers: Vec<vk::Framebuffer>,
 
-    old_swapchain_resources: Vec<(usize, Swapchain, Vec<vk::Framebuffer>)>,
+    #[cfg(feature = "imgui")]
+    imgui: mem::ManuallyDrop<imgui_rs_vulkan_renderer::Renderer>,
+    #[cfg(feature = "imgui")]
+    imgui_framebuffers: Vec<vk::Framebuffer>,
 }
 
-impl fmt::Debug for RenderContext {
+impl fmt::Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Context").finish_non_exhaustive()
     }
 }
 
-impl RenderBackend for RenderContext {
+impl RenderBackend for Context {
     /// Initialize Vulkan `Context`.
     fn initialize(
         application_name: &str,
         application_version: &str,
         window: &Window,
-        settings: &RenderSettings,
+        settings: RenderSettings,
+        #[cfg(feature = "imgui")] imgui: &mut imgui::ImGui,
     ) -> Result<Self> {
         tracing::debug!("initializing vulkan renderer backend");
 
@@ -117,11 +123,16 @@ impl RenderBackend for RenderContext {
         };
 
         let surface = Surface::create(&entry, &instance, window)?;
-        let device = Device::create(&instance, &surface, settings)?;
+        let device = Device::create(&instance, &surface, &settings)?;
 
         let size = window.inner_size().into();
         let swapchain = Swapchain::create(&instance, &device, &surface, size, None)?;
-        let render_pass = create_render_pass(&instance, &device, swapchain.format, settings)?;
+        let depth_format = device.get_depth_format(&instance, vk::ImageTiling::OPTIMAL)?;
+        let render_passes = vec![
+            create_primary_render_pass(&device, swapchain.format, depth_format, &settings)?,
+            #[cfg(feature = "imgui")]
+            create_imgui_render_pass(&device, swapchain.format)?,
+        ];
 
         let viewport = vk::Viewport {
             x: 0.0,
@@ -159,9 +170,9 @@ impl RenderBackend for RenderContext {
             &device,
             viewport,
             scissor,
-            render_pass,
+            render_passes[0],
             &descriptor_set_layouts,
-            settings,
+            &settings,
         )?;
 
         let graphics_command_pool = command_pool::create(
@@ -170,7 +181,7 @@ impl RenderBackend for RenderContext {
             vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
         )?;
 
-        let sampler = AllocatedImage::create_sampler(&device, settings)?;
+        let sampler = AllocatedImage::create_sampler(&device, &settings)?;
 
         let descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(global_descriptor_pool)
@@ -187,30 +198,41 @@ impl RenderBackend for RenderContext {
                 texture_descriptor_set: descriptor_sets[0],
             }
         };
-        let samples = if settings.sample_shading {
-            device.info.msaa_samples
+        let color_image = if settings.msaa {
+            Some(AllocatedImage::create_color(
+                &device,
+                swapchain.format,
+                swapchain.extent,
+                device.info.msaa_samples,
+                debug.as_ref(),
+            )?)
         } else {
-            vk::SampleCountFlags::TYPE_1
+            None
         };
-        let color_image = AllocatedImage::create_color(
-            &device,
-            swapchain.format,
-            swapchain.extent,
-            samples,
-            debug.as_ref(),
-        )?;
         let depth_image = AllocatedImage::create_depth(
             &instance,
             &device,
             swapchain.extent,
-            samples,
+            device.info.msaa_samples,
             debug.as_ref(),
         )?;
-        let framebuffers = swapchain.create_framebuffers(
+        let primary_framebuffers = swapchain.create_framebuffers(
             &device,
-            render_pass,
-            color_image.view,
-            depth_image.view,
+            render_passes[0],
+            color_image.as_ref().map(|image| image.view),
+            Some(depth_image.view),
+        )?;
+        #[cfg(feature = "imgui")]
+        let imgui_framebuffers =
+            swapchain.create_framebuffers(&device, render_passes[1], None, None)?;
+
+        #[cfg(feature = "imgui")]
+        let imgui = initialize_imgui(
+            &instance,
+            &device,
+            graphics_command_pool,
+            render_passes[1],
+            imgui,
         )?;
 
         tracing::debug!("initialized vulkan renderer backend successfully");
@@ -220,6 +242,7 @@ impl RenderBackend for RenderContext {
             resized: false,
             frame_number: 0,
             current_frame: 0,
+            settings,
 
             _entry: entry,
             instance,
@@ -229,7 +252,7 @@ impl RenderBackend for RenderContext {
             device,
             swapchain,
             frames,
-            render_pass,
+            render_passes,
 
             descriptor_set_layouts,
             global_descriptor_pool,
@@ -256,19 +279,23 @@ impl RenderBackend for RenderContext {
             camera_view: CameraData::default(),
             objects: vec![],
             materials,
-            meshes: HashMap::new(),
-            textures: HashMap::new(),
+            meshes: FnvHashMap::default(),
+            textures: FnvHashMap::default(),
 
             sampler,
             color_image,
             depth_image,
-            framebuffers,
+            primary_framebuffers,
 
-            old_swapchain_resources: vec![],
+            #[cfg(feature = "imgui")]
+            imgui: mem::ManuallyDrop::new(imgui),
+            #[cfg(feature = "imgui")]
+            imgui_framebuffers,
         })
     }
 
     /// Handle window resized event.
+    #[inline]
     fn on_resized(&mut self, size: PhysicalSize<u32>) {
         if self.size != size {
             tracing::debug!("received resized event {size:?}. pending swapchain recreation.");
@@ -277,10 +304,33 @@ impl RenderBackend for RenderContext {
         }
     }
 
-    /// Begin rendering a frame to the screen.
-    fn draw_frame(&mut self, _delta_time: f32) -> Result<()> {
-        assert!(self.current_frame < self.frames.len());
+    /// Called at the end of a frame to submit updates to the renderer.
+    #[inline]
+    fn draw_frame(&mut self, draw_data: &DrawData<'_>) -> Result<()> {
+        for cmd in draw_data.data {
+            match cmd {
+                DrawCmd::ClearColor(color) => self.set_clear_color(*color),
+                DrawCmd::ClearDepthStencil((depth, stencil)) => {
+                    self.set_clear_depth_stencil(*depth, *stencil);
+                }
+                DrawCmd::SetProjection(projection) => self.set_projection(*projection),
+                DrawCmd::SetView(view) => self.set_view(*view),
+                DrawCmd::SetObjectTransform { name, transform } => {
+                    self.set_object_transform(name, *transform);
+                }
+                DrawCmd::LoadMesh(mesh) => self.load_mesh(mesh.clone())?,
+                DrawCmd::LoadTexture { texture, material } => {
+                    self.load_texture(texture.clone(), material)?;
+                }
+                DrawCmd::LoadObject {
+                    mesh,
+                    material,
+                    transform,
+                } => self.load_object(mesh.clone(), material.clone(), *transform)?,
+            }
+        }
 
+        assert!(self.current_frame < self.frames.len());
         let render_fence = self.frames[self.current_frame].render_fence;
         unsafe {
             self.device
@@ -308,15 +358,25 @@ impl RenderBackend for RenderContext {
             }
         };
 
-        let current_buffer = self.frames[self.current_frame].command_buffers[0];
-        self.draw_objects(current_buffer, image_index)?;
+        self.draw_objects(
+            self.frames[self.current_frame].command_buffers[0],
+            image_index,
+        )?;
+        #[cfg(feature = "imgui")]
+        if let Some(draw_data) = &draw_data.imgui {
+            self.draw_gui(
+                self.frames[self.current_frame].command_buffers[1],
+                image_index,
+                draw_data,
+            )?;
+        }
 
         let wait_stages = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
         let render_semaphor = self.frames[self.current_frame].render_semaphor;
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(slice::from_ref(&present_semaphor))
             .wait_dst_stage_mask(slice::from_ref(&wait_stages))
-            .command_buffers(slice::from_ref(&current_buffer))
+            .command_buffers(&self.frames[self.current_frame].command_buffers)
             .signal_semaphores(slice::from_ref(&render_semaphor))
             .build();
 
@@ -359,7 +419,6 @@ impl RenderBackend for RenderContext {
         self.current_frame += 1;
         if self.current_frame == MAX_FRAMES_IN_FLIGHT {
             self.current_frame = 0;
-            self.destroy_old_swapchains(self.frame_number);
         }
 
         Ok(())
@@ -386,7 +445,6 @@ impl RenderBackend for RenderContext {
     /// Set the projection matrix for the next frame.
     #[inline]
     fn set_projection(&mut self, projection: Mat4) {
-        // TODO: Ensure resize maintains aspect ratio
         self.camera_view.projection = projection;
     }
 
@@ -494,118 +552,79 @@ impl RenderBackend for RenderContext {
     }
 }
 
-impl Drop for RenderContext {
-    /// Cleans up all Vulkan resources.
-    fn drop(&mut self) {
-        tracing::debug!("destroying vulkan context");
-
-        // NOTE: Drop-order is important!
-        //
-        // SAFETY:
-        //
-        // 1. Elements are destroyed in the correct order
-        // 2. Only elements that have been allocated are destroyed, ensured by `initalize` being
-        //    the only way to construct a Context with all values initialized.
-        unsafe {
-            if let Err(err) = self.device.device_wait_idle() {
-                tracing::error!("failed to wait for device idle: {err}");
-                return;
-            }
-
-            self.destroy_old_swapchains(usize::MAX);
-
-            for &framebuffer in self.framebuffers.iter() {
-                self.device.destroy_framebuffer(framebuffer, None);
-            }
-            self.swapchain.destroy(&self.device, None);
-
-            for image in [&self.color_image, &self.depth_image] {
-                image.destroy(&self.device);
-            }
-            for mesh in self.meshes.values() {
-                mesh.destroy(&self.device);
-            }
-            for texture in self.textures.values() {
-                texture.destroy(&self.device);
-            }
-            for pipeline in self.pipelines.iter().copied() {
-                self.device.destroy_pipeline(pipeline, None);
-            }
-            self.device
-                .destroy_pipeline_layout(self.pipeline_layout, None);
-            self.device
-                .destroy_descriptor_pool(self.global_descriptor_pool, None);
-            for layout in self.descriptor_set_layouts.iter().copied() {
-                self.device.destroy_descriptor_set_layout(layout, None);
-            }
-            self.device.destroy_render_pass(self.render_pass, None);
-            for frame in &self.frames {
-                frame.destroy(&self.device);
-            }
-            self.scene_buffer.destroy(&self.device);
-            self.device.destroy_sampler(self.sampler, None);
-            self.device
-                .destroy_command_pool(self.graphics_command_pool, None);
-            self.device.destroy_device(None);
-            self.surface.destroy(None);
-            if let Some(debug) = &self.debug {
-                debug.destroy();
-            }
-            self.instance.destroy_instance(None);
-        }
-
-        tracing::debug!("destroyed vulkan context");
-    }
-}
-
-impl RenderContext {
-    /// Destroys old swapchain resources that are guaranteed to not be in use anymore.
-    // TODO: cleanup with better tracking
-    fn destroy_old_swapchains(&mut self, frame_number: usize) {
-        self.old_swapchain_resources
-            .retain(|(frame, old_swapchain, old_framebuffers)| {
-                if *frame < frame_number - MAX_FRAMES_IN_FLIGHT {
-                    tracing::debug!("destroying old swapchain");
-                    unsafe {
-                        for &framebuffer in old_framebuffers.iter() {
-                            self.device.destroy_framebuffer(framebuffer, None);
-                        }
-                        old_swapchain.destroy(&self.device, None);
-                    }
-                    false
-                } else {
-                    true
-                }
-            });
-    }
-
+impl Context {
     /// Re-creates the swapchain, scheduling the old one for destruction.
     fn recreate_swapchain(&mut self) -> Result<()> {
         tracing::debug!("re-creating swapchain: {:?}", self.size);
 
-        self.destroy_old_swapchains(self.frame_number);
-        self.old_swapchain_resources.push((
-            self.frame_number,
-            self.swapchain.clone(),
-            self.framebuffers.clone(),
-        ));
+        unsafe {
+            // TODO: Clean up old swapchain without blocking
+            self.device.device_wait_idle()?;
 
-        self.swapchain = Swapchain::create(
+            for &framebuffer in self.primary_framebuffers.iter() {
+                self.device.destroy_framebuffer(framebuffer, None);
+            }
+            #[cfg(feature = "imgui")]
+            for &framebuffer in self.imgui_framebuffers.iter() {
+                self.device.destroy_framebuffer(framebuffer, None);
+            }
+            self.swapchain.destroy(&self.device, None);
+            if let Some(image) = &self.color_image {
+                image.destroy(&self.device);
+            }
+            self.depth_image.destroy(&self.device);
+        }
+
+        self.swapchain =
+            Swapchain::create(&self.instance, &self.device, &self.surface, self.size, None)?;
+        self.viewport = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: self.swapchain.extent.width as f32,
+            height: self.swapchain.extent.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+        self.scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: self.swapchain.extent,
+        };
+
+        // TODO: re-create pipelines if swapchain extent changes
+        // TODO: May need to recreate render_passes to account for HDR changes across monitors
+        self.color_image = if self.settings.msaa {
+            Some(AllocatedImage::create_color(
+                &self.device,
+                self.swapchain.format,
+                self.swapchain.extent,
+                self.device.info.msaa_samples,
+                self.debug.as_ref(),
+            )?)
+        } else {
+            None
+        };
+        self.depth_image = AllocatedImage::create_depth(
             &self.instance,
             &self.device,
-            &self.surface,
-            self.size,
-            Some(self.swapchain.handle),
+            self.swapchain.extent,
+            self.device.info.msaa_samples,
+            self.debug.as_ref(),
         )?;
-        // TODO: re-create pipelines if swapchain extent changes
-        // TODO: May need to recreate render_pass to account for HDR changes across monitors
-
-        self.framebuffers = self.swapchain.create_framebuffers(
+        self.primary_framebuffers = self.swapchain.create_framebuffers(
             &self.device,
-            self.render_pass,
-            self.color_image.view,
-            self.depth_image.view,
+            self.render_passes[0],
+            self.color_image.as_ref().map(|image| image.view),
+            Some(self.depth_image.view),
         )?;
+        #[cfg(feature = "imgui")]
+        {
+            self.imgui_framebuffers = self.swapchain.create_framebuffers(
+                &self.device,
+                self.render_passes[1],
+                None,
+                None,
+            )?;
+        }
 
         tracing::debug!("re-created swapchain successfully");
 
@@ -614,6 +633,7 @@ impl RenderContext {
 
     /// Updates the camera buffer for this frame
     fn update_camera_buffer(&mut self) -> Result<()> {
+        self.camera_view.projection_view = self.camera_view.projection * self.camera_view.view;
         let camera_buffer = &self.frames[self.current_frame].camera_buffer;
         unsafe {
             let memory = self
@@ -628,11 +648,10 @@ impl RenderContext {
             ptr::copy_nonoverlapping(&self.camera_view, memory.cast(), 1);
             self.device.unmap_memory(camera_buffer.memory);
         }
-
         Ok(())
     }
 
-    /// Updates the scene buffer for this frame
+    /// Updates the scene buffer for this frame.
     fn update_scene_buffer(&mut self) -> Result<()> {
         self.scene_attributes.ambient_color = vec4!(0.0, 0.0, 0.0, 1.0);
 
@@ -654,7 +673,7 @@ impl RenderContext {
         Ok(())
     }
 
-    /// Record the draw command buffers for this frame.
+    /// Draw objects for this frame.
     fn draw_objects(
         &mut self,
         command_buffer: vk::CommandBuffer,
@@ -662,6 +681,7 @@ impl RenderContext {
     ) -> Result<()> {
         self.update_camera_buffer()?;
         self.update_scene_buffer()?;
+
         let object_buffer = &self.frames[self.current_frame].object_buffer;
         let object_data = unsafe {
             let memory = self
@@ -676,15 +696,13 @@ impl RenderContext {
             slice::from_raw_parts_mut::<ObjectData>(memory.cast(), self.objects.len())
         };
 
+        // Commands
         unsafe {
             self.device
                 .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
         }
-
-        // Commands
         let command_begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
         unsafe {
             self.device
                 .begin_command_buffer(command_buffer, &command_begin_info)?;
@@ -692,8 +710,8 @@ impl RenderContext {
 
         let clear_values = [self.clear_color, self.clear_depth];
         let render_pass_info = vk::RenderPassBeginInfo::builder()
-            .render_pass(self.render_pass)
-            .framebuffer(self.framebuffers[image_index])
+            .render_pass(self.render_passes[0])
+            .framebuffer(self.primary_framebuffers[image_index])
             .render_area(vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: self.swapchain.extent,
@@ -810,6 +828,127 @@ impl RenderContext {
 
         Ok(())
     }
+
+    /// Draw gui for this frame.
+    #[cfg(feature = "imgui")]
+    fn draw_gui(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        image_index: usize,
+        draw_data: &imgui::DrawData,
+    ) -> Result<()> {
+        // Commands
+        unsafe {
+            self.device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
+        }
+        let command_begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe {
+            self.device
+                .begin_command_buffer(command_buffer, &command_begin_info)?;
+        }
+
+        let clear_values = [self.clear_color, self.clear_depth];
+        let render_pass_info = vk::RenderPassBeginInfo::builder()
+            .render_pass(self.render_passes[1])
+            .framebuffer(self.imgui_framebuffers[image_index])
+            .render_area(vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: self.swapchain.extent,
+            })
+            .clear_values(&clear_values);
+        unsafe {
+            self.device.cmd_begin_render_pass(
+                command_buffer,
+                &render_pass_info,
+                vk::SubpassContents::INLINE,
+            );
+        }
+
+        self.imgui
+            .cmd_draw(command_buffer, draw_data)
+            .context("failed to draw imgui")?;
+
+        unsafe {
+            self.device.cmd_end_render_pass(command_buffer);
+            self.device.end_command_buffer(command_buffer)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for Context {
+    /// Cleans up all Vulkan resources.
+    fn drop(&mut self) {
+        tracing::debug!("destroying vulkan context");
+
+        // NOTE: Drop-order is important!
+        //
+        // SAFETY:
+        //
+        // 1. Elements are destroyed in the correct order
+        // 2. Only elements that have been allocated are destroyed, ensured by `initialize` being
+        //    the only way to construct a Context with all values initialized.
+        unsafe {
+            if let Err(err) = self.device.device_wait_idle() {
+                tracing::error!("failed to wait for device idle: {err}");
+                return;
+            }
+
+            #[cfg(feature = "imgui")]
+            mem::ManuallyDrop::drop(&mut self.imgui);
+
+            for &framebuffer in self.primary_framebuffers.iter() {
+                self.device.destroy_framebuffer(framebuffer, None);
+            }
+            #[cfg(feature = "imgui")]
+            for &framebuffer in self.imgui_framebuffers.iter() {
+                self.device.destroy_framebuffer(framebuffer, None);
+            }
+            self.swapchain.destroy(&self.device, None);
+
+            if let Some(image) = &self.color_image {
+                image.destroy(&self.device);
+            }
+            self.depth_image.destroy(&self.device);
+            for mesh in self.meshes.values() {
+                mesh.destroy(&self.device);
+            }
+            for texture in self.textures.values() {
+                texture.destroy(&self.device);
+            }
+            for pipeline in self.pipelines.iter().copied() {
+                self.device.destroy_pipeline(pipeline, None);
+            }
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+            self.device
+                .destroy_descriptor_pool(self.global_descriptor_pool, None);
+            for layout in self.descriptor_set_layouts.iter().copied() {
+                self.device.destroy_descriptor_set_layout(layout, None);
+            }
+            for render_pass in self.render_passes.iter().copied() {
+                self.device.destroy_render_pass(render_pass, None);
+            }
+            for frame in &self.frames {
+                frame.destroy(&self.device);
+            }
+            self.scene_buffer.destroy(&self.device);
+            self.device.destroy_sampler(self.sampler, None);
+            self.device
+                .destroy_command_pool(self.graphics_command_pool, None);
+            self.device.destroy_device(None);
+            self.surface.destroy(None);
+            if let Some(debug) = &self.debug {
+                debug.destroy();
+            }
+            self.instance.destroy_instance(None);
+        }
+
+        tracing::debug!("destroyed vulkan context");
+    }
 }
 
 /// Create a Vulkan [Instance].
@@ -896,34 +1035,33 @@ pub(crate) fn create_instance(
     Ok(instance)
 }
 
-/// Create a [`vk::RenderPass`] instance.
-fn create_render_pass(
-    instance: &ash::Instance,
+/// Create the primary [`vk::RenderPass`] instance.
+fn create_primary_render_pass(
     device: &Device,
-    format: vk::Format,
+    color_format: vk::Format,
+    depth_format: vk::Format,
     settings: &RenderSettings,
 ) -> Result<vk::RenderPass> {
-    tracing::debug!("creating render pass");
+    tracing::debug!("creating primary render pass");
 
     // Attachments
-    let samples = if settings.sample_shading {
-        device.info.msaa_samples
-    } else {
-        vk::SampleCountFlags::TYPE_1
-    };
     let color_attachment = vk::AttachmentDescription::builder()
-        .format(format)
-        .samples(samples)
+        .format(color_format)
+        .samples(device.info.msaa_samples)
         .load_op(vk::AttachmentLoadOp::CLEAR)
         .store_op(vk::AttachmentStoreOp::STORE)
         .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
         .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
         .initial_layout(vk::ImageLayout::UNDEFINED)
-        .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .final_layout(if settings.msaa {
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        } else {
+            vk::ImageLayout::PRESENT_SRC_KHR
+        })
         .build();
     let depth_stencil_attachment = vk::AttachmentDescription::builder()
-        .format(device.get_depth_format(instance, vk::ImageTiling::OPTIMAL)?)
-        .samples(samples)
+        .format(depth_format)
+        .samples(device.info.msaa_samples)
         .load_op(vk::AttachmentLoadOp::CLEAR)
         .store_op(vk::AttachmentStoreOp::DONT_CARE)
         .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -931,9 +1069,9 @@ fn create_render_pass(
         .initial_layout(vk::ImageLayout::UNDEFINED)
         .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         .build();
-    // Only used if sample_shading is enabled
+    // Only used if settings.msaa is enabled
     let color_resolve_attachment = vk::AttachmentDescription::builder()
-        .format(format)
+        .format(color_format)
         .samples(vk::SampleCountFlags::TYPE_1)
         .load_op(vk::AttachmentLoadOp::DONT_CARE)
         .store_op(vk::AttachmentStoreOp::STORE)
@@ -952,7 +1090,7 @@ fn create_render_pass(
         .attachment(1)
         .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         .build();
-    // Only used if sample_shading is enabled
+    // Only used if msaa is enabled
     let color_resolve_attachment_ref = vk::AttachmentReference::builder()
         .attachment(2)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -962,12 +1100,75 @@ fn create_render_pass(
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(slice::from_ref(&color_attachment_ref))
         .depth_stencil_attachment(&depth_stencil_attachment_ref);
-    if settings.sample_shading {
+    if settings.msaa {
         subpass = subpass.resolve_attachments(slice::from_ref(&color_resolve_attachment_ref));
     }
 
     // Dependencies
-    let color_dependency = vk::SubpassDependency::builder()
+    let dependency = vk::SubpassDependency::builder()
+        .src_subpass(vk::SUBPASS_EXTERNAL)
+        .dst_subpass(0)
+        .src_stage_mask(
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
+                | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+        )
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_stage_mask(
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
+                | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+        )
+        .dst_access_mask(
+            vk::AccessFlags::COLOR_ATTACHMENT_WRITE
+                | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+        )
+        .build();
+
+    // Create
+    let mut attachments = vec![color_attachment, depth_stencil_attachment];
+    if settings.msaa {
+        attachments.push(color_resolve_attachment);
+    }
+    let render_pass_create_info = vk::RenderPassCreateInfo::builder()
+        .attachments(&attachments)
+        .subpasses(slice::from_ref(&subpass))
+        .dependencies(slice::from_ref(&dependency));
+
+    let render_pass = unsafe { device.create_render_pass(&render_pass_create_info, None) }
+        .context("failed to create render pass")?;
+
+    tracing::debug!("created primary render pass successfully");
+
+    Ok(render_pass)
+}
+
+/// Create the gui [`vk::RenderPass`] instance.
+#[cfg(feature = "imgui")]
+fn create_imgui_render_pass(device: &Device, color_format: vk::Format) -> Result<vk::RenderPass> {
+    tracing::debug!("creating gui render pass");
+
+    // Attachments
+    let color_attachment = vk::AttachmentDescription::builder()
+        .format(color_format)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .load_op(vk::AttachmentLoadOp::LOAD)
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .build();
+
+    // Subpasses
+    let color_attachment_ref = vk::AttachmentReference::builder()
+        .attachment(0)
+        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .build();
+    let subpass = vk::SubpassDescription::builder()
+        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .color_attachments(slice::from_ref(&color_attachment_ref));
+
+    // Dependencies
+    let dependency = vk::SubpassDependency::builder()
         .src_subpass(vk::SUBPASS_EXTERNAL)
         .dst_subpass(0)
         .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -975,38 +1176,54 @@ fn create_render_pass(
         .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
         .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
         .build();
-    let depth_dependency = vk::SubpassDependency::builder()
-        .src_subpass(vk::SUBPASS_EXTERNAL)
-        .dst_subpass(0)
-        .src_stage_mask(
-            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-        )
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_stage_mask(
-            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-        )
-        .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
-        .build();
 
     // Create
-    let mut attachments = vec![color_attachment, depth_stencil_attachment];
-    if settings.sample_shading {
-        attachments.push(color_resolve_attachment);
-    }
-    let dependencies = [color_dependency, depth_dependency];
+    let attachments = vec![color_attachment];
     let render_pass_create_info = vk::RenderPassCreateInfo::builder()
         .attachments(&attachments)
         .subpasses(slice::from_ref(&subpass))
-        .dependencies(&dependencies);
+        .dependencies(slice::from_ref(&dependency));
 
     let render_pass = unsafe { device.create_render_pass(&render_pass_create_info, None) }
         .context("failed to create render pass")?;
 
-    tracing::debug!("created render pass successfully");
+    tracing::debug!("created gui render pass successfully");
 
     Ok(render_pass)
+}
+
+#[cfg(feature = "imgui")]
+/// Initialize `Imgui`.
+fn initialize_imgui(
+    instance: &ash::Instance,
+    device: &Device,
+    command_pool: vk::CommandPool,
+    render_pass: vk::RenderPass,
+    imgui: &mut imgui::ImGui,
+) -> Result<imgui_rs_vulkan_renderer::Renderer> {
+    use imgui_rs_vulkan_renderer::{Options, Renderer};
+
+    tracing::debug!("initializing imgui");
+
+    // TODO fonts
+    let renderer = Renderer::with_default_allocator(
+        instance,
+        device.physical,
+        device.handle.clone(),
+        device.graphics_queue,
+        command_pool,
+        render_pass,
+        imgui,
+        Some(Options {
+            in_flight_frames: MAX_FRAMES_IN_FLIGHT,
+            ..Default::default()
+        }),
+    )
+    .context("failed to create imgui renderer")?;
+
+    tracing::debug!("initialized imgui successfully");
+
+    Ok(renderer)
 }
 
 mod shader {

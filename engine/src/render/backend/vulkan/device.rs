@@ -28,7 +28,7 @@ impl Device {
     ) -> Result<Self> {
         tracing::debug!("selecting physical device and creating logical device");
 
-        let (physical_device, info) = Self::select_physical_device(instance, surface)?;
+        let (physical_device, info) = Self::select_physical_device(instance, surface, settings)?;
         tracing::debug!("selected physical device successfully");
 
         let device = Self::create_logical_device(instance, physical_device, &info, settings)?;
@@ -104,6 +104,7 @@ impl Device {
     fn select_physical_device(
         instance: &ash::Instance,
         surface: &Surface,
+        settings: &RenderSettings,
     ) -> Result<(vk::PhysicalDevice, DeviceInfo)> {
         tracing::debug!("selecting physical device");
 
@@ -117,9 +118,10 @@ impl Device {
         let mut devices = physical_devices
             .into_iter()
             .filter_map(|physical_device| {
-                DeviceInfo::query(instance, physical_device, surface).map_or(None, |info| {
-                    (info.rating > 0).then_some((physical_device, info))
-                })
+                DeviceInfo::query(instance, physical_device, surface, settings)
+                    .map_or(None, |info| {
+                        (info.rating > 0).then_some((physical_device, info))
+                    })
             })
             .collect::<Vec<(vk::PhysicalDevice, DeviceInfo)>>();
         devices.sort_by_key(|(_, info)| info.rating);
@@ -204,6 +206,7 @@ impl DeviceInfo {
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         surface: &Surface,
+        settings: &RenderSettings,
     ) -> Result<Self> {
         let mut rating = 10;
 
@@ -212,7 +215,11 @@ impl DeviceInfo {
         let memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
-        let msaa_samples = Self::get_max_sample_count(properties, &mut rating);
+        let msaa_samples = if settings.msaa {
+            Self::get_max_sample_count(properties, &mut rating)
+        } else {
+            vk::SampleCountFlags::TYPE_1
+        };
         let queue_family_indices = QueueFamily::query(instance, physical_device, surface)?;
         let swapchain_support = SwapchainSupport::query(physical_device, surface)
             .map_err(|err| tracing::error!("{err}"))
@@ -334,7 +341,6 @@ impl DeviceInfo {
 #[derive(Debug, Clone)]
 #[must_use]
 pub(crate) struct SwapchainSupport {
-    pub(crate) capabilities: vk::SurfaceCapabilitiesKHR,
     pub(crate) formats: Vec<vk::SurfaceFormatKHR>,
     pub(crate) present_modes: Vec<vk::PresentModeKHR>,
 }
@@ -342,13 +348,6 @@ pub(crate) struct SwapchainSupport {
 impl SwapchainSupport {
     /// Queries a [`vk::PhysicalDevice`] for [`vk::SwapchainKHR`] extension support.
     pub(crate) fn query(physical_device: vk::PhysicalDevice, surface: &Surface) -> Result<Self> {
-        let capabilities = unsafe {
-            surface
-                .loader
-                .get_physical_device_surface_capabilities(physical_device, **surface)
-        }
-        .context("Failed to query for surface capabilities.")?;
-
         let formats = unsafe {
             surface
                 .loader
@@ -368,7 +367,6 @@ impl SwapchainSupport {
         }
 
         Ok(Self {
-            capabilities,
             formats,
             present_modes,
         })

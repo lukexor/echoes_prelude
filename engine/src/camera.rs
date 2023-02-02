@@ -1,9 +1,6 @@
 //! Camera functionality.
 
-use crate::{
-    math::{Degrees, Mat4, Vec3},
-    vec3,
-};
+use crate::{matrix::Mat4, num::Degrees, vec3, vector::Vec3};
 
 const DEFAULT_YAW: Degrees<f32> = Degrees(-90.0);
 const DEFAULT_PITCH: Degrees<f32> = Degrees(0.0);
@@ -19,6 +16,7 @@ const FOV_MAX: Degrees<f32> = Degrees(45.0);
 pub struct CameraData {
     pub projection: Mat4,
     pub view: Mat4,
+    pub projection_view: Mat4,
 }
 
 #[derive(Default, Debug, Copy, Clone)]

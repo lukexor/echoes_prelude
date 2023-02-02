@@ -47,7 +47,7 @@ members = [
 
 [workspace.dependencies]
 anyhow = "1.0.66"
-pix-engine = { path = "engine" }
+pix-engine = { path = "engine", features = ["imgui"] }
 derive_more = "~0.99.17"
 tokio = { version = "1.23.0", features = ["full"] }
 tracing = { version = "~0.1", features = ["log"] }

@@ -2,9 +2,10 @@
 
 use std::{env, time::Duration};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 #[must_use]
 pub struct Config {
+    pub(crate) window_title: String,
     pub(crate) limit_frame_rate: bool,
     pub(crate) target_fps: u32,
     pub(crate) double_click_speed: Duration,
@@ -15,6 +16,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            window_title: String::new(),
             limit_frame_rate: env::var("LIMIT_FPS").is_ok(),
             target_fps: env::var("TARGET_FPS")
                 .ok()

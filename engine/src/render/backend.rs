@@ -1,21 +1,17 @@
-use super::RenderSettings;
+use super::{DrawData, RenderSettings};
+#[cfg(feature = "imgui")]
+use crate::imgui;
 use crate::{
-    math::{Mat4, Vec4},
+    matrix::Mat4,
     mesh::{Mesh, Texture},
     prelude::PhysicalSize,
+    vector::Vec4,
     window::Window,
     Result,
 };
-use cfg_if::cfg_if;
 
-cfg_if! {
-    if #[cfg(feature = "vulkan")] {
-        mod vulkan;
-        pub(crate) use vulkan::RenderContext;
-    } else {
-        compile_error!("must choose a valid renderer feature: `vulkan` is the only option currently");
-    }
-}
+mod vulkan;
+pub(crate) use vulkan::Context as RenderContext;
 
 #[macro_export]
 macro_rules! render_bail {
@@ -42,14 +38,15 @@ pub(crate) trait RenderBackend: Sized {
         application_name: &str,
         application_version: &str,
         window: &Window,
-        settings: &RenderSettings,
+        settings: RenderSettings,
+        #[cfg(feature = "imgui")] imgui: &mut imgui::ImGui,
     ) -> Result<Self>;
 
     /// Handle window resized event.
     fn on_resized(&mut self, size: PhysicalSize<u32>);
 
-    /// Begin rendering a frame to the screen.
-    fn draw_frame(&mut self, delta_time: f32) -> Result<()>;
+    /// Draws a frame.
+    fn draw_frame(&mut self, draw_data: &DrawData<'_>) -> Result<()>;
 
     /// Set the clear color for the next frame.
     fn set_clear_color(&mut self, color: Vec4);
@@ -64,7 +61,7 @@ pub(crate) trait RenderBackend: Sized {
     fn set_view(&mut self, view: Mat4);
 
     /// Set an object transform matrix.
-    fn set_object_transform(&mut self, mesh: &str, transform: Mat4);
+    fn set_object_transform(&mut self, name: &str, transform: Mat4);
 
     /// Load a mesh into memory.
     fn load_mesh(&mut self, mesh: Mesh) -> Result<()>;
@@ -74,4 +71,13 @@ pub(crate) trait RenderBackend: Sized {
 
     /// Load an object to the current scene.
     fn load_object(&mut self, mesh: String, material: String, transform: Mat4) -> Result<()>;
+
+    //     /// Unload a named mesh from memory.
+    //     fn unload_mesh(&mut self, name: &str) -> Result<()>;
+
+    //     /// Unload a named texture from memory.
+    //     fn unload_texture(&mut self, name: &str) -> Result<()>;
+
+    //     /// Unload a named object from the current scene.
+    //     fn unload_object(&mut self, id: &str) -> Result<()>;
 }

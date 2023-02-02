@@ -2,8 +2,9 @@
 
 use super::buffer::AllocatedBuffer;
 use crate::{
-    math::{Mat4, Vec3, Vec4},
+    matrix::Mat4,
     mesh::{Mesh, Vertex},
+    vector::{Vec3, Vec4},
 };
 use ash::vk;
 use derive_more::{Deref, DerefMut};
@@ -104,7 +105,7 @@ impl VertexInputDescription {
             .format(vk::Format::R32G32B32_SFLOAT)
             .offset(offset)
             .build();
-        offset += mem::size_of::<Vec3>() as u32;
+        offset += mem::size_of::<Vec4>() as u32;
 
         let uv_attribute = vk::VertexInputAttributeDescription::builder()
             .binding(0)

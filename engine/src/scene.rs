@@ -1,4 +1,4 @@
-use crate::math::Vec4;
+use crate::vector::Vec4;
 
 #[derive(Default, Debug, Copy, Clone)]
 #[repr(C)]

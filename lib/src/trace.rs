@@ -5,7 +5,9 @@ use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-#[allow(missing_copy_implementations)]
+const LOG_DIR: &str = "logs";
+const LOG_FILENAME_PREFIX: &str = "echoes_prelude.log";
+
 #[derive(Debug)]
 #[must_use]
 pub struct Trace {
@@ -19,8 +21,8 @@ pub fn initialize() -> Trace {
         .from_env_lossy();
 
     let registry = tracing_subscriber::registry().with(env_filter);
-
-    let file_appender = tracing_appender::rolling::daily("logs", "echoes_prelude.log");
+    // TODO: Add max_log_files when https://github.com/tokio-rs/tracing/pull/2323 is released
+    let file_appender = tracing_appender::rolling::daily(LOG_DIR, LOG_FILENAME_PREFIX);
     let (non_blocking_file, _file_log_guard) = tracing_appender::non_blocking(file_appender);
     let registry = registry.with(
         fmt::Layer::new()
@@ -41,5 +43,6 @@ pub fn initialize() -> Trace {
     if let Err(err) = registry.try_init() {
         eprintln!("setting tracing default failed: {err}");
     }
+
     Trace { _file_log_guard }
 }

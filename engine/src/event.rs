@@ -9,9 +9,10 @@ pub struct DeviceId(pub(crate) ::winit::event::DeviceId);
 
 pub type Scancode = u32;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[must_use]
 pub enum Event<T> {
+    RedrawRequested(WindowId),
     WindowEvent {
         window_id: WindowId,
         event: WindowEvent,
@@ -23,10 +24,9 @@ pub enum Event<T> {
     UserEvent(T),
     Suspended,
     Resumed,
-    Unhandled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[must_use]
 pub enum WindowEvent {
     Resized(PhysicalSize<u32>),
@@ -78,10 +78,9 @@ pub enum WindowEvent {
         new_inner_size: PhysicalSize<u32>,
     },
     Occluded(bool),
-    Unhandled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[must_use]
 pub enum DeviceEvent {
     MouseMotion {
@@ -106,10 +105,9 @@ pub enum DeviceEvent {
     Text {
         codepoint: char,
     },
-    Unhandled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[must_use]
 pub enum KeyCode {
@@ -231,10 +229,9 @@ pub enum KeyCode {
     Semicolon,
     Slash,
     Tab,
-    Unhandled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[must_use]
 pub enum MouseButton {
@@ -244,7 +241,7 @@ pub enum MouseButton {
     Other(u16),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[must_use]
 pub enum MouseScrollDelta {
@@ -252,7 +249,7 @@ pub enum MouseScrollDelta {
     PixelDelta(PhysicalPosition<f64>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TouchPhase {
     Started,
@@ -261,7 +258,7 @@ pub enum TouchPhase {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[must_use]
 pub enum InputState {

@@ -6,8 +6,7 @@
 
 ## Roadmap
 
-- Vulkan re-work, all customizations/settings derived from game code
-- Dynamic mip-mapping, blending, 2d vs 3d
+- Engine cleanup/optimizations
 - 2D images
 - 2D shapes
 - Text rendering
@@ -18,11 +17,25 @@
 
 ## Core
 
+- Clean up old swapchains properly
 - Review <https://vkguide.dev/docs/introduction> for integration
 - Add methods to load shaders, lighting
 - Finish vulkan tutorial notes including major sections, options, logical
   grouping of structs, etc
 
+- Clean up cfg compilation and try to reduce messiness.
+- Add validation to Degrees/Radians - `new` returns `Option<T>`, unsafe `new_unchecked`
+  returns T, has a `debug_assert`, `get` returns inner type
+- Cleanup imgui integration with a trait or abstraction
+- Replace winit with Windowing trait
+- Make Context be constructable outside engine with a `render` method which
+  returns DrawLists. Renderer is separate in engine
+- Load mesh/texture early exit if already loaded
+- Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network,
+  Database
+- Switch RenderSettings to read from config file/env. Maybe use `cvars` crate
+- Put asset loader on separate thread.
+- All draw functions just add to the DrawLists
 - Condense time/timeEnd into a single macro
 - Create separate command pools for graphics vs transfer queues and a temporary
   one for TRANSIENT
@@ -36,7 +49,6 @@
 - Create trait extensions for renderer based on desired features (3d, 2d, etc)
 - Ensure any BufWriter calls use flush
 - Ensure math operators work on normal and reference types
-- Replace winit Windowing trait
 - Ensure pre-multiplied alpha blending
 - Maybe switch to `image` crate
 - Audio System

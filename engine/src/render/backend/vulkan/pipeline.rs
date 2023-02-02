@@ -75,12 +75,8 @@ pub(crate) fn create_default(
         .build();
     let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
         .sample_shading_enable(settings.sample_shading)
-        .min_sample_shading(1.0) // Closer to 1 is smoother
-        .rasterization_samples(if settings.sample_shading {
-            device.info.msaa_samples
-        } else {
-            vk::SampleCountFlags::TYPE_1
-        })
+        .min_sample_shading(0.2) // Closer to 1 is smoother
+        .rasterization_samples(device.info.msaa_samples)
         .build();
 
     let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
@@ -129,7 +125,7 @@ pub(crate) fn create_default(
         .multisample_state(multisample_state)
         .layout(layout);
 
-    let pipeline = pipeline_builder.build(device, render_pass)?;
+    let primary_pipeline = pipeline_builder.build(device, render_pass)?;
 
     // Cleanup
     unsafe {
@@ -137,7 +133,7 @@ pub(crate) fn create_default(
         device.destroy_shader_module(fragment_shader_module, None);
     }
 
-    Ok((layout, vec![pipeline]))
+    Ok((layout, vec![primary_pipeline]))
 }
 
 #[derive(Default, Clone)]
@@ -366,32 +362,26 @@ pub(crate) fn create_global_descriptor_pool(
 
     let count = 10;
     let pool_sizes = [
+        vk::DescriptorType::UNIFORM_BUFFER,
+        vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+        vk::DescriptorType::STORAGE_BUFFER,
+        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+    ]
+    .map(|ty| {
         vk::DescriptorPoolSize::builder()
-            .ty(vk::DescriptorType::UNIFORM_BUFFER)
+            .ty(ty)
             .descriptor_count(count)
-            .build(),
-        vk::DescriptorPoolSize::builder()
-            .ty(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-            .descriptor_count(count)
-            .build(),
-        vk::DescriptorPoolSize::builder()
-            .ty(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(count)
-            .build(),
-        vk::DescriptorPoolSize::builder()
-            .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(count)
-            .build(),
-    ];
+            .build()
+    });
 
     let descriptor_pool_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
         .max_sets(count);
 
     let pool = unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }
-        .context("failed to create descriptor pool")?;
+        .context("failed to create global descriptor pool")?;
 
-    tracing::debug!("created descriptor pool successfully");
+    tracing::debug!("created global descriptor pool successfully");
 
     Ok((set_layouts, pool))
 }

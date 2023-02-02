@@ -57,7 +57,7 @@ impl Frame {
                 QueueFamily::Graphics,
                 vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
             )?;
-            let command_buffers = command_pool::create_buffers(device, command_pool, 1)?;
+            let command_buffers = command_pool::create_buffers(device, command_pool, 2)?;
 
             #[cfg(debug_assertions)]
             if let Some(debug) = debug {

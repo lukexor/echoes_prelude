@@ -531,28 +531,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glfw"
-version = "0.49.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c70971598fc996224a36fe95256e90335242c00da647f7b0a0b125136613c54b"
-dependencies = [
- "bitflags",
- "glfw-sys",
- "objc",
- "raw-window-handle 0.5.0",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "glfw-sys"
-version = "4.0.0+3.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5abed6d39a50226676aab893d6b4ad154da7e93fcdfed90d7696758a1b477ed1"
-dependencies = [
- "cmake",
-]
-
-[[package]]
 name = "hermit-abi"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,6 +581,19 @@ dependencies = [
  "imgui-sys",
  "mint",
  "parking_lot",
+]
+
+[[package]]
+name = "imgui-rs-vulkan-renderer"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65fc0eb5a818882b28e5e5541db30e4fe34d3fc6412cfd6ca64398c3124b6ed2"
+dependencies = [
+ "ash",
+ "imgui",
+ "log",
+ "thiserror",
+ "ultraviolet",
 ]
 
 [[package]]
@@ -1107,11 +1098,13 @@ dependencies = [
  "cfg-if 1.0.0",
  "cocoa",
  "derive_more",
- "glfw",
+ "fnv",
  "imgui",
+ "imgui-rs-vulkan-renderer",
  "metal",
  "objc",
  "png",
+ "rand",
  "semver",
  "serde",
  "thiserror",
@@ -1141,6 +1134,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppv-lite86"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
+
+[[package]]
 name = "proc-macro-crate"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1167,6 +1166,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8856d8364d252a14d474036ea1358d63c9e6965c8e5c1885c18f73d70bff9c7b"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rand"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+dependencies = [
+ "libc",
+ "rand_chacha",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]
@@ -1234,6 +1263,15 @@ name = "safe_arch"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1ff3d6d9696af502cc3110dacce942840fb06ff4514cad92236ecc455f2ce05"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
+name = "safe_arch"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "794821e4ccb0d9f979512f9c1973480123f9bd62a90d74ab0f9426fcf8f4a529"
 dependencies = [
  "bytemuck",
 ]
@@ -1473,7 +1511,7 @@ dependencies = [
  "bytemuck",
  "cfg-if 1.0.0",
  "png",
- "safe_arch",
+ "safe_arch 0.5.2",
  "tiny-skia-path",
 ]
 
@@ -1608,6 +1646,15 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "ultraviolet"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf2728f3858937f50df6d92b741f53ef8fd5b5ae23b03b73fb9ac891e980df3b"
+dependencies = [
+ "wide",
 ]
 
 [[package]]
@@ -1786,6 +1833,16 @@ checksum = "bcda906d8be16e728fd5adc5b729afad4e444e106ab28cd1c7256e54fa61510f"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "wide"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "feff0a412894d67223777b6cc8d68c0dab06d52d95e9890d5f2d47f10dd9366c"
+dependencies = [
+ "bytemuck",
+ "safe_arch 0.6.0",
 ]
 
 [[package]]

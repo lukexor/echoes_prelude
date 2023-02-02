@@ -9,6 +9,9 @@ use crate::event::{
 use crate::window::{
     LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size, WindowId,
 };
+use crate::Error;
+use anyhow::anyhow;
+use std::fmt;
 
 impl From<winit::dpi::Size> for Size {
     fn from(size: winit::dpi::Size) -> Self {
@@ -130,32 +133,39 @@ impl From<winit::event::DeviceId> for DeviceId {
     }
 }
 
-impl<'a, T> From<winit::event::Event<'a, T>> for Event<T> {
-    fn from(event: winit::event::Event<'a, T>) -> Self {
-        match event {
-            winit::event::Event::NewEvents(_) => Self::Unhandled,
+impl<'a, T: fmt::Debug> TryFrom<winit::event::Event<'a, T>> for Event<T> {
+    type Error = Error;
+
+    fn try_from(event: winit::event::Event<'a, T>) -> Result<Self, Self::Error> {
+        Ok(match event {
             winit::event::Event::WindowEvent { window_id, event } => Self::WindowEvent {
                 window_id: window_id.into(),
-                event: event.into(),
+                event: event.try_into()?,
             },
             winit::event::Event::DeviceEvent { device_id, event } => Self::DeviceEvent {
                 device_id: device_id.into(),
-                event: event.into(),
+                event: event.try_into()?,
             },
             winit::event::Event::UserEvent(event) => Self::UserEvent(event),
+            winit::event::Event::RedrawRequested(window_id) => {
+                Self::RedrawRequested(window_id.into())
+            }
             winit::event::Event::Suspended => Self::Suspended,
             winit::event::Event::Resumed => Self::Resumed,
-            winit::event::Event::MainEventsCleared => Self::Unhandled,
-            winit::event::Event::RedrawRequested(_) => Self::Unhandled,
-            winit::event::Event::RedrawEventsCleared => Self::Unhandled,
-            winit::event::Event::LoopDestroyed => Self::Unhandled,
-        }
+            // winit::event::Event::NewEvents(_)
+            // winit::event::Event::MainEventsCleared
+            // winit::event::Event::RedrawEventsCleared
+            // winit::event::Event::LoopDestroyed
+            event => return Err(Error::Platform(anyhow!("unhandled winit event: {event:?}"))),
+        })
     }
 }
 
-impl<'a> From<winit::event::WindowEvent<'a>> for WindowEvent {
-    fn from(event: winit::event::WindowEvent<'a>) -> Self {
-        match event {
+impl<'a> TryFrom<winit::event::WindowEvent<'a>> for WindowEvent {
+    type Error = Error;
+
+    fn try_from(event: winit::event::WindowEvent<'a>) -> Result<Self, Self::Error> {
+        Ok(match event {
             winit::event::WindowEvent::Resized(size) => Self::Resized(size.into()),
             winit::event::WindowEvent::Moved(position) => Self::Moved(position.into()),
             winit::event::WindowEvent::CloseRequested => Self::CloseRequested,
@@ -168,7 +178,7 @@ impl<'a> From<winit::event::WindowEvent<'a>> for WindowEvent {
             } => Self::KeyboardInput {
                 device_id: device_id.into(),
                 scancode: input.scancode,
-                keycode: input.virtual_keycode.map(Into::into),
+                keycode: input.virtual_keycode.map(TryInto::try_into).transpose()?,
                 state: input.state.into(),
                 is_synthetic,
             },
@@ -238,16 +248,16 @@ impl<'a> From<winit::event::WindowEvent<'a>> for WindowEvent {
                 new_inner_size: (*new_inner_size).into(),
             },
             winit::event::WindowEvent::Occluded(occluded) => Self::Occluded(occluded),
-            _ => Self::Unhandled,
-        }
+            _ => return Err(Error::Platform(anyhow!("unhandled winit window event"))),
+        })
     }
 }
 
-impl From<winit::event::DeviceEvent> for DeviceEvent {
-    fn from(event: winit::event::DeviceEvent) -> Self {
-        match event {
-            winit::event::DeviceEvent::Added => Self::Unhandled,
-            winit::event::DeviceEvent::Removed => Self::Unhandled,
+impl TryFrom<winit::event::DeviceEvent> for DeviceEvent {
+    type Error = Error;
+
+    fn try_from(event: winit::event::DeviceEvent) -> Result<Self, Self::Error> {
+        Ok(match event {
             winit::event::DeviceEvent::MouseMotion { delta } => Self::MouseMotion { delta },
             winit::event::DeviceEvent::MouseWheel { delta } => Self::MouseWheel {
                 delta: delta.into(),
@@ -259,17 +269,22 @@ impl From<winit::event::DeviceEvent> for DeviceEvent {
             },
             winit::event::DeviceEvent::Key(input) => Self::Key {
                 scancode: input.scancode,
-                keycode: input.virtual_keycode.map(Into::into),
+                keycode: input.virtual_keycode.map(TryInto::try_into).transpose()?,
                 state: input.state.into(),
             },
             winit::event::DeviceEvent::Text { codepoint } => Self::Text { codepoint },
-        }
+            // winit::event::DeviceEvent::Added
+            // winit::event::DeviceEvent::Removed
+            _ => return Err(Error::Platform(anyhow!("unhandled winit device event"))),
+        })
     }
 }
 
-impl From<winit::event::VirtualKeyCode> for KeyCode {
-    fn from(keycode: winit::event::VirtualKeyCode) -> Self {
-        match keycode {
+impl TryFrom<winit::event::VirtualKeyCode> for KeyCode {
+    type Error = Error;
+
+    fn try_from(keycode: winit::event::VirtualKeyCode) -> Result<Self, Self::Error> {
+        Ok(match keycode {
             winit::event::VirtualKeyCode::Key1 => Self::Key1,
             winit::event::VirtualKeyCode::Key2 => Self::Key2,
             winit::event::VirtualKeyCode::Key3 => Self::Key3,
@@ -387,8 +402,12 @@ impl From<winit::event::VirtualKeyCode> for KeyCode {
             winit::event::VirtualKeyCode::RWin => Self::RWin,
             winit::event::VirtualKeyCode::Semicolon => Self::Semicolon,
             winit::event::VirtualKeyCode::Slash => Self::Slash,
-            _ => Self::Unhandled,
-        }
+            keycode => {
+                return Err(Error::Platform(anyhow!(
+                    "unhandled winit virtual keycode: {keycode:?}"
+                )))
+            }
+        })
     }
 }
 

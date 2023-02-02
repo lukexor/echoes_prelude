@@ -1,6 +1,8 @@
 use crate::{
-    math::{Mat4, Vec2, Vec3},
-    vec2, vec3, Result,
+    matrix::Mat4,
+    vec2, vec3, vec4,
+    vector::{Vec2, Vec3, Vec4},
+    Result,
 };
 use anyhow::Context as _;
 use std::{
@@ -19,14 +21,13 @@ pub(crate) const MAX_OBJECTS: usize = 10_000;
 pub struct Vertex {
     pub position: Vec3,
     pub normal: Vec3,
-    // TODO: add alpha
-    pub color: Vec3,
+    pub color: Vec4,
     pub uv: Vec2,
 }
 
 impl Vertex {
     /// Create a new `Vertex` instance.
-    pub fn new(position: Vec3, normal: Vec3, color: Vec3, uv: Vec2) -> Self {
+    pub fn new(position: Vec3, normal: Vec3, color: Vec4, uv: Vec2) -> Self {
         Self {
             position,
             normal,
@@ -114,19 +115,15 @@ impl Mesh {
                     mesh.normals[3 * v + 1],
                     mesh.normals[3 * v + 2],
                 );
-                // TODO: colors
                 let color = if mesh.vertex_color.is_empty() {
-                    vec3!(
+                    vec4!(
                         mesh.normals[3 * v],
                         mesh.normals[3 * v + 1],
                         mesh.normals[3 * v + 2],
+                        1.0,
                     )
                 } else {
-                    vec3!(
-                        mesh.vertex_color[3 * v],
-                        mesh.vertex_color[3 * v + 1],
-                        mesh.vertex_color[3 * v + 2],
-                    )
+                    vec4!(1.0, 1.0, 1.0, 1.0)
                 };
                 let uv = if mesh.texcoords.is_empty() {
                     vec2!()

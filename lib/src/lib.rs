@@ -44,16 +44,11 @@ pub mod trace;
 // pub use is required all exposed types for `hot_lib_reloader`
 pub use anyhow::Result;
 pub use game::{Game, GameEvent};
-pub use pix_engine::{context::Context, prelude::Event};
+pub use pix_engine::prelude::*;
 
 #[no_mangle]
-pub fn update(game: &mut Game, cx: &mut Context<GameEvent>) -> Result<()> {
-    game.update(cx)
-}
-
-#[no_mangle]
-pub fn render(game: &mut Game, cx: &mut Context<GameEvent>) -> Result<()> {
-    game.render(cx)
+pub fn on_update(game: &mut Game, cx: &mut Context<'_, GameEvent>) -> Result<()> {
+    game.on_update(cx)
 }
 
 #[no_mangle]
@@ -62,6 +57,6 @@ pub fn audio_samples(game: &mut Game) -> Result<Vec<f32>> {
 }
 
 #[no_mangle]
-pub fn on_event(game: &mut Game, cx: &mut Context<GameEvent>, event: Event<GameEvent>) {
+pub fn on_event(game: &mut Game, cx: &mut Context<'_, GameEvent>, event: Event<GameEvent>) {
     game.on_event(cx, event);
 }

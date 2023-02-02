@@ -61,7 +61,12 @@ impl Swapchain {
         // Select extent
         // NOTE: current_extent.width equal to u32::MAX means that the swapchain image
         // resolution can differ from the window resolution
-        let capabilities = &swapchain_support.capabilities;
+        let capabilities = unsafe {
+            surface
+                .loader
+                .get_physical_device_surface_capabilities(device.physical, surface.handle)
+        }
+        .context("Failed to query for surface capabilities.")?;
         let image_extent = if capabilities.current_extent.width == u32::MAX {
             let min = capabilities.min_image_extent;
             let max = capabilities.max_image_extent;
@@ -161,8 +166,8 @@ impl Swapchain {
         &self,
         device: &ash::Device,
         render_pass: vk::RenderPass,
-        color_attachment: vk::ImageView,
-        depth_attachment: vk::ImageView,
+        color_view: Option<vk::ImageView>,
+        depth_view: Option<vk::ImageView>,
     ) -> Result<Vec<vk::Framebuffer>> {
         tracing::debug!("creating framebuffers");
 
@@ -170,7 +175,14 @@ impl Swapchain {
             .image_views
             .iter()
             .map(|&image_view| {
-                let attachments = [color_attachment, depth_attachment, image_view];
+                let attachments = if let Some((color_view, depth_view)) = color_view.zip(depth_view)
+                {
+                    vec![color_view, depth_view, image_view]
+                } else if let Some(depth_view) = depth_view {
+                    vec![image_view, depth_view]
+                } else {
+                    vec![image_view]
+                };
                 let framebuffer_create_info = vk::FramebufferCreateInfo::builder()
                     .render_pass(render_pass)
                     .attachments(&attachments)

@@ -1,4 +1,4 @@
-use crate::math::{Vec2, Vec3};
+use crate::vector::{Vec2, Vec3};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
