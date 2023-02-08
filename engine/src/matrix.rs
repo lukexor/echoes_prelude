@@ -1,5 +1,5 @@
 use crate::{
-    num::{Angle, Radians},
+    num::Angle,
     vec3, vec4,
     vector::{Quaternion, Vec3, Vec4},
 };
@@ -257,13 +257,8 @@ impl Mat4 {
 
     /// Create a perspective projection matrix.
     #[inline]
-    pub fn perspective(
-        fov: Radians<f32>,
-        aspect_ratio: f32,
-        near_clip: f32,
-        far_clip: f32,
-    ) -> Self {
-        let tan_frac_fov_two = (fov * 0.5).tan();
+    pub fn perspective(fov: Angle, aspect_ratio: f32, near_clip: f32, far_clip: f32) -> Self {
+        let tan_frac_fov_two = (fov.to_radians() * 0.5).tan();
         let nf = far_clip - near_clip;
         let mut matrix = Self::identity();
 
@@ -338,7 +333,7 @@ impl Mat4 {
 
     /// Create a rotation matrix for about the x-axis for the given angle in degrees.
     #[inline]
-    pub fn rotation_x(angle: Angle<f32>) -> Self {
+    pub fn rotation_x(angle: Angle) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.to_radians().sin_cos();
         matrix[(1, 1)] = cos;
@@ -350,7 +345,7 @@ impl Mat4 {
 
     /// Create a rotation matrix for about the y-axis for the given angle in degrees.
     #[inline]
-    pub fn rotation_y(angle: Angle<f32>) -> Self {
+    pub fn rotation_y(angle: Angle) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.to_radians().sin_cos();
         matrix[(0, 0)] = cos;
@@ -362,7 +357,7 @@ impl Mat4 {
 
     /// Create a rotation matrix for about the z-axis for the given angle in degrees.
     #[inline]
-    pub fn rotation_z(angle: Angle<f32>) -> Self {
+    pub fn rotation_z(angle: Angle) -> Self {
         let mut matrix = Self::identity();
         let (sin, cos) = angle.to_radians().sin_cos();
         matrix[(0, 0)] = cos;

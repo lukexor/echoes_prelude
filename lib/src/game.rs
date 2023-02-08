@@ -143,18 +143,21 @@ impl Game {
             if cx.key_down(KeyCode::S) {
                 self.camera.move_backward(speed);
             }
+
+            let degrees = Degrees::new(-20.0 * speed);
             if cx.key_down(KeyCode::Left) {
-                self.camera.yaw(Degrees(-20.0 * speed));
+                self.camera.yaw(degrees);
             }
             if cx.key_down(KeyCode::Right) {
-                self.camera.yaw(Degrees(20.0 * speed));
+                self.camera.yaw(degrees);
             }
             if cx.key_down(KeyCode::Up) {
-                self.camera.pitch(Degrees(-20.0 * speed));
+                self.camera.pitch(degrees);
             }
             if cx.key_down(KeyCode::Down) {
-                self.camera.pitch(Degrees(20.0 * speed));
+                self.camera.pitch(degrees);
             }
+
             if cx.modifiers_down(ModifierKeys::SHIFT) && cx.key_down(KeyCode::Space) {
                 self.camera.move_down(speed);
             } else if cx.key_down(KeyCode::Space) {
@@ -199,10 +202,10 @@ impl Game {
             },
             Event::DeviceEvent { event, .. } => match event {
                 DeviceEvent::MouseMotion { delta: (x, y) } if !self.menu_is_open => {
-                    self.camera.yaw(Degrees(
+                    self.camera.yaw(Degrees::new(
                         x as f32 * self.config.mouse_sensitivity * cx.delta_time().as_secs_f32(),
                     ));
-                    self.camera.pitch(Degrees(
+                    self.camera.pitch(Degrees::new(
                         y as f32 * self.config.mouse_sensitivity * cx.delta_time().as_secs_f32(),
                     ));
                 }
@@ -211,7 +214,7 @@ impl Game {
                         MouseScrollDelta::LineDelta(_, y) => y * self.config.scroll_pixels_per_line,
                         MouseScrollDelta::PixelDelta(position) => position.y as f32,
                     };
-                    self.camera.zoom(Degrees(y));
+                    self.camera.zoom(Degrees::new(y));
                     self.projection_dirty = true;
                 }
                 DeviceEvent::Button {

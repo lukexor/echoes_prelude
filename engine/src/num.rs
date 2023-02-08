@@ -1,3 +1,5 @@
+use std::f32::consts::{FRAC_PI_2, PI};
+
 /// An angle in radians.
 #[derive(
     Default,
@@ -5,9 +7,9 @@
     Copy,
     Clone,
     PartialEq,
-    Eq,
     PartialOrd,
-    Ord,
+    derive_more::From,
+    derive_more::Into,
     derive_more::Deref,
     derive_more::DerefMut,
     derive_more::Add,
@@ -22,28 +24,43 @@
 )]
 #[must_use]
 #[repr(transparent)]
-pub struct Radians<T>(pub T);
+pub struct Radians(f32);
 
-impl From<Degrees<f32>> for Radians<f32> {
-    fn from(degrees: Degrees<f32>) -> Self {
+impl Radians {
+    /// Creates `Radians` without normalizing the value.
+    #[inline]
+    pub const fn new_unchecked(value: f32) -> Self {
+        Self(value)
+    }
+
+    /// Creates `Radians` normalized to -π..=π.
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        let mut value = (value + FRAC_PI_2) % PI;
+        if value < 0.0 {
+            value += PI;
+        }
+        Self(value - FRAC_PI_2)
+    }
+
+    /// Returns the value as a primitive type.
+    #[inline]
+    #[must_use]
+    pub fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<Degrees> for Radians {
+    /// Converts `Degrees` into `Radians`.
+    fn from(degrees: Degrees) -> Self {
         Radians(degrees.to_radians())
     }
 }
 
-impl From<Degrees<f64>> for Radians<f64> {
-    fn from(degrees: Degrees<f64>) -> Self {
-        Radians(degrees.to_radians())
-    }
-}
-
-impl From<&Degrees<f32>> for Radians<f32> {
-    fn from(degrees: &Degrees<f32>) -> Self {
-        Radians(degrees.to_radians())
-    }
-}
-
-impl From<&Degrees<f64>> for Radians<f64> {
-    fn from(degrees: &Degrees<f64>) -> Self {
+impl From<&Degrees> for Radians {
+    /// Converts `&Degrees` into `Radians`.
+    fn from(degrees: &Degrees) -> Self {
         Radians(degrees.to_radians())
     }
 }
@@ -54,9 +71,9 @@ impl From<&Degrees<f64>> for Radians<f64> {
     Copy,
     Clone,
     PartialEq,
-    Eq,
     PartialOrd,
-    Ord,
+    derive_more::From,
+    derive_more::Into,
     derive_more::Deref,
     derive_more::DerefMut,
     derive_more::Add,
@@ -71,69 +88,92 @@ impl From<&Degrees<f64>> for Radians<f64> {
 )]
 #[must_use]
 #[repr(transparent)]
-pub struct Degrees<T>(pub T);
+pub struct Degrees(f32);
 
-impl From<Radians<f32>> for Degrees<f32> {
-    fn from(radians: Radians<f32>) -> Self {
+impl Degrees {
+    /// Creates `Degrees` without normalizing the value.
+    #[inline]
+    pub const fn new_unchecked(value: f32) -> Self {
+        Self(value)
+    }
+
+    /// Creates `Degrees` normalized to -180.0..=180.0.
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        let mut value = (value + 180.0) % 360.0;
+        if value < 0.0 {
+            value += 360.0;
+        }
+        Self(value - 180.0)
+    }
+
+    /// Returns the value as a primitive type.
+    #[inline]
+    #[must_use]
+    pub fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<Radians> for Degrees {
+    /// Converts `Radians` into `Degrees`.
+    fn from(radians: Radians) -> Self {
         Degrees(radians.to_degrees())
     }
 }
 
-impl From<Radians<f64>> for Degrees<f64> {
-    fn from(radians: Radians<f64>) -> Self {
+impl From<&Radians> for Degrees {
+    /// Converts `&Radians` into `Degrees`.
+    fn from(radians: &Radians) -> Self {
         Degrees(radians.to_degrees())
     }
 }
 
-impl From<&Radians<f32>> for Degrees<f32> {
-    fn from(radians: &Radians<f32>) -> Self {
-        Degrees(radians.to_degrees())
-    }
-}
-
-impl From<&Radians<f64>> for Degrees<f64> {
-    fn from(radians: &Radians<f64>) -> Self {
-        Degrees(radians.to_degrees())
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, derive_more::From)]
 #[must_use]
-pub enum Angle<T> {
-    Radians(Radians<T>),
-    Degrees(Degrees<T>),
+pub enum Angle {
+    Radians(Radians),
+    Degrees(Degrees),
 }
 
-impl<T: Default> Default for Angle<T> {
+impl Default for Angle {
     fn default() -> Self {
-        Self::Degrees(Degrees(T::default()))
+        Self::Degrees(Degrees(0.0))
     }
 }
 
-impl<T> From<T> for Angle<T> {
-    fn from(value: T) -> Self {
+impl Angle {
+    /// Convert `Angle` to `Radians`.
+    #[inline]
+    pub fn to_radians(self) -> Radians {
+        match self {
+            Angle::Radians(radians) => radians,
+            Angle::Degrees(degrees) => degrees.into(),
+        }
+    }
+
+    /// Convert `Angle` to `Degrees`.
+    #[inline]
+    pub fn to_degrees(self) -> Degrees {
+        match self {
+            Angle::Radians(radians) => radians.into(),
+            Angle::Degrees(degrees) => degrees,
+        }
+    }
+
+    /// Returns the value as a primitive type.
+    #[inline]
+    #[must_use]
+    pub fn get(self) -> f32 {
+        match self {
+            Angle::Radians(radians) => radians.get(),
+            Angle::Degrees(degrees) => degrees.get(),
+        }
+    }
+}
+
+impl From<f32> for Angle {
+    fn from(value: f32) -> Self {
         Self::Degrees(Degrees(value))
-    }
-}
-
-impl Angle<f32> {
-    /// Convert this angle to radians.
-    #[inline]
-    pub fn to_radians(&self) -> Radians<f32> {
-        match self {
-            Angle::Radians(radians) => *radians,
-            Angle::Degrees(degrees) => degrees.into(),
-        }
-    }
-}
-
-impl Angle<f64> {
-    /// Convert this angle to radians.
-    #[inline]
-    pub fn to_radians(&self) -> Radians<f64> {
-        match self {
-            Angle::Radians(radians) => *radians,
-            Angle::Degrees(degrees) => degrees.into(),
-        }
     }
 }

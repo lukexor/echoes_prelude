@@ -2,13 +2,13 @@
 
 use crate::{matrix::Mat4, num::Degrees, vec3, vector::Vec3};
 
-const DEFAULT_YAW: Degrees<f32> = Degrees(-90.0);
-const DEFAULT_PITCH: Degrees<f32> = Degrees(0.0);
-const DEFAULT_FOV: Degrees<f32> = Degrees(45.0);
+const DEFAULT_YAW: Degrees = Degrees::new_unchecked(-90.0);
+const DEFAULT_PITCH: Degrees = Degrees::new_unchecked(0.0);
+const DEFAULT_FOV: Degrees = Degrees::new_unchecked(45.0);
 
-const PITCH_LIMIT: Degrees<f32> = Degrees(89.0);
-const FOV_MIN: Degrees<f32> = Degrees(1.0);
-const FOV_MAX: Degrees<f32> = Degrees(45.0);
+const PITCH_LIMIT: Degrees = Degrees::new_unchecked(89.0);
+const FOV_MIN: Degrees = Degrees::new_unchecked(1.0);
+const FOV_MAX: Degrees = Degrees::new_unchecked(45.0);
 
 #[derive(Default, Debug, Copy, Clone)]
 #[repr(C)]
@@ -27,9 +27,9 @@ pub struct Camera {
     up: Vec3,
     world_up: Vec3,
     right: Vec3,
-    yaw: Degrees<f32>,
-    pitch: Degrees<f32>,
-    fov: Degrees<f32>,
+    yaw: Degrees,
+    pitch: Degrees,
+    fov: Degrees,
     view: Mat4,
     is_dirty: bool,
 }
@@ -80,7 +80,7 @@ impl Camera {
 
     /// Get the `Camera` Field of View (FOV).
     #[inline]
-    pub fn fov(&self) -> Degrees<f32> {
+    pub fn fov(&self) -> Degrees {
         self.fov
     }
 
@@ -93,22 +93,24 @@ impl Camera {
 
     /// Angle the `Camera` left or right by a given amount.
     #[inline]
-    pub fn yaw(&mut self, amount: Degrees<f32>) {
+    pub fn yaw(&mut self, amount: Degrees) {
         self.yaw += amount;
         self.is_dirty = true;
     }
 
     /// Angle the `Camera` up or down by a given amount.
     #[inline]
-    pub fn pitch(&mut self, amount: Degrees<f32>) {
-        self.pitch = Degrees((self.pitch - amount).clamp(-*PITCH_LIMIT, *PITCH_LIMIT));
+    pub fn pitch(&mut self, amount: Degrees) {
+        // SAFETY: We clamp the values to the correct range.
+        self.pitch = Degrees::new((self.pitch - amount).clamp(-*PITCH_LIMIT, *PITCH_LIMIT));
         self.is_dirty = true;
     }
 
     /// Angle the `Camera` up or down by a given amount.
     #[inline]
-    pub fn zoom(&mut self, amount: Degrees<f32>) {
-        self.fov = Degrees((self.fov - amount).clamp(*FOV_MIN, *FOV_MAX));
+    pub fn zoom(&mut self, amount: Degrees) {
+        // SAFETY: We clamp the values to the correct range.
+        self.fov = Degrees::new((self.fov - amount).clamp(*FOV_MIN, *FOV_MAX));
     }
 
     /// Move the `Camera` forward towards the target.
