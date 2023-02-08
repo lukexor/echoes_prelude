@@ -18,10 +18,9 @@
 
 ## Tasks
 
-- 1 CORE Refactor Mat3/Mat4 with macros to reduce duplication
 - 1 CORE Experiment drop-order with shutdown method for destroying device
 - 1 TEST Plug values into `glm` to generate vec/mat/quat unit tests
-- 2 CORE Add imgui module for vulkan, remove extra dependency
+- 2 CORE remove imgui-renderer-vulkan
 - 2 CORE Load mesh/texture early exit if already loaded
 - 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database
 - 2 FEAT Add methods to load shaders
