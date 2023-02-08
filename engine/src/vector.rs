@@ -5,431 +5,499 @@ use std::{
 };
 
 macro_rules! impl_vector {
-    ($VecDim:ident, $dim:expr => $($field:ident),+) => {
-        #[doc = concat!("A ", stringify!($dim), "-dimensional vector")]
-        #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
-        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-        #[must_use]
-        pub struct $VecDim {
-            $(pub $field: f32),+
-        }
-
-        impl Default for $VecDim {
-            fn default() -> Self {
-                Self::origin()
-            }
-        }
-
-        impl $VecDim {
-            #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector from given coordinates.")]
-            #[inline]
-            pub fn new($($field: f32),+) -> Self {
-                Self { $($field),+ }
-            }
-
-            #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector at the origin.")]
-            #[inline]
-            pub fn origin() -> Self {
-                Self { $($field: 0.0),+ }
-            }
-
-            #[doc = concat!("Create a ", stringify!($dim), "-dimensional unit vector.")]
-            #[inline]
-            pub fn unit() -> Self {
-                Self { $($field: 1.0),+ }
-            }
-
-            /// Converts the vector into an array reference of `f32`.
+    ($({
+        $Vec:ident, $dim:expr => $($field:ident),+
+    }),+ $(,)?) => {
+        $(
+            #[doc = concat!("A ", stringify!($dim), "-dimensional vector.")]
+            #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
+            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
             #[must_use]
-            #[inline]
-            pub fn as_array(&self) -> &[f32; $dim] {
-                let array: &[f32; $dim] = unsafe { mem::transmute(self) };
-                array
+            pub struct $Vec {
+                $(pub $field: f32),+
             }
 
-            /// Converts the vector into a mutable array reference of `f32`.
-            #[must_use]
-            #[inline]
-            pub fn as_array_mut(&mut self) -> &mut [f32; $dim] {
-                let array: &mut [f32; $dim] = unsafe { mem::transmute(self) };
-                array
-            }
-
-            /// Converts the vector into an array of `f32`.
-            #[must_use]
-            #[inline]
-            pub fn to_array(self) -> [f32; $dim] {
-                let array: [f32; $dim] = unsafe { mem::transmute(self) };
-                array
-            }
-
-            /// Returns whether two vectors are equal given an epsilon.
-            #[must_use]
-            #[inline]
-            pub fn compare(&self, rhs: Self, epsilon: f32) -> bool {
-                self.iter()
-                    .zip(rhs.iter())
-                    .all(|(a, b)| (a - b).abs() <= epsilon)
-            }
-
-            /// Calculate the squared magnitude of the vector.
-            #[must_use]
-            #[inline]
-            pub fn magnitude_squared(&self) -> f32 {
-                self.iter().map(|val| val * val).sum()
-            }
-
-            /// Calculate the magnitude of the vector.
-            #[must_use]
-            #[inline]
-            pub fn magnitude(&self) -> f32 {
-                self.magnitude_squared().sqrt()
-            }
-
-            /// Normalize the vector into a unit vector.
-            #[inline]
-            pub fn normalize(&mut self) {
-                let magnitude = self.magnitude();
-                if magnitude != 0.0 {
-                    self.iter_mut().for_each(|val| *val *= magnitude.recip());
+            impl Default for $Vec {
+                fn default() -> Self {
+                    Self::origin()
                 }
             }
 
-            /// Create a normalized copy of the vector.
-            #[inline]
-            pub fn normalized(&self) -> Self {
-                let mut vector = *self;
-                vector.normalize();
-                vector
+            impl $Vec {
+                #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector from given coordinates.")]
+                #[inline]
+                pub fn new($($field: f32),+) -> Self {
+                    Self { $($field),+ }
+                }
+
+                #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector at the origin.")]
+                #[inline]
+                pub fn origin() -> Self {
+                    Self { $($field: 0.0),+ }
+                }
+
+                #[doc = concat!("Create a ", stringify!($dim), "-dimensional unit vector.")]
+                #[inline]
+                pub fn unit() -> Self {
+                    Self { $($field: 1.0),+ }
+                }
+
+                #[cfg(feature = "rand")]
+                #[doc = concat!("Create a ", stringify!($dim), "-dimensional random vector.")]
+                #[inline]
+                pub fn rand<R: rand::Rng>(rng: &mut R) -> Self {
+                    Self { $($field: rng.gen()),+ }
+                }
+
+                #[doc = concat!("Create a ", stringify!($dim), "-dimensional vector reference from given array of values.")]
+                #[inline]
+                pub fn from_array(array: &[f32; $dim]) -> &Self {
+                    let array: &Self = unsafe { mem::transmute(array) };
+                    array
+                }
+
+                #[doc = concat!("Create a ", stringify!($dim), "-dimensional mutable vector reference from given array of values.")]
+                #[inline]
+                pub fn from_array_mut(array: &mut [f32; $dim]) -> &mut Self {
+                    let array: &mut Self = unsafe { mem::transmute(array) };
+                    array
+                }
+
+                /// Converts the vector into an array reference of `f32`.
+                #[must_use]
+                #[inline]
+                pub fn as_array(&self) -> &[f32; $dim] {
+                    let array: &[f32; $dim] = unsafe { mem::transmute(self) };
+                    array
+                }
+
+                /// Converts the vector into a mutable array reference of `f32`.
+                #[must_use]
+                #[inline]
+                pub fn as_array_mut(&mut self) -> &mut [f32; $dim] {
+                    let array: &mut [f32; $dim] = unsafe { mem::transmute(self) };
+                    array
+                }
+
+                /// Converts the vector into an array of `f32`.
+                #[must_use]
+                #[inline]
+                pub fn to_array(self) -> [f32; $dim] {
+                    let array: [f32; $dim] = unsafe { mem::transmute(self) };
+                    array
+                }
+
+                /// Returns whether two vectors are equal given an epsilon.
+                #[must_use]
+                #[inline]
+                pub fn compare(&self, rhs: Self, epsilon: f32) -> bool {
+                    self.iter()
+                        .zip(rhs.iter())
+                        .all(|(a, b)| (a - b).abs() <= epsilon)
+                }
+
+                /// Calculate the squared magnitude of the vector.
+                #[must_use]
+                #[inline]
+                pub fn magnitude_squared(&self) -> f32 {
+                    self.iter().map(|val| val * val).sum()
+                }
+
+                /// Calculate the magnitude of the vector.
+                #[must_use]
+                #[inline]
+                pub fn magnitude(&self) -> f32 {
+                    self.magnitude_squared().sqrt()
+                }
+
+                /// Normalize the vector into a unit vector.
+                #[inline]
+                pub fn normalize(&mut self) {
+                    let magnitude = self.magnitude();
+                    if magnitude != 0.0 {
+                        self.iter_mut().for_each(|val| *val *= magnitude.recip());
+                    }
+                }
+
+                /// Create a normalized copy of the vector.
+                #[inline]
+                pub fn normalized(&self) -> Self {
+                    let mut vector = *self;
+                    vector.normalize();
+                    vector
+                }
+
+                /// Create the Euclidean distance between two vectors.
+                #[must_use]
+                #[inline]
+                pub fn distance(&self, vector: Self) -> f32 {
+                    (*self - vector).magnitude()
+                }
+
+                /// Create an iterator over the vector dimensions.
+                #[inline]
+                fn iter(&self) ->  std::slice::Iter<'_, f32> {
+                    self.as_array().iter()
+                }
+
+                /// Create a mutable iterator over the vector dimensions.
+                #[inline]
+                fn iter_mut(&mut self) -> std::slice::IterMut<'_, f32> {
+                    self.as_array_mut().iter_mut()
+                }
             }
 
-            /// Create the Euclidean distance between two vectors.
-            #[must_use]
-            #[inline]
-            pub fn distance(&self, vector: Self) -> f32 {
-                (*self - vector).magnitude()
+            impl IntoIterator for $Vec {
+                type Item = f32;
+                type IntoIter = std::array::IntoIter<Self::Item, $dim>;
+
+                fn into_iter(self) -> Self::IntoIter {
+                    self.to_array().into_iter()
+                }
             }
 
-            /// Create an iterator over the vector dimensions.
-            #[inline]
-            fn iter(&self) ->  std::slice::Iter<'_, f32> {
-                self.as_array().iter()
+            impl IntoIterator for &$Vec {
+                type Item = f32;
+                type IntoIter = std::array::IntoIter<Self::Item, $dim>;
+
+                fn into_iter(self) -> Self::IntoIter {
+                    self.to_array().into_iter()
+                }
             }
 
-            /// Create a mutable iterator over the vector dimensions.
-            #[inline]
-            fn iter_mut(&mut self) -> std::slice::IterMut<'_, f32> {
-                self.as_array_mut().iter_mut()
+            impl Index<usize> for $Vec {
+                type Output = f32;
+
+                fn index(&self, index: usize) -> &f32 {
+                    self.as_array().index(index)
+                }
             }
-        }
 
-        impl IntoIterator for $VecDim {
-            type Item = f32;
-            type IntoIter = std::array::IntoIter<Self::Item, $dim>;
-
-            fn into_iter(self) -> Self::IntoIter {
-                self.to_array().into_iter()
+            impl IndexMut<usize> for $Vec {
+                fn index_mut(&mut self, index: usize) -> &mut f32 {
+                    self.as_array_mut().index_mut(index)
+                }
             }
-        }
 
-        impl IntoIterator for &$VecDim {
-            type Item = f32;
-            type IntoIter = std::array::IntoIter<Self::Item, $dim>;
-
-            fn into_iter(self) -> Self::IntoIter {
-                self.to_array().into_iter()
+            impl From<[f32; $dim]> for $Vec {
+                fn from(array: [f32; $dim]) -> Self {
+                    let v: Self = unsafe { mem::transmute(array) };
+                    v
+                }
             }
-        }
 
-        impl Index<usize> for $VecDim {
-            type Output = f32;
-
-            fn index(&self, index: usize) -> &f32 {
-                self.as_array().index(index)
+            impl From<&[f32; $dim]> for &$Vec {
+                fn from(array: &[f32; $dim]) -> Self {
+                    let v: &Self = unsafe { mem::transmute(array) };
+                    v
+                }
             }
-        }
 
-        impl IndexMut<usize> for $VecDim {
-            fn index_mut(&mut self, index: usize) -> &mut f32 {
-                self.as_array_mut().index_mut(index)
+            impl Add for $Vec {
+                type Output = $Vec;
+
+                fn add(self, rhs: Self) -> Self::Output {
+                    $Vec::new($(self.$field + rhs.$field),+)
+                }
             }
-        }
 
-        impl From<[f32; $dim]> for $VecDim {
-            fn from(array: [f32; $dim]) -> Self {
-                let v: Self = unsafe { mem::transmute(array) };
-                v
+            impl Add for &$Vec {
+                type Output = $Vec;
+
+                fn add(self, rhs: Self) -> Self::Output {
+                    $Vec::new($(self.$field + rhs.$field),+)
+                }
             }
-        }
 
-        impl From<&[f32; $dim]> for &$VecDim {
-            fn from(array: &[f32; $dim]) -> Self {
-                let v: &Self = unsafe { mem::transmute(array) };
-                v
+            impl AddAssign for $Vec {
+                fn add_assign(&mut self, rhs: Self) {
+                    self.iter_mut()
+                        .zip(rhs.iter())
+                        .for_each(|(val, rhs)| *val += rhs);
+                }
             }
-        }
 
-        impl From<&mut [f32; $dim]> for &mut $VecDim {
-            fn from(array: &mut [f32; $dim]) -> Self {
-                let v: &mut Self = unsafe { mem::transmute(array) };
-                v
+            impl Sub for $Vec {
+                type Output = $Vec;
+
+                fn sub(self, rhs: Self) -> Self::Output {
+                    $Vec::new($(self.$field - rhs.$field),+)
+                }
             }
-        }
 
-        impl Add for $VecDim {
-            type Output = $VecDim;
+            impl Sub for &$Vec {
+                type Output = $Vec;
 
-            fn add(self, rhs: Self) -> Self::Output {
-                let mut vector = self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val += rhs);
-                vector
+                fn sub(self, rhs: Self) -> Self::Output {
+                    $Vec::new($(self.$field - rhs.$field),+)
+                }
             }
-        }
 
-        impl Add for &$VecDim {
-            type Output = $VecDim;
-
-            fn add(self, rhs: Self) -> Self::Output {
-                let mut vector = *self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val += rhs);
-                vector
+            impl SubAssign for $Vec {
+                fn sub_assign(&mut self, rhs: Self) {
+                    self.iter_mut()
+                        .zip(rhs.iter())
+                        .for_each(|(val, rhs)| *val -= rhs);
+                }
             }
-        }
 
-        impl AddAssign for $VecDim {
-            fn add_assign(&mut self, rhs: Self) {
-                self.iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val += rhs);
+            impl Mul for $Vec {
+                type Output = $Vec;
+
+                fn mul(self, rhs: Self) -> Self::Output {
+                    $Vec::new($(self.$field * rhs.$field),+)
+                }
             }
-        }
 
-        impl Sub for $VecDim {
-            type Output = $VecDim;
+            impl Mul<&$Vec> for $Vec {
+                type Output = $Vec;
 
-            fn sub(self, rhs: Self) -> Self::Output {
-                let mut vector = self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val -= rhs);
-                vector
+                fn mul(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(self.$field * rhs.$field),+)
+                }
             }
-        }
 
-        impl Sub for &$VecDim {
-            type Output = $VecDim;
+            impl Mul<$Vec> for &$Vec {
+                type Output = $Vec;
 
-            fn sub(self, rhs: Self) -> Self::Output {
-                let mut vector = *self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val -= rhs);
-                vector
+                fn mul(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(self.$field * rhs.$field),+)
+                }
             }
-        }
 
-        impl SubAssign for $VecDim {
-            fn sub_assign(&mut self, rhs: Self) {
-                self.iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val -= rhs);
+            impl Mul for &$Vec {
+                type Output = $Vec;
+
+                fn mul(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(self.$field * rhs.$field),+)
+                }
             }
-        }
 
-        impl Mul for $VecDim {
-            type Output = $VecDim;
+            impl Mul<f32> for $Vec {
+                type Output = $Vec;
 
-            fn mul(self, rhs: Self) -> Self::Output {
-                let mut vector = self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val *= rhs);
-                vector
+                fn mul(self, rhs: f32) -> Self::Output {
+                    $Vec::new($(self.$field * rhs),+)
+                }
             }
-        }
 
-        impl Mul for &$VecDim {
-            type Output = $VecDim;
+            impl Mul<&f32> for $Vec {
+                type Output = $Vec;
 
-            fn mul(self, rhs: Self) -> Self::Output {
-                let mut vector = *self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val *= rhs);
-                vector
+                fn mul(self, rhs: &f32) -> Self::Output {
+                    $Vec::new($(self.$field * rhs),+)
+                }
             }
-        }
 
-        impl Mul<f32> for $VecDim {
-            type Output = $VecDim;
+            impl Mul<f32> for &$Vec {
+                type Output = $Vec;
 
-            fn mul(self, rhs: f32) -> Self::Output {
-                let mut vector = self;
-                vector.iter_mut().for_each(|val| *val *= rhs);
-                vector
+                fn mul(self, rhs: f32) -> Self::Output {
+                    $Vec::new($(self.$field * rhs),+)
+                }
             }
-        }
 
-        impl Mul<f32> for &$VecDim {
-            type Output = $VecDim;
+            impl Mul<&f32> for &$Vec {
+                type Output = $Vec;
 
-            fn mul(self, rhs: f32) -> Self::Output {
-                let mut vector = *self;
-                vector.iter_mut().for_each(|val| *val *= rhs);
-                vector
+                fn mul(self, rhs: &f32) -> Self::Output {
+                    $Vec::new($(self.$field * rhs),+)
+                }
             }
-        }
 
-        impl Mul<$VecDim> for f32 {
-            type Output = $VecDim;
+            impl Mul<$Vec> for f32 {
+                type Output = $Vec;
 
-            fn mul(self, rhs: $VecDim) -> Self::Output {
-                let mut vector = rhs;
-                vector.iter_mut().for_each(|val| *val *= self);
-                vector
+                fn mul(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field * self),+)
+                }
             }
-        }
 
-        impl Mul<&$VecDim> for f32 {
-            type Output = $VecDim;
+            impl Mul<&$Vec> for f32 {
+                type Output = $Vec;
 
-            fn mul(self, rhs: &$VecDim) -> Self::Output {
-                let mut vector = *rhs;
-                vector.iter_mut().for_each(|val| *val *= self);
-                vector
+                fn mul(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field * self),+)
+                }
             }
-        }
 
-        impl MulAssign for $VecDim {
-            fn mul_assign(&mut self, rhs: Self) {
-                self.iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val *= rhs);
+            impl Mul<$Vec> for &f32 {
+                type Output = $Vec;
+
+                fn mul(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field * self),+)
+                }
             }
-        }
 
-        impl MulAssign<f32> for $VecDim {
-            fn mul_assign(&mut self, rhs: f32) {
-                self.iter_mut().for_each(|val| *val *= rhs);
+            impl Mul<&$Vec> for &f32 {
+                type Output = $Vec;
+
+                fn mul(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field * self),+)
+                }
             }
-        }
 
-        impl Div for $VecDim {
-            type Output = $VecDim;
-
-            fn div(self, rhs: Self) -> Self::Output {
-                let mut vector = self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val /= rhs);
-                vector
+            impl MulAssign for $Vec {
+                fn mul_assign(&mut self, rhs: Self) {
+                    self.iter_mut()
+                        .zip(rhs.iter())
+                        .for_each(|(val, rhs)| *val *= rhs);
+                }
             }
-        }
 
-        impl Div for &$VecDim {
-            type Output = $VecDim;
-
-            fn div(self, rhs: Self) -> Self::Output {
-                let mut vector = *self;
-                vector
-                    .iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val /= rhs);
-                vector
+            impl MulAssign<f32> for $Vec {
+                fn mul_assign(&mut self, rhs: f32) {
+                    self.iter_mut().for_each(|val| *val *= rhs);
+                }
             }
-        }
 
-        impl Div<f32> for $VecDim {
-            type Output = $VecDim;
-
-            fn div(self, rhs: f32) -> Self::Output {
-                let mut vector = self;
-                vector.iter_mut().for_each(|val| *val /= rhs);
-                vector
+            impl MulAssign<&f32> for $Vec {
+                fn mul_assign(&mut self, rhs: &f32) {
+                    self.iter_mut().for_each(|val| *val *= rhs);
+                }
             }
-        }
 
-        impl Div<f32> for &$VecDim {
-            type Output = $VecDim;
+            impl Div for $Vec {
+                type Output = $Vec;
 
-            fn div(self, rhs: f32) -> Self::Output {
-                let mut vector = *self;
-                vector.iter_mut().for_each(|val| *val /= rhs);
-                vector
+                fn div(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(self.$field / rhs.$field),+)
+                }
             }
-        }
 
-        impl Div<$VecDim> for f32 {
-            type Output = $VecDim;
+            impl Div<&$Vec> for $Vec {
+                type Output = $Vec;
 
-            fn div(self, rhs: $VecDim) -> Self::Output {
-                let mut vector = rhs;
-                vector.iter_mut().for_each(|val| *val /= self);
-                vector
+                fn div(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(self.$field / rhs.$field),+)
+                }
             }
-        }
 
-        impl Div<&$VecDim> for f32 {
-            type Output = $VecDim;
+            impl Div<$Vec> for &$Vec {
+                type Output = $Vec;
 
-            fn div(self, rhs: &$VecDim) -> Self::Output {
-                let mut vector = *rhs;
-                vector.iter_mut().for_each(|val| *val /= self);
-                vector
+                fn div(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(self.$field / rhs.$field),+)
+                }
             }
-        }
 
-        impl DivAssign for $VecDim {
-            fn div_assign(&mut self, rhs: Self) {
-                self.iter_mut()
-                    .zip(rhs.iter())
-                    .for_each(|(val, rhs)| *val /= rhs);
+            impl Div for &$Vec {
+                type Output = $Vec;
+
+                fn div(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(self.$field / rhs.$field),+)
+                }
             }
-        }
 
-        impl DivAssign<f32> for $VecDim {
-            fn div_assign(&mut self, rhs: f32) {
-                self.iter_mut().for_each(|val| *val /= rhs);
+            impl Div<f32> for $Vec {
+                type Output = $Vec;
+
+                fn div(self, rhs: f32) -> Self::Output {
+                    $Vec::new($(self.$field / rhs),+)
+                }
             }
-        }
 
-        impl Neg for $VecDim {
-            type Output = $VecDim;
+            impl Div<&f32> for $Vec {
+                type Output = $Vec;
 
-            fn neg(self) -> Self::Output {
-                let mut vector = self;
-                vector.iter_mut().for_each(|val| *val = val.neg());
-                vector
+                fn div(self, rhs: &f32) -> Self::Output {
+                    $Vec::new($(self.$field / rhs),+)
+                }
             }
-        }
 
-        impl Neg for &$VecDim {
-            type Output = $VecDim;
+            impl Div<f32> for &$Vec {
+                type Output = $Vec;
 
-            fn neg(self) -> Self::Output {
-                let mut vector = *self;
-                vector.iter_mut().for_each(|val| *val = val.neg());
-                vector
+                fn div(self, rhs: f32) -> Self::Output {
+                    $Vec::new($(self.$field / rhs),+)
+                }
             }
-        }
+
+            impl Div<&f32> for &$Vec {
+                type Output = $Vec;
+
+                fn div(self, rhs: &f32) -> Self::Output {
+                    $Vec::new($(self.$field / rhs),+)
+                }
+            }
+
+            impl Div<$Vec> for f32 {
+                type Output = $Vec;
+
+                fn div(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field / self),+)
+                }
+            }
+
+            impl Div<&$Vec> for f32 {
+                type Output = $Vec;
+
+                fn div(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field / self),+)
+                }
+            }
+
+            impl Div<$Vec> for &f32 {
+                type Output = $Vec;
+
+                fn div(self, rhs: $Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field / self),+)
+                }
+            }
+
+            impl Div<&$Vec> for &f32 {
+                type Output = $Vec;
+
+                fn div(self, rhs: &$Vec) -> Self::Output {
+                    $Vec::new($(rhs.$field / self),+)
+                }
+            }
+
+            impl DivAssign for $Vec {
+                fn div_assign(&mut self, rhs: Self) {
+                    self.iter_mut()
+                        .zip(rhs.iter())
+                        .for_each(|(val, rhs)| *val /= rhs);
+                }
+            }
+
+            impl DivAssign<f32> for $Vec {
+                fn div_assign(&mut self, rhs: f32) {
+                    self.iter_mut().for_each(|val| *val /= rhs);
+                }
+            }
+
+            impl DivAssign<&f32> for $Vec {
+                fn div_assign(&mut self, rhs: &f32) {
+                    self.iter_mut().for_each(|val| *val /= rhs);
+                }
+            }
+
+            impl Neg for $Vec {
+                type Output = $Vec;
+
+                fn neg(self) -> Self::Output {
+                    $Vec::new($(self.$field.neg()),+)
+                }
+            }
+
+            impl Neg for &$Vec {
+                type Output = $Vec;
+
+                fn neg(self) -> Self::Output {
+                    $Vec::new($(self.$field.neg()),+)
+                }
+            }
+        )+
     };
 }
 
-impl_vector!(Vec1, 1 => x);
-impl_vector!(Vec2, 2 => x, y);
-impl_vector!(Vec3, 3 => x, y, z);
-impl_vector!(Vec4, 4 => x, y, z, w);
+impl_vector! {
+    { Vec1, 1 => x },
+    { Vec2, 2 => x, y },
+    { Vec3, 3 => x, y, z },
+    { Vec4, 4 => x, y, z, w },
+}
 
 /// Constructs a new 1D [Vector].
 #[macro_export]
@@ -569,6 +637,13 @@ impl Vec2 {
     }
 }
 
+impl From<[f32; 1]> for Vec2 {
+    fn from(array: [f32; 1]) -> Self {
+        let v: Vec1 = unsafe { mem::transmute(array) };
+        Self::new(v.x, 0.0)
+    }
+}
+
 impl Vec3 {
     /// Return the `x` component as an array.
     #[inline]
@@ -627,6 +702,20 @@ impl Vec3 {
     pub fn to_rgb(&self) -> [u32; 3] {
         let rgb = *self * 255.0;
         [rgb.x as u32, rgb.y as u32, rgb.z as u32]
+    }
+
+    /// Truncates to a [Vec2] by removing the `i`th element, indexed from `0`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `i` is larger than `2`.
+    pub fn truncate(&self, i: usize) -> Vec2 {
+        match i {
+            0 => vec2!(self.y, self.z),
+            1 => vec2!(self.x, self.z),
+            2 => vec2!(self.x, self.y),
+            _ => panic!("index out of bounds. the len is 3 but the index is {i}"),
+        }
     }
 
     /// Create a 3D unit vector pointing up.
@@ -705,6 +794,20 @@ impl Vec3 {
     }
 }
 
+impl From<[f32; 1]> for Vec3 {
+    fn from(array: [f32; 1]) -> Self {
+        let v: Vec1 = unsafe { mem::transmute(array) };
+        Self::new(v.x, 0.0, 0.0)
+    }
+}
+
+impl From<[f32; 2]> for Vec3 {
+    fn from(array: [f32; 2]) -> Self {
+        let v: Vec2 = unsafe { mem::transmute(array) };
+        Self::new(v.x, v.y, 0.0)
+    }
+}
+
 impl Vec4 {
     /// Return the `x` component as an array.
     #[inline]
@@ -758,12 +861,48 @@ impl Vec4 {
         vec3!(self.xyz())
     }
 
+    /// Truncates to a [Vec3] by removing the `i`th element, indexed from `0`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `i` is larger than `3`.
+    pub fn truncate(&self, i: usize) -> Vec3 {
+        match i {
+            0 => vec3!(self.y, self.z, self.w),
+            1 => vec3!(self.x, self.z, self.w),
+            2 => vec3!(self.x, self.y, self.w),
+            3 => vec3!(self.x, self.y, self.z),
+            _ => panic!("index out of bounds. the len is 4 but the index is {i}"),
+        }
+    }
+
     /// Calculate the dot-product between two vectors, pairwise.
     #[must_use]
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn dot_pairwise(a: [f32; 4], b: [f32; 4]) -> f32 {
         a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+    }
+}
+
+impl From<[f32; 1]> for Vec4 {
+    fn from(array: [f32; 1]) -> Self {
+        let v: Vec1 = unsafe { mem::transmute(array) };
+        Self::new(v.x, 0.0, 0.0, 0.0)
+    }
+}
+
+impl From<[f32; 2]> for Vec4 {
+    fn from(array: [f32; 2]) -> Self {
+        let v: Vec2 = unsafe { mem::transmute(array) };
+        Self::new(v.x, v.y, 0.0, 0.0)
+    }
+}
+
+impl From<[f32; 3]> for Vec4 {
+    fn from(array: [f32; 3]) -> Self {
+        let v: Vec3 = unsafe { mem::transmute(array) };
+        Self::new(v.x, v.y, v.z, 0.0)
     }
 }
 

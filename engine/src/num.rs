@@ -1,5 +1,27 @@
 use std::f32::consts::{FRAC_PI_2, PI};
 
+pub trait ApproxEq {
+    type Type;
+
+    fn is_approx_eq(&self, rhs: Self::Type, epsilon: Self::Type) -> bool;
+}
+
+impl ApproxEq for f32 {
+    type Type = f32;
+
+    fn is_approx_eq(&self, rhs: f32, epsilon: f32) -> bool {
+        (self - rhs).abs() <= epsilon
+    }
+}
+
+impl ApproxEq for f64 {
+    type Type = f64;
+
+    fn is_approx_eq(&self, rhs: f64, epsilon: f64) -> bool {
+        (self - rhs).abs() <= epsilon
+    }
+}
+
 /// An angle in radians.
 #[derive(
     Default,
@@ -22,6 +44,8 @@ use std::f32::consts::{FRAC_PI_2, PI};
     derive_more::SubAssign,
     derive_more::Neg,
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 #[must_use]
 #[repr(transparent)]
 pub struct Radians(f32);
@@ -86,6 +110,8 @@ impl From<&Degrees> for Radians {
     derive_more::SubAssign,
     derive_more::Neg,
 )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 #[must_use]
 #[repr(transparent)]
 pub struct Degrees(f32);
@@ -130,6 +156,8 @@ impl From<&Radians> for Degrees {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, derive_more::From)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(untagged))]
 #[must_use]
 pub enum Angle {
     Radians(Radians),

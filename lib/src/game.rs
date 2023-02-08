@@ -57,11 +57,7 @@ impl Game {
             Texture::from_file("viking_room", "lib/assets/textures/viking_room.png").await?,
             DEFAULT_MATERIAL,
         );
-        cx.load_object(
-            "viking_room",
-            DEFAULT_MATERIAL,
-            Mat4::rotation(vec3!(-90.0, 0.0, 0.0)),
-        );
+        cx.load_object("viking_room", DEFAULT_MATERIAL, Mat4::identity());
 
         // cx.load_mesh(
         //     Mesh::from_file("provence_house", "lib/assets/models/provence_house.obj").await?,
@@ -82,8 +78,7 @@ impl Game {
                 cx.load_object(
                     "triangle",
                     DEFAULT_MATERIAL,
-                    Mat4::translation(vec3!(x as f32, 0.0, y as f32))
-                        * Mat4::scale(vec3!(0.2, 0.2, 0.2)),
+                    Mat4::translation([x as f32, 0.0, y as f32]) * Mat4::scaling([0.2; 3]),
                 );
             }
         }
@@ -104,10 +99,7 @@ impl Game {
         let time = cx.elapsed().as_secs_f32();
         let flash = time.sin().abs();
         cx.set_clear_color([0.0, 0.0, flash, 1.0]);
-        cx.set_object_transform(
-            "viking_room",
-            Mat4::rotation(vec3!(-90.0, 0.0, -120.0 + time * 20.0)),
-        );
+        cx.set_object_transform("viking_room", Mat4::rotation([90.0, 0.0, time * 20.0]));
 
         if self.menu_is_open {
             cx.ui()?.show_demo_window(&mut self.menu_is_open);
@@ -234,7 +226,7 @@ impl Game {
             return;
         }
         self.projection = Mat4::perspective(
-            self.camera.fov().into(),
+            self.camera.fov(),
             width as f32 / height as f32,
             self.config.near_clip,
             self.config.far_clip,

@@ -18,7 +18,6 @@
 
 ## Tasks
 
-- 1 CORE Add validation to Degrees/Radians - `new` returns `Option<T>`, unsafe `new_unchecked` returns T, has a `debug_assert`, `get` returns inner type
 - 1 CORE Refactor Mat3/Mat4 with macros to reduce duplication
 - 1 CORE Experiment drop-order with shutdown method for destroying device
 - 1 TEST Plug values into `glm` to generate vec/mat/quat unit tests

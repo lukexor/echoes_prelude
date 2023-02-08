@@ -47,7 +47,7 @@ impl Camera {
             yaw: DEFAULT_YAW,
             pitch: DEFAULT_PITCH,
             fov: DEFAULT_FOV,
-            view: Mat4::translation(position).inverse(),
+            view: Mat4::translation(position).inverse().unwrap_or_default(),
             is_dirty: true,
         };
         camera.update_view();
