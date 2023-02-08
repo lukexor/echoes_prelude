@@ -16,7 +16,7 @@ pub(crate) struct Device {
     pub(crate) info: DeviceInfo,
     pub(crate) graphics_queue: vk::Queue,
     pub(crate) present_queue: vk::Queue,
-    pub(crate) transfer_queue: vk::Queue,
+    pub(crate) _transfer_queue: vk::Queue,
 }
 
 impl Device {
@@ -47,7 +47,7 @@ impl Device {
             info,
             graphics_queue,
             present_queue,
-            transfer_queue,
+            _transfer_queue: transfer_queue,
         })
     }
 

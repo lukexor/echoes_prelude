@@ -90,7 +90,7 @@ macro_rules! impl_vector {
                 /// Returns whether two vectors are equal given an epsilon.
                 #[must_use]
                 #[inline]
-                pub fn compare(&self, rhs: Self, epsilon: f32) -> bool {
+                pub fn compare(&self, rhs: &Self, epsilon: f32) -> bool {
                     self.iter()
                         .zip(rhs.iter())
                         .all(|(a, b)| (a - b).abs() <= epsilon)
@@ -113,9 +113,9 @@ macro_rules! impl_vector {
                 /// Normalize the vector into a unit vector.
                 #[inline]
                 pub fn normalize(&mut self) {
-                    let magnitude = self.magnitude();
-                    if magnitude != 0.0 {
-                        self.iter_mut().for_each(|val| *val *= magnitude.recip());
+                    let magnitude = self.magnitude().recip();
+                    if magnitude.is_finite() {
+                        self.iter_mut().for_each(|val| *val *= magnitude);
                     }
                 }
 
@@ -567,6 +567,63 @@ macro_rules! vec4 {
     }};
 }
 
+impl Vec1 {
+    /// Return the `x` component as an array.
+    #[inline]
+    #[must_use]
+    pub fn x(&self) -> [f32; 1] {
+        [self.x]
+    }
+
+    /// Create a 1D vector from a 2D vector.
+    #[inline]
+    pub fn from_vec2(vector: Vec2) -> Self {
+        vec1!(vector.x())
+    }
+
+    /// Create a 1D vector from a 3D vector.
+    #[inline]
+    pub fn from_vec3(vector: Vec3) -> Self {
+        vec1!(vector.x())
+    }
+
+    /// Create a 1D vector from a 4D vector.
+    #[inline]
+    pub fn from_vec4(vector: Vec4) -> Self {
+        vec1!(vector.x())
+    }
+
+    /// Create a 2D vector from a 1D vector.
+    #[inline]
+    pub fn to_vec2(self, y: f32) -> Vec2 {
+        vec2!(self.x(), y)
+    }
+
+    /// Create a 3D vector from a 1D vector.
+    #[inline]
+    pub fn to_vec3(self, y: f32, z: f32) -> Vec3 {
+        vec3!(self.x(), y, z)
+    }
+
+    /// Create a 4D vector from a 1D vector.
+    #[inline]
+    pub fn to_vec4(self, y: f32, z: f32, w: f32) -> Vec4 {
+        vec4!(self.x(), y, z, w)
+    }
+
+    /// Create a 1D unit vector pointing left.
+    #[inline]
+    pub fn left() -> Self {
+        vec1!(-1.0)
+    }
+
+    /// Create a 1D unit vector pointing right.
+    #[inline]
+    pub fn right() -> Self {
+        vec1!(1.0)
+    }
+}
+
 impl From<f32> for Vec1 {
     fn from(x: f32) -> Self {
         Self { x }
@@ -588,6 +645,12 @@ impl Vec2 {
         [self.x, self.y]
     }
 
+    /// Create a 2D vector from a 1D vector.
+    #[inline]
+    pub fn from_vec1(vector: Vec1, y: f32) -> Self {
+        vec2!(vector.x(), y)
+    }
+
     /// Create a 2D vector from a 3D vector.
     #[inline]
     pub fn from_vec3(vector: Vec3) -> Self {
@@ -600,6 +663,12 @@ impl Vec2 {
         vec2!(vector.xy())
     }
 
+    /// Create a 1D vector from a 2D vector.
+    #[inline]
+    pub fn to_vec1(self) -> Vec1 {
+        vec1!(self.x())
+    }
+
     /// Create a 3D vector from a 2D vector.
     #[inline]
     pub fn to_vec3(self, z: f32) -> Vec3 {
@@ -610,6 +679,19 @@ impl Vec2 {
     #[inline]
     pub fn to_vec4(self, z: f32, w: f32) -> Vec4 {
         vec4!(self.xy(), z, w)
+    }
+
+    /// Truncates to 1D vector by removing the `i`th element, indexed from `0`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `i` is larger than `1`.
+    pub fn truncate(&self, i: usize) -> Vec1 {
+        match i {
+            0 => vec1!(self.y),
+            1 => vec1!(self.x),
+            _ => panic!("index out of bounds. the len is 2 but the index is {i}"),
+        }
     }
 
     /// Create a 2D unit vector pointing up.
@@ -666,6 +748,12 @@ impl Vec3 {
         [self.x, self.y, self.z]
     }
 
+    /// Create a 3D vector from a 1D vector.
+    #[inline]
+    pub fn from_vec1(vector: Vec2, y: f32, z: f32) -> Self {
+        vec3!(vector.x(), y, z)
+    }
+
     /// Create a 3D vector from a 2D vector.
     #[inline]
     pub fn from_vec2(vector: Vec2, z: f32) -> Self {
@@ -676,6 +764,12 @@ impl Vec3 {
     #[inline]
     pub fn from_vec4(vector: Vec4) -> Self {
         vec3!(vector.xy(), vector.z)
+    }
+
+    /// Create a 1D vector from a 3D vector.
+    #[inline]
+    pub fn to_vec1(self) -> Vec1 {
+        vec1!(self.x)
     }
 
     /// Create a 2D vector from a 3D vector.
@@ -696,7 +790,7 @@ impl Vec3 {
         vec3!(r as f32, g as f32, b as f32) / 255.0
     }
 
-    /// Create separate RGB values from the vector.
+    /// Create separate RGB values from the vector, scaled from 0.0..=1.0 to 0..=255.
     #[inline]
     #[must_use]
     pub fn to_rgb(&self) -> [u32; 3] {
@@ -704,7 +798,7 @@ impl Vec3 {
         [rgb.x as u32, rgb.y as u32, rgb.z as u32]
     }
 
-    /// Truncates to a [Vec2] by removing the `i`th element, indexed from `0`.
+    /// Truncates to 2D vector by removing the `i`th element, indexed from `0`.
     ///
     /// # Panic
     ///
@@ -762,6 +856,13 @@ impl Vec3 {
             .zip(rhs.iter())
             .map(|(val, rhs)| val * rhs)
             .sum()
+    }
+
+    /// Calculate the dot-product between two vectors, pairwise.
+    #[must_use]
+    #[inline]
+    pub fn dot_pairwise(a: [f32; 4], b: [f32; 4]) -> f32 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
     }
 
     /// Calculate the cross-product between two vectors.
@@ -837,6 +938,12 @@ impl Vec4 {
         [self.x, self.y, self.z, self.w]
     }
 
+    /// Create a 4D vector from a 1D vector.
+    #[inline]
+    pub fn from_vec1(vector: Vec1, y: f32, z: f32, w: f32) -> Self {
+        vec4!(vector.x(), y, z, w)
+    }
+
     /// Create a 4D vector from a 2D vector.
     #[inline]
     pub fn from_vec2(vector: Vec2, z: f32, w: f32) -> Self {
@@ -847,6 +954,12 @@ impl Vec4 {
     #[inline]
     pub fn from_vec3(vector: Vec3, w: f32) -> Self {
         vec4!(vector.xy(), vector.z, w)
+    }
+
+    /// Create a 1D vector from a 4D vector.
+    #[inline]
+    pub fn to_vec1(self) -> Vec1 {
+        vec1!(self.x())
     }
 
     /// Create a 2D vector from a 4D vector.
@@ -861,7 +974,7 @@ impl Vec4 {
         vec3!(self.xyz())
     }
 
-    /// Truncates to a [Vec3] by removing the `i`th element, indexed from `0`.
+    /// Truncates to a 3D vector by removing the `i`th element, indexed from `0`.
     ///
     /// # Panic
     ///
@@ -874,14 +987,6 @@ impl Vec4 {
             3 => vec3!(self.x, self.y, self.z),
             _ => panic!("index out of bounds. the len is 4 but the index is {i}"),
         }
-    }
-
-    /// Calculate the dot-product between two vectors, pairwise.
-    #[must_use]
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    pub fn dot_pairwise(a: [f32; 4], b: [f32; 4]) -> f32 {
-        a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
     }
 }
 
@@ -926,20 +1031,23 @@ impl Default for Quaternion {
 #[macro_export]
 macro_rules! quaternion {
     () => {
-        $crate::math::Quaternion::identity()
+        $crate::vector::Quaternion::identity()
     };
     ($val:expr) => {
-        $crate::math::Quaternion::from($val)
+        $crate::vector::Quaternion::from($val)
     };
-    ($x:expr, $y:expr $(,)?) => {
-        $crate::math::Quaternion::new($x, $y, 0.0, 0.0)
-    };
-    ($x:expr, $y:expr, $z:expr $(,)?) => {
-        $crate::math::Quaternion::new($x, $y, $z, 0.0)
-    };
-    ($x:expr, $y:expr, $z:expr, $w:expr $(,)?) => {
-        $crate::math::Quaternion::new($x, $y, $z, $w)
-    };
+    ($val:expr, $w:expr $(,)?) => {{
+        let v = $crate::vec3!($val);
+        $crate::vector::Quaternion::new(v.x, v.y, v.z, $w)
+    }};
+    ($val:expr, $z:expr, $w:expr $(,)?) => {{
+        let v = $crate::vec2!($val);
+        $crate::vector::Quaternion::new(v.x, v.y, $z, $w)
+    }};
+    ($val:expr, $y:expr, $z:expr, $w:expr $(,)?) => {{
+        let v = $crate::vec1!($val);
+        $crate::vector::Quaternion::new(v.x, $y, $z, $w)
+    }};
 }
 
 impl Quaternion {
@@ -978,7 +1086,9 @@ impl Quaternion {
     #[inline]
     pub fn normalize(&mut self) {
         let normal = self.normal();
-        self.iter_mut().for_each(|val| *val /= normal);
+        if normal.is_finite() && normal > 0.0 {
+            self.iter_mut().for_each(|val| *val /= normal);
+        }
     }
 
     /// Create a normalized copy of the `Quaternion`.
@@ -992,7 +1102,7 @@ impl Quaternion {
     /// Create a conjugate of the `Quaternion`.
     #[inline]
     pub fn conjugate(&self) -> Self {
-        Self::new(-self.x, -self.y, -self.z, self.w)
+        quaternion!(-self.x, -self.y, -self.z, self.w)
     }
 
     /// Create an inversed copy of the `Quaternion`.
@@ -1009,6 +1119,13 @@ impl Quaternion {
             .zip(rhs.iter())
             .map(|(val, rhs)| val * rhs)
             .sum()
+    }
+
+    /// Calculate the dot-product between two vectors, pairwise.
+    #[must_use]
+    #[inline]
+    pub fn dot_pairwise(a: [f32; 4], b: [f32; 4]) -> f32 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
     }
 
     /// Caclculate a spherical linear interpolation of the `Quaternion` with a given percentage.
@@ -1061,6 +1178,15 @@ impl Quaternion {
     pub fn to_array(self) -> [f32; 4] {
         let array: [f32; 4] = unsafe { mem::transmute(self) };
         array
+    }
+
+    /// Returns whether two `Quarternion`s are equal given an epsilon.
+    #[must_use]
+    #[inline]
+    pub fn compare(&self, rhs: &Self, epsilon: f32) -> bool {
+        self.iter()
+            .zip(rhs.iter())
+            .all(|(a, b)| (a - b).abs() <= epsilon)
     }
 
     /// Create an iterator over the `Quaternion` dimensions.
@@ -1122,23 +1248,16 @@ impl From<&[f32; 4]> for &Quaternion {
     }
 }
 
-impl From<&mut [f32; 4]> for &mut Quaternion {
-    fn from(array: &mut [f32; 4]) -> Self {
-        let v: &mut Self = unsafe { mem::transmute(array) };
-        v
-    }
-}
-
 impl Add for Quaternion {
     type Output = Quaternion;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut quaternion = self;
-        quaternion
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val += rhs);
-        quaternion
+        quaternion!(
+            self.x + rhs.x,
+            self.y + rhs.y,
+            self.z + rhs.z,
+            self.w + rhs.w,
+        )
     }
 }
 
@@ -1146,12 +1265,20 @@ impl Add for &Quaternion {
     type Output = Quaternion;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let mut quaternion = *self;
-        quaternion
-            .iter_mut()
+        quaternion!(
+            self.x + rhs.x,
+            self.y + rhs.y,
+            self.z + rhs.z,
+            self.w + rhs.w,
+        )
+    }
+}
+
+impl AddAssign for Quaternion {
+    fn add_assign(&mut self, rhs: Self) {
+        self.iter_mut()
             .zip(rhs.iter())
             .for_each(|(val, rhs)| *val += rhs);
-        quaternion
     }
 }
 
@@ -1159,12 +1286,12 @@ impl Sub for Quaternion {
     type Output = Quaternion;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut quaternion = self;
-        quaternion
-            .iter_mut()
-            .zip(rhs.iter())
-            .for_each(|(val, rhs)| *val -= rhs);
-        quaternion
+        quaternion!(
+            self.x - rhs.x,
+            self.y - rhs.y,
+            self.z - rhs.z,
+            self.w - rhs.w,
+        )
     }
 }
 
@@ -1172,24 +1299,54 @@ impl Sub for &Quaternion {
     type Output = Quaternion;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut quaternion = *self;
-        quaternion
-            .iter_mut()
+        quaternion!(
+            self.x - rhs.x,
+            self.y - rhs.y,
+            self.z - rhs.z,
+            self.w - rhs.w,
+        )
+    }
+}
+
+impl SubAssign for Quaternion {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.iter_mut()
             .zip(rhs.iter())
             .for_each(|(val, rhs)| *val -= rhs);
-        quaternion
     }
+}
+
+macro_rules! mul_quarternion {
+    ($Quat:expr, $Rhs:expr) => {{
+        let x = $Quat.x * $Rhs.w + $Quat.y * $Rhs.z - $Quat.z * $Rhs.y + $Quat.w * $Rhs.x;
+        let y = -$Quat.x * $Rhs.z + $Quat.y * $Rhs.w + $Quat.z * $Rhs.x + $Quat.w * $Rhs.y;
+        let z = $Quat.x * $Rhs.y - $Quat.y * $Rhs.x + $Quat.z * $Rhs.w + $Quat.w * $Rhs.z;
+        let w = -$Quat.x * $Rhs.x - $Quat.y * $Rhs.y - $Quat.z * $Rhs.z + $Quat.w * $Rhs.w;
+        quaternion!(x, y, z, w)
+    }};
 }
 
 impl Mul for Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let x = self.x * rhs.w + self.y * rhs.z - self.z * rhs.y + self.w * rhs.x;
-        let y = -self.x * rhs.z + self.y * rhs.w + self.z * rhs.x + self.w * rhs.y;
-        let z = self.x * rhs.y - self.y * rhs.x + self.z * rhs.w + self.w * rhs.z;
-        let w = -self.x * rhs.x - self.y * rhs.y - self.z * rhs.z + self.w * rhs.w;
-        Self::new(x, y, z, w)
+        mul_quarternion!(self, rhs)
+    }
+}
+
+impl Mul<&Quaternion> for Quaternion {
+    type Output = Quaternion;
+
+    fn mul(self, rhs: &Quaternion) -> Self::Output {
+        mul_quarternion!(self, rhs)
+    }
+}
+
+impl Mul<Quaternion> for &Quaternion {
+    type Output = Quaternion;
+
+    fn mul(self, rhs: Quaternion) -> Self::Output {
+        mul_quarternion!(self, rhs)
     }
 }
 
@@ -1197,11 +1354,7 @@ impl Mul for &Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let x = self.x * rhs.w + self.y * rhs.z - self.z * rhs.y + self.w * rhs.x;
-        let y = -self.x * rhs.z + self.y * rhs.w + self.z * rhs.x + self.w * rhs.y;
-        let z = self.x * rhs.y - self.y * rhs.x + self.z * rhs.w + self.w * rhs.z;
-        let w = -self.x * rhs.x - self.y * rhs.y - self.z * rhs.z + self.w * rhs.w;
-        Quaternion::new(x, y, z, w)
+        mul_quarternion!(self, rhs)
     }
 }
 
@@ -1209,9 +1362,15 @@ impl Mul<f32> for Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let mut quaternion = self;
-        quaternion.iter_mut().for_each(|val| *val *= rhs);
-        quaternion
+        quaternion!(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
+    }
+}
+
+impl Mul<&f32> for Quaternion {
+    type Output = Quaternion;
+
+    fn mul(self, rhs: &f32) -> Self::Output {
+        quaternion!(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
     }
 }
 
@@ -1219,9 +1378,15 @@ impl Mul<f32> for &Quaternion {
     type Output = Quaternion;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let mut quaternion = *self;
-        quaternion.iter_mut().for_each(|val| *val *= rhs);
-        quaternion
+        quaternion!(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
+    }
+}
+
+impl Mul<&f32> for &Quaternion {
+    type Output = Quaternion;
+
+    fn mul(self, rhs: &f32) -> Self::Output {
+        quaternion!(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
     }
 }
 
@@ -1229,9 +1394,7 @@ impl Neg for Quaternion {
     type Output = Quaternion;
 
     fn neg(self) -> Self::Output {
-        let mut quaternion = self;
-        quaternion.iter_mut().for_each(|val| *val = val.neg());
-        quaternion
+        quaternion!(self.x.neg(), self.y.neg(), self.z.neg(), self.w.neg())
     }
 }
 
@@ -1239,8 +1402,6 @@ impl Neg for &Quaternion {
     type Output = Quaternion;
 
     fn neg(self) -> Self::Output {
-        let mut quaternion = *self;
-        quaternion.iter_mut().for_each(|val| *val = val.neg());
-        quaternion
+        quaternion!(self.x.neg(), self.y.neg(), self.z.neg(), self.w.neg())
     }
 }

@@ -96,6 +96,22 @@ macro_rules! impl_matrix {
                     array
                 }
 
+                /// Converts the matrix into an array of column vectors.
+                #[inline]
+                pub fn to_array(self) -> [$Vec; $col_dim] {
+                    let array: [$Vec; $col_dim] = unsafe { mem::transmute(self) };
+                    array
+                }
+
+                /// Returns whether two matrices are equal given an epsilon.
+                #[must_use]
+                #[inline]
+                pub fn compare(&self, rhs: &Self, epsilon: f32) -> bool {
+                    self.iter()
+                        .zip(rhs.iter())
+                        .all(|(a, b)| a.compare(b, epsilon))
+                }
+
                 /// Create an iterator over the matrix columns.
                 #[inline]
                 pub fn iter(&self) -> std::slice::Iter<'_, $Vec> {
@@ -106,6 +122,24 @@ macro_rules! impl_matrix {
                 #[inline]
                 pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, $Vec> {
                     self.as_array_mut().iter_mut()
+                }
+            }
+
+            impl IntoIterator for $Mat {
+                type Item = $Vec;
+                type IntoIter = std::array::IntoIter<Self::Item, $col_dim>;
+
+                fn into_iter(self) -> Self::IntoIter {
+                    self.to_array().into_iter()
+                }
+            }
+
+            impl IntoIterator for &$Mat {
+                type Item = $Vec;
+                type IntoIter = std::array::IntoIter<Self::Item, $col_dim>;
+
+                fn into_iter(self) -> Self::IntoIter {
+                    self.to_array().into_iter()
                 }
             }
 
@@ -603,6 +637,58 @@ impl Mat3 {
         mat * Self::rotation(rotation)
     }
 
+    /// Create an up unit vector relative to the matrix.
+    #[inline]
+    pub fn up(&self) -> Vec3 {
+        vec3!(self[(0, 1)], self[(1, 1)], self[(2, 1)]).normalized()
+    }
+
+    /// Create a down unit vector relative to the matrix.
+    #[inline]
+    pub fn down(&self) -> Vec3 {
+        vec3!(-self[(0, 1)], -self[(1, 1)], -self[(2, 1)]).normalized()
+    }
+
+    /// Create a left unit vector relative to the matrix.
+    #[inline]
+    pub fn left(&self) -> Vec3 {
+        vec3!(-self[(0, 0)], -self[(1, 0)], -self[(2, 0)]).normalized()
+    }
+
+    /// Create a right unit vector relative to the matrix.
+    #[inline]
+    pub fn right(&self) -> Vec3 {
+        vec3!(self[(0, 0)], self[(1, 0)], self[(2, 0)]).normalized()
+    }
+
+    /// Create a forward unit vector relative to the matrix.
+    #[inline]
+    pub fn forward(&self) -> Vec3 {
+        vec3!(-self[(0, 2)], -self[(1, 2)], -self[(2, 2)]).normalized()
+    }
+
+    /// Create a backward unit vector relative to the matrix.
+    #[inline]
+    pub fn backward(&self) -> Vec3 {
+        vec3!(self[(0, 2)], self[(1, 2)], self[(2, 2)]).normalized()
+    }
+
+    /// Create a copy of the matrix inverted about the x-axis.
+    #[inline]
+    pub fn inverted_x(&self) -> Self {
+        let mut matrix = *self;
+        matrix[(0, 0)] *= -1.0;
+        matrix
+    }
+
+    /// Create a copy of the matrix inverted about the y-axis.
+    #[inline]
+    pub fn inverted_y(&self) -> Self {
+        let mut matrix = *self;
+        matrix[(1, 1)] *= -1.0;
+        matrix
+    }
+
     /// Create a transposed copy of the matrix.
     #[inline]
     pub fn transposed(&self) -> Self {
@@ -955,6 +1041,7 @@ impl Mat4 {
     }
 
     /// Create an inversed copy of the matrix.
+    #[must_use]
     pub fn inverse(&self) -> Option<Self> {
         let det = self.determinant();
         if det.is_approx_eq(0.0, f32::EPSILON) {
@@ -1041,7 +1128,7 @@ mod tests {
             [5.0, 6.0, 7.0, 8.0]
         );
         let v = vec4!(1.0, 2.0, 3.0, 4.0);
-        assert_eq!(m * v, vec4!(30.0, 70.0, 30.0, 70.0));
+        assert_eq!(m * v, vec4!(34.0, 44.0, 54.0, 64.0));
     }
 
     #[test]
@@ -1054,11 +1141,11 @@ mod tests {
         );
         assert!(m
             .forward()
-            .compare(vec3!(-0.366_508, -0.855_186, -0.366_508), 0.0002));
+            .compare(&vec3!(-0.366_508, -0.855_186, -0.366_508), 0.0002));
     }
 
     #[test]
-    fn test_translate() {
+    fn translate() {
         let v = vec3!(1.0, 3.0, 2.0);
         let t = Mat4::translation(v);
         assert_eq!(t[0], vec4!(1.0, 0.0, 0.0, 0.0));
@@ -1068,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn test_perspective() {
+    fn perspective() {
         let p = Mat4::perspective(
             Radians::new(std::f32::consts::PI * 2.0 * 45.0 / 360.0),
             1920.0 / 1080.0,

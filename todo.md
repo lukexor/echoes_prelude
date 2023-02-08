@@ -18,9 +18,8 @@
 
 ## Tasks
 
-- 1 CORE Experiment drop-order with shutdown method for destroying device
 - 1 TEST Plug values into `glm` to generate vec/mat/quat unit tests
-- 2 CORE remove imgui-renderer-vulkan
+- 2 CORE remove `imgui_rs_vulkan_renderer`
 - 2 CORE Load mesh/texture early exit if already loaded
 - 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database
 - 2 FEAT Add methods to load shaders

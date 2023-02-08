@@ -70,7 +70,6 @@ pub(crate) struct Object {
 pub(crate) struct VertexInputDescription {
     pub(crate) bindings: [vk::VertexInputBindingDescription; 1],
     pub(crate) attributes: [vk::VertexInputAttributeDescription; 4],
-    pub(crate) flags: vk::PipelineVertexInputStateCreateInfo,
 }
 
 impl VertexInputDescription {
@@ -122,7 +121,6 @@ impl VertexInputDescription {
                 color_attribute,
                 uv_attribute,
             ],
-            flags: vk::PipelineVertexInputStateCreateInfo::default(),
         }
     }
 }

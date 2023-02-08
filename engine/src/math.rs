@@ -1,5 +1,51 @@
 //! Math utilities.
 
+/// Generic range mapping trait for numbers.
+pub trait Map {
+    /// Re-map a value from one range to another range.
+    fn map(&self, from_min: Self, from_max: Self, to_min: Self, to_max: Self) -> Self;
+}
+
+macro_rules! impl_map {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl Map for $ty {
+                /// Re-map a value from one range to another range.
+                #[inline]
+                #[must_use]
+                fn map(&self, from_min: $ty, from_max: $ty, to_min: $ty, to_max: $ty) -> $ty {
+                    (((self - from_min) * (to_max - to_min)) / (from_max - from_min)) + to_min
+                }
+            }
+        )+
+    }
+}
+
+impl_map!(i8, u8, i16, u16, i32, u32, i64, u64, f32, f64, isize, usize);
+
+/// Generic linear interpolation trait for numbers.
+pub trait Lerp {
+    /// Linear interpolates between two values by a given amount.
+    fn lerp(&self, to: Self, amount: Self) -> Self;
+}
+
+macro_rules! impl_lerp {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl Lerp for $ty {
+                /// Re-map a value from one range to another range.
+                #[inline]
+                #[must_use]
+                fn lerp(&self, to: $ty, amount: $ty) -> $ty {
+                    (1.0 - amount) * self + amount * to
+                }
+            }
+        )+
+    }
+}
+
+impl_lerp!(f32, f64);
+
 #[cfg(feature = "rand")]
 pub mod rand {
     //! Random number generators.
@@ -31,16 +77,20 @@ pub mod rand {
     }
 }
 
-/// Re-map a value from one range to another range.
-#[inline]
-#[must_use]
-pub fn map(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
-    (((value - from_min) * (to_max - to_min)) / (from_max - from_min)) + to_min
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Linear interpolates between two values by a given amount.
-#[inline]
-#[must_use]
-pub fn lerp(from: f32, to: f32, amount: f32) -> f32 {
-    (1.0 - amount) * from + amount * to
+    #[test]
+    fn map() {
+        assert_eq!(50.map(0, 100, 0, 10), 5);
+        assert_eq!(3.map(0, 10, 0, 100), 30);
+        assert_eq!(9f32.map(0.0, 90.0, 0.0, 45.0), 4.5);
+    }
+
+    #[test]
+    fn lerp() {
+        assert_eq!(0f32.lerp(100.0, 0.5), 50.0);
+        assert_eq!(0f32.lerp(1.0, 0.2), 0.2);
+    }
 }
