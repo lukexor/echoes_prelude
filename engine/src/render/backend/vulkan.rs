@@ -38,6 +38,7 @@ use std::{
     path::PathBuf,
     ptr, slice,
 };
+use tokio::runtime::{self, Runtime};
 
 mod buffer;
 mod command_pool;
@@ -62,6 +63,7 @@ pub(crate) struct Context {
     frame_number: usize,
     current_frame: usize,
     settings: RenderSettings,
+    runtime: Runtime,
 
     _entry: ash::Entry,
     instance: ash::Instance,
@@ -241,6 +243,7 @@ impl RenderBackend for Context {
             frame_number: 0,
             current_frame: 0,
             settings,
+            runtime: runtime::Builder::new_multi_thread().enable_all().build()?,
 
             _entry: entry,
             instance,
@@ -464,10 +467,8 @@ impl RenderBackend for Context {
 
     /// Load a mesh into memory.
     fn load_mesh(&mut self, name: String, filename: PathBuf) -> Result<()> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        let mesh = rt
+        let mesh = self
+            .runtime
             .block_on(Mesh::from_file_asset(&filename))
             .with_context(|| format!("failed to load mesh asset {filename:?}"))?;
 
@@ -499,21 +500,18 @@ impl RenderBackend for Context {
 
     /// Load a texture into memory.
     fn load_texture(&mut self, name: String, filename: PathBuf, material_name: &str) -> Result<()> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        let texture = rt
+        let texture = self
+            .runtime
             .block_on(TextureAsset::load(&filename))
-            .with_context(|| format!("failed to load texture asset {filename:?}"))?;
-
-        let texture_image = AllocatedImage::create_texture(
+            .context("failed to load texture {filename:?}")?;
+        let texture_image = self.runtime.block_on(AllocatedImage::create_texture(
             &self.instance,
             &self.device,
             self.graphics_command_pool,
             self.device.graphics_queue,
             &texture,
             self.debug.as_ref(),
-        )?;
+        ))?;
 
         let material = self
             .materials

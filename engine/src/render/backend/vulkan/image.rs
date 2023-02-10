@@ -12,6 +12,7 @@ use ash::vk;
 use asset_loader::{Asset, TextureAsset, UnpackInto};
 use derive_more::{Deref, DerefMut};
 use std::slice;
+use tokio::runtime::Runtime;
 
 #[derive(Deref, DerefMut)]
 #[must_use]
@@ -183,7 +184,7 @@ impl AllocatedImage {
 
     /// Create a [vk::Image] instance to be used as a texture.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn create_texture(
+    pub(crate) async fn create_texture(
         instance: &ash::Instance,
         device: &Device,
         command_pool: vk::CommandPool,
@@ -219,10 +220,9 @@ impl AllocatedImage {
                 )
                 .context("failed to map texture buffer memory")?;
             let memory = slice::from_raw_parts_mut(memory.cast(), texture.size());
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            rt.block_on(texture.unpack_into(memory))
+            texture
+                .unpack_into(memory)
+                .await
                 .context("failed to unpack texture data")?;
             device.handle.unmap_memory(staging_buffer.memory);
         };
