@@ -1,18 +1,11 @@
 //! Traits and types for renderer backends.
 
-use crate::{
-    mesh::{Mesh, Texture},
-    prelude::*,
-    window::Window,
-    Result,
-};
+use crate::{prelude::*, window::Window, Result};
 
 pub(crate) use backend::{RenderBackend, RenderContext};
-pub use shape::DrawShape;
-use std::fmt;
+use std::{fmt, path::PathBuf};
 
 mod backend;
-pub mod shape;
 
 pub trait Render {
     /// Set the clear color for the next frame.
@@ -31,10 +24,15 @@ pub trait Render {
     fn set_object_transform(&mut self, mesh: &'static str, transform: impl Into<Mat4>);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, mesh: impl Into<Mesh>);
+    fn load_mesh(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>);
 
     /// Load a texture into memory.
-    fn load_texture(&mut self, texture: impl Into<Texture>, material: &'static str);
+    fn load_texture(
+        &mut self,
+        name: impl Into<String>,
+        filename: impl Into<PathBuf>,
+        material: &'static str,
+    );
 
     /// Load an object to the current scene.
     fn load_object(
@@ -77,7 +75,7 @@ impl<C: RenderBackend> Renderer<C> {
     }
 
     /// Draws a frame.
-    pub(crate) fn draw_frame(&mut self, draw_data: &DrawData<'_>) -> Result<()> {
+    pub(crate) fn draw_frame(&mut self, draw_data: &mut DrawData<'_>) -> Result<()> {
         self.cx.draw_frame(draw_data)
     }
 }
@@ -122,15 +120,24 @@ impl<T> Render for Context<'_, T> {
 
     /// Load a mesh into memory.
     #[inline]
-    fn load_mesh(&mut self, mesh: impl Into<Mesh>) {
-        self.cx.draw_cmds.push(DrawCmd::LoadMesh(mesh.into()));
+    fn load_mesh(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>) {
+        self.cx.draw_cmds.push(DrawCmd::LoadMesh {
+            name: name.into(),
+            filename: filename.into(),
+        });
     }
 
     /// Load a texture into memory.
     #[inline]
-    fn load_texture(&mut self, texture: impl Into<Texture>, material: &'static str) {
+    fn load_texture(
+        &mut self,
+        name: impl Into<String>,
+        filename: impl Into<PathBuf>,
+        material: &'static str,
+    ) {
         self.cx.draw_cmds.push(DrawCmd::LoadTexture {
-            texture: texture.into(),
+            name: name.into(),
+            filename: filename.into(),
             material,
         });
     }
@@ -162,9 +169,13 @@ pub enum DrawCmd {
         name: &'static str,
         transform: Mat4,
     },
-    LoadMesh(Mesh),
+    LoadMesh {
+        name: String,
+        filename: PathBuf,
+    },
     LoadTexture {
-        texture: Texture,
+        name: String,
+        filename: PathBuf,
         material: &'static str,
     },
     LoadObject {
@@ -177,7 +188,7 @@ pub enum DrawCmd {
 #[derive(Default)]
 #[must_use]
 pub struct DrawData<'a> {
-    pub(crate) data: &'a [DrawCmd],
+    pub(crate) data: Vec<DrawCmd>,
     #[cfg(feature = "imgui")]
     pub(crate) imgui: Option<&'a imgui::DrawData>,
 }

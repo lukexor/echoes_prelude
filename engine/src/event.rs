@@ -2,6 +2,7 @@
 
 use crate::window::{PhysicalPosition, PhysicalSize, WindowId};
 use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[must_use]
@@ -107,8 +108,7 @@ pub enum DeviceEvent {
     },
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub enum KeyCode {
     Key1,
@@ -231,8 +231,7 @@ pub enum KeyCode {
     Tab,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[must_use]
 pub enum MouseButton {
     Left,
@@ -241,16 +240,14 @@ pub enum MouseButton {
     Other(u16),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[must_use]
 pub enum MouseScrollDelta {
     LineDelta(f32, f32),
     PixelDelta(PhysicalPosition<f64>),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TouchPhase {
     Started,
     Moved,
@@ -258,8 +255,7 @@ pub enum TouchPhase {
     Cancelled,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub enum InputState {
     Pressed,
@@ -267,8 +263,7 @@ pub enum InputState {
 }
 
 bitflags! {
-    #[derive(Default)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[derive(Default, Serialize, Deserialize)]
     #[must_use]
     pub struct ModifierKeys: u16 {
         /// No key modifier.

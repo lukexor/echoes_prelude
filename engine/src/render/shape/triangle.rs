@@ -1,7 +1,7 @@
 use crate::vector::{Vec2, Vec3};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[must_use]
 pub struct Tri {
     pub p0: Vec3,

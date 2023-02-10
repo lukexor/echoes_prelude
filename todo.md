@@ -1,9 +1,5 @@
 # TODO
 
-## Bugs
-
--
-
 ## Roadmap
 
 - Review <https://vkguide.dev/docs/introduction> for integration
@@ -18,19 +14,22 @@
 
 ## Tasks
 
-- 1 TEST Plug values into `glm` to generate vec/mat/quat unit tests
-- 2 CORE remove `imgui_rs_vulkan_renderer`
-- 2 CORE Load mesh/texture early exit if already loaded
-- 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database
-- 2 FEAT Add methods to load shaders
+- 1 CORE Descriptor Abstraction <https://vkguide.dev/docs/extra-chapter/abstracting_descriptors/>
+- 1 CORE GPU Driven <https://vkguide.dev/docs/gpudriven>
+- 2 CORE Fix mouse cursor to pointer for imgui
+- 2 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
+- 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database, early exit if already loaded
+- 2 CORE Add methods to load shaders
 - 2 PERF Add SIMD to vector/math operations
+- 3 CORE remove `imgui_rs_vulkan_renderer`
 - 3 CORE Replace winit with Windowing trait
 - 3 PERF Perform refactor/cleanup pass (incl. `cfg` conditions)
+- 4 CORE Shape drawing trait
 - 4 CORE Simplify physical device selection
 - 4 FEAT Add lighting
 - 4 PERF Clean up old swapchains properly
 - 5 FEAT Switch RenderSettings to read from config file/env. Maybe use `cvars` crate
-- 6 CORE Put asset loader on separate thread.
+- 5 TEST Plug values into `glm` to generate vec/mat/quat unit tests
 - 6 FEAT Controller Input
 - 7 CORE Ensure pre-multiplied alpha blending
 - 7 CORE Ensure shader snaps pixels to whole numbers
@@ -43,7 +42,6 @@
 - 8 FEAT Create texture atlas/sprite sheet
 - 8 PERF Add `assert` bounds checks to hot loops to avoid index checking
 - 9 API Condense time/timeEnd into a single macro
-- 9 API Ensure math operators work on normal and reference types
 - 9 API Make example constructing EngineContext standalone with bring-your-own render loop
 - 9 ART Ensure images are pre-multiplied alpha
 - 9 ART First screen background

@@ -9,6 +9,7 @@ use crate::{
 };
 use std::{
     fmt::{Debug, Write},
+    mem,
     time::{Duration, Instant},
 };
 
@@ -415,12 +416,12 @@ impl<T> EngineContext<T> {
                 .set_cursor_grab(CursorGrabMode::Confined)
                 .or_else(|_e| self.window.set_cursor_grab(CursorGrabMode::Locked))
             {
-                tracing::error!("failed to grab cursor: {err}");
+                tracing::error!("failed to grab cursor: {err:?}");
             }
             self.window.set_cursor_visible(false);
         } else {
             if let Err(err) = self.window.set_cursor_grab(CursorGrabMode::None) {
-                tracing::error!("failed to ungrab cursor: {err}");
+                tracing::error!("failed to ungrab cursor: {err:?}");
             }
             self.window.set_cursor_visible(true);
         }
@@ -444,7 +445,7 @@ impl<T> EngineContext<T> {
     #[inline]
     pub fn render<'a>(&'a mut self, imgui: &'a mut imgui::ImGui) -> DrawData<'a> {
         DrawData {
-            data: &self.draw_cmds,
+            data: mem::take(&mut self.draw_cmds),
             imgui: Some(imgui.render()),
         }
     }

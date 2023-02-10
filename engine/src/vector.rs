@@ -1,4 +1,5 @@
 use crate::matrix::Mat4;
+use serde::{Deserialize, Serialize};
 use std::{
     mem,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -10,8 +11,7 @@ macro_rules! impl_vector {
     }),+ $(,)?) => {
         $(
             #[doc = concat!("A ", stringify!($dim), "-dimensional vector.")]
-            #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
-            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+            #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Serialize, Deserialize)]
             #[must_use]
             pub struct $Vec {
                 $(pub $field: f32),+

@@ -6,11 +6,12 @@ use super::{
     debug::Debug,
     device::Device,
 };
-use crate::{mesh::Texture, render::RenderSettings, render_bail, Result};
+use crate::{render::RenderSettings, render_bail, Result};
 use anyhow::Context;
 use ash::vk;
+use asset_loader::{Asset, TextureAsset, UnpackInto};
 use derive_more::{Deref, DerefMut};
-use std::{ptr, slice};
+use std::slice;
 
 #[derive(Deref, DerefMut)]
 #[must_use]
@@ -187,16 +188,21 @@ impl AllocatedImage {
         device: &Device,
         command_pool: vk::CommandPool,
         graphics_queue: vk::Queue,
-        texture: &Texture,
+        texture: &TextureAsset,
         #[allow(unused)] debug: Option<&Debug>,
     ) -> Result<Self> {
-        tracing::debug!("creating texture named `{}`", texture.name);
+        let texture_name = texture.name();
+
+        tracing::debug!(
+            "creating texture named `{texture_name}`, size: {}",
+            texture.size()
+        );
 
         // Staging Buffer
         let staging_buffer = AllocatedBuffer::create(
             device,
-            &texture.name,
-            texture.size as u64,
+            texture_name,
+            texture.size() as u64,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
             debug,
@@ -208,21 +214,28 @@ impl AllocatedImage {
                 .map_memory(
                     staging_buffer.memory,
                     0,
-                    texture.size as u64,
+                    texture.size() as u64,
                     vk::MemoryMapFlags::empty(),
                 )
                 .context("failed to map texture buffer memory")?;
-            ptr::copy_nonoverlapping(texture.pixels.as_ptr(), memory.cast(), texture.pixels.len());
+            let memory = slice::from_raw_parts_mut(memory.cast(), texture.size());
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(texture.unpack_into(memory))
+                .context("failed to unpack texture data")?;
             device.handle.unmap_memory(staging_buffer.memory);
         };
 
         // Texture Image
+        // TODO: MIP
+        let mip_levels = 1;
         let (image, memory) = AllocatedImage::create(
             device,
-            &texture.name,
+            texture_name,
             texture.width,
             texture.height,
-            texture.mip_levels,
+            mip_levels,
             vk::SampleCountFlags::TYPE_1,
             vk::Format::R8G8B8A8_SRGB,
             vk::ImageTiling::OPTIMAL,
@@ -246,7 +259,7 @@ impl AllocatedImage {
                     vk::ImageSubresourceRange::builder()
                         .aspect_mask(vk::ImageAspectFlags::COLOR)
                         .base_mip_level(0)
-                        .level_count(texture.mip_levels)
+                        .level_count(mip_levels)
                         .base_array_layer(0)
                         .layer_count(1)
                         .build(),
@@ -280,6 +293,7 @@ impl AllocatedImage {
         )?;
 
         // Mipmap
+        // TODO: move to asset loader
         let format = vk::Format::R8G8B8A8_SRGB;
         Self::generate_mipmaps(
             instance,
@@ -290,16 +304,16 @@ impl AllocatedImage {
             format,
             texture.width,
             texture.height,
-            texture.mip_levels,
+            mip_levels,
         )?;
 
         let view = Self::create_view(
             device,
-            &texture.name,
+            texture_name,
             image,
             format,
             vk::ImageAspectFlags::COLOR,
-            texture.mip_levels,
+            mip_levels,
             debug,
         )?;
 
@@ -308,7 +322,7 @@ impl AllocatedImage {
             staging_buffer.destroy(device);
         }
 
-        tracing::debug!("created texture named `{}` successfully", texture.name);
+        tracing::debug!("created texture named `{texture_name}` successfully");
 
         Ok(Self {
             handle: image,

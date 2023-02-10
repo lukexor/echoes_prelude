@@ -4,7 +4,7 @@ use crate::config::Config;
 use anyhow::Result;
 use pix_engine::{
     camera::Camera,
-    mesh::{Mesh, Texture, Vertex, DEFAULT_MATERIAL},
+    mesh::{Vertex, DEFAULT_MATERIAL},
     prelude::*,
 };
 
@@ -37,8 +37,28 @@ impl Game {
     }
 
     /// Initialize the `Game` instance.
-    pub async fn initialize(&mut self, cx: &mut Context<'_, GameEvent>) -> Result<()> {
+    pub fn initialize(&mut self, cx: &mut Context<'_, GameEvent>) -> Result<()> {
         self.update_projection(cx.width(), cx.height());
+
+        cx.load_mesh("viking_room", "lib/assets/meshes/viking_room.mesh");
+        cx.load_texture(
+            "viking_room",
+            "lib/assets/textures/viking_room.tx",
+            DEFAULT_MATERIAL,
+        );
+        cx.load_object("viking_room", DEFAULT_MATERIAL, Mat4::identity());
+
+        cx.load_mesh("provence_house", "lib/assets/meshes/provence_house.mesh");
+        cx.load_texture(
+            "provence_house",
+            "lib/assets/textures/provence_house.tx",
+            DEFAULT_MATERIAL,
+        );
+        cx.load_object(
+            "provence_house",
+            DEFAULT_MATERIAL,
+            Mat4::translation([0.0, 3.0, 0.0]) * Mat4::rotation([90.0, 0.0, 0.0]),
+        );
 
         // FIXME: tmp
         let mut vertices = vec![Vertex::default(); 3];
@@ -49,30 +69,7 @@ impl Game {
         vertices[0].color = vec4![0.0, 1.0, 0.0, 1.0];
         vertices[1].color = vec4![0.0, 1.0, 0.0, 1.0];
         vertices[2].color = vec4![0.0, 1.0, 0.0, 1.0];
-
-        // TODO:
-        // cx.load_material();
-        cx.load_mesh(Mesh::from_file("viking_room", "lib/assets/models/viking_room.obj").await?);
-        cx.load_texture(
-            Texture::from_file("viking_room", "lib/assets/textures/viking_room.png").await?,
-            DEFAULT_MATERIAL,
-        );
-        cx.load_object("viking_room", DEFAULT_MATERIAL, Mat4::identity());
-
-        // cx.load_mesh(
-        //     Mesh::from_file("provence_house", "lib/assets/models/provence_house.obj").await?,
-        // )?;
-        // cx.load_texture(
-        //     Texture::from_file("provence_house", "lib/assets/textures/provence_house.png").await?,
-        //     DEFAULT_MATERIAL,
-        // )?;
-        // cx.load_object(
-        //     "provence_house",
-        //     DEFAULT_MATERIAL,
-        //     Mat4::translation([0.0, 2.0, 0.0]) * Mat4::rotation([-90.0, 0.0, 0.0]),
-        // )?;
-
-        cx.load_mesh(Mesh::new("triangle", vertices, vec![0, 1, 2]));
+        cx.load_mesh("triangle", "lib/assets/meshes/triangle.mesh");
         for x in -20..=20 {
             for y in -20..=20 {
                 cx.load_object(

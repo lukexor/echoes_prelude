@@ -17,7 +17,7 @@ use super::{RenderBackend, RenderSettings};
 use crate::{
     camera::CameraData,
     hash_map,
-    mesh::{Mesh, ObjectData, Texture, DEFAULT_MATERIAL},
+    mesh::{Mesh, ObjectData, DEFAULT_MATERIAL},
     platform,
     prelude::*,
     render::{DrawCmd, DrawData},
@@ -28,11 +28,15 @@ use crate::{
 };
 use anyhow::Context as _;
 use ash::vk;
+use asset_loader::{Asset, TextureAsset};
+use async_trait::async_trait;
 use fnv::FnvHashMap;
 use semver::Version;
 use std::{
     ffi::{CStr, CString},
-    fmt, mem, ptr, slice,
+    fmt, mem,
+    path::PathBuf,
+    ptr, slice,
 };
 
 mod buffer;
@@ -103,6 +107,7 @@ impl fmt::Debug for Context {
     }
 }
 
+#[async_trait]
 impl RenderBackend for Context {
     /// Initialize Vulkan `Context`.
     fn initialize(
@@ -297,27 +302,29 @@ impl RenderBackend for Context {
 
     /// Called at the end of a frame to submit updates to the renderer.
     #[inline]
-    fn draw_frame(&mut self, draw_data: &DrawData<'_>) -> Result<()> {
-        for cmd in draw_data.data {
+    fn draw_frame(&mut self, draw_data: &mut DrawData<'_>) -> Result<()> {
+        for cmd in draw_data.data.drain(..) {
             match cmd {
-                DrawCmd::ClearColor(color) => self.set_clear_color(*color),
+                DrawCmd::ClearColor(color) => self.set_clear_color(color),
                 DrawCmd::ClearDepthStencil((depth, stencil)) => {
-                    self.set_clear_depth_stencil(*depth, *stencil);
+                    self.set_clear_depth_stencil(depth, stencil);
                 }
-                DrawCmd::SetProjection(projection) => self.set_projection(*projection),
-                DrawCmd::SetView(view) => self.set_view(*view),
+                DrawCmd::SetProjection(projection) => self.set_projection(projection),
+                DrawCmd::SetView(view) => self.set_view(view),
                 DrawCmd::SetObjectTransform { name, transform } => {
-                    self.set_object_transform(name, *transform);
+                    self.set_object_transform(name, transform);
                 }
-                DrawCmd::LoadMesh(mesh) => self.load_mesh(mesh.clone())?,
-                DrawCmd::LoadTexture { texture, material } => {
-                    self.load_texture(texture.clone(), material)?;
-                }
+                DrawCmd::LoadMesh { name, filename } => self.load_mesh(name, filename)?,
+                DrawCmd::LoadTexture {
+                    name,
+                    filename,
+                    material,
+                } => self.load_texture(name, filename, material)?,
                 DrawCmd::LoadObject {
                     mesh,
                     material,
                     transform,
-                } => self.load_object(mesh.clone(), material.clone(), *transform)?,
+                } => self.load_object(mesh.clone(), material.clone(), transform)?,
             }
         }
 
@@ -456,7 +463,14 @@ impl RenderBackend for Context {
     }
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, mesh: Mesh) -> Result<()> {
+    fn load_mesh(&mut self, name: String, filename: PathBuf) -> Result<()> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let mesh = rt
+            .block_on(Mesh::from_file_asset(&filename))
+            .with_context(|| format!("failed to load mesh asset {filename:?}"))?;
+
         // TODO: allocate from larger buffer pool
         let vertex_buffer = AllocatedBuffer::create_array(
             &self.device,
@@ -477,16 +491,21 @@ impl RenderBackend for Context {
             self.debug.as_ref(),
         )?;
 
-        self.meshes.insert(
-            mesh.name.clone(),
-            AllocatedMesh::new(mesh, vertex_buffer, index_buffer),
-        );
+        self.meshes
+            .insert(name, AllocatedMesh::new(mesh, vertex_buffer, index_buffer));
 
         Ok(())
     }
 
     /// Load a texture into memory.
-    fn load_texture(&mut self, texture: Texture, material_name: &str) -> Result<()> {
+    fn load_texture(&mut self, name: String, filename: PathBuf, material_name: &str) -> Result<()> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let texture = rt
+            .block_on(TextureAsset::load(&filename))
+            .with_context(|| format!("failed to load texture asset {filename:?}"))?;
+
         let texture_image = AllocatedImage::create_texture(
             &self.instance,
             &self.device,
@@ -517,7 +536,7 @@ impl RenderBackend for Context {
             self.device.update_descriptor_sets(&write_sets, &[]);
         };
 
-        self.textures.insert(texture.name, texture_image);
+        self.textures.insert(name, texture_image);
         Ok(())
     }
 
@@ -618,18 +637,11 @@ impl Context {
     fn update_camera_buffer(&mut self) -> Result<()> {
         self.camera_view.projection_view = self.camera_view.projection * self.camera_view.view;
         let camera_buffer = &self.frames[self.current_frame].camera_buffer;
-        unsafe {
-            let memory = self
-                .device
-                .map_memory(
-                    camera_buffer.memory,
-                    0,
-                    mem::size_of::<CameraData>() as u64,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .context("failed to map camera buffer memory")?;
-            ptr::copy_nonoverlapping(&self.camera_view, memory.cast(), 1);
-            self.device.unmap_memory(camera_buffer.memory);
+        match camera_buffer.mapped_memory {
+            Some(memory) => unsafe {
+                ptr::copy_nonoverlapping(&self.camera_view, memory.cast(), 1);
+            },
+            None => render_bail!("camera buffer is not mapped correctly"),
         }
         Ok(())
     }
@@ -666,17 +678,10 @@ impl Context {
         self.update_scene_buffer()?;
 
         let object_buffer = &self.frames[self.current_frame].object_buffer;
-        let object_data = unsafe {
-            let memory = self
-                .device
-                .map_memory(
-                    object_buffer.memory,
-                    0,
-                    self.objects.len() as u64,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .context("failed to map scene buffer memory")?;
-            slice::from_raw_parts_mut::<ObjectData>(memory.cast(), self.objects.len())
+        let Some(object_data) = object_buffer.mapped_memory.map(|memory| {
+            unsafe { slice::from_raw_parts_mut::<ObjectData>(memory.cast(), self.objects.len()) }
+        }) else {
+            render_bail!("object memory is not mapped correctly");
         };
 
         // Commands
@@ -804,7 +809,6 @@ impl Context {
         }
 
         unsafe {
-            self.device.unmap_memory(object_buffer.memory);
             self.device.cmd_end_render_pass(command_buffer);
             self.device.end_command_buffer(command_buffer)?;
         }
@@ -827,7 +831,7 @@ impl Drop for Context {
         //    the only way to construct a Context with all values initialized.
         unsafe {
             if let Err(err) = self.device.device_wait_idle() {
-                tracing::error!("failed to wait for device idle: {err}");
+                tracing::error!("failed to wait for device idle: {err:?}");
                 return;
             }
 
@@ -1135,7 +1139,7 @@ mod shader {
 
 impl From<vk::Result> for Error {
     fn from(err: vk::Result) -> Self {
-        Self::Renderer(anyhow::anyhow!("{err}"))
+        Self::Renderer(anyhow::anyhow!("{err:?}"))
     }
 }
 
@@ -1216,7 +1220,7 @@ mod debug {
                 self.utils
                     .set_debug_utils_object_name(device.handle(), &debug_info)
             } {
-                tracing::warn!("failed to set debug utils object name for `{name:?}`: {err}");
+                tracing::warn!("failed to set debug utils object name for `{name:?}`: {err:?}");
             }
         }
     }

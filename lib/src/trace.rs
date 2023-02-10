@@ -41,7 +41,7 @@ pub fn initialize() -> Trace {
     );
 
     if let Err(err) = registry.try_init() {
-        eprintln!("setting tracing default failed: {err}");
+        eprintln!("setting tracing default failed: {err:?}");
     }
 
     Trace { _file_log_guard }

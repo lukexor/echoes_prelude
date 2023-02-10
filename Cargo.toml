@@ -1,28 +1,22 @@
-[package]
-name = "echoes_prelude"
-authors = ["Luke Petherbridge <me@lukeworks.tech>"]
-categories = ["games"]
-description = "A cross-platform 2D platformer RPG set in the far distant future."
-keywords = ["game"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/lukexor/echos-prelude.git"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = [
+    "echoes_prelude",
+    "engine",
+    "lib",
+    "asset_loader",
+]
+default-members = ["echoes_prelude", "asset_loader"]
 
-[package.metadata]
-msrv = "1.66.0"
-
-[features]
-hot_reload = ["dep:hot-lib-reloader"]
-
-[dependencies]
-anyhow = { workspace = true }
-pix-engine = { workspace = true }
-hot-lib-reloader = { version = "~0.6.4", optional = true }
-echoes_prelude_lib = { path = "lib" }
-tokio = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+[workspace.dependencies]
+anyhow = "1.0.66"
+asset_loader = { path = "asset_loader" }
+async-trait = "~0.1.64"
+pix-engine = { path = "engine", features = ["imgui"] }
+derive_more = "~0.99.17"
+tokio = { version = "1.23.0", features = ["full"] }
+tracing = { version = "~0.1", features = ["log"] }
+tracing-subscriber = { version = "~0.3.7", features = ["env-filter"] }
 
 [profile.dev-opt]
 inherits = "dev"
@@ -38,17 +32,3 @@ inherits = "release"
 lto = true
 codegen-units = 1
 
-[workspace]
-resolver = "2"
-members = [
-    "engine",
-    "lib",
-]
-
-[workspace.dependencies]
-anyhow = "1.0.66"
-pix-engine = { path = "engine", features = ["imgui"] }
-derive_more = "~0.99.17"
-tokio = { version = "1.23.0", features = ["full"] }
-tracing = { version = "~0.1", features = ["log"] }
-tracing-subscriber = { version = "~0.3.7", features = ["env-filter"] }

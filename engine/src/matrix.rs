@@ -3,6 +3,7 @@ use crate::{
     vec3, vec4,
     vector::{Quaternion, Vec2, Vec3, Vec4},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     mem,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -46,8 +47,7 @@ macro_rules! impl_matrix {
     }),+ $(,)?) => {
         $(
             #[doc = concat!("A ", stringify!($col_dim), "x", stringify!($row_dim), " matrix.")]
-            #[derive(Debug, Copy, Clone, PartialEq)]
-            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+            #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
             #[must_use]
             pub struct $Mat {
                 $(pub $field: $Vec),+

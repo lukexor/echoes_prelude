@@ -1,16 +1,11 @@
 use super::{DrawData, RenderSettings};
 #[cfg(feature = "imgui")]
 use crate::imgui;
-use crate::{
-    matrix::Mat4,
-    mesh::{Mesh, Texture},
-    prelude::PhysicalSize,
-    vector::Vec4,
-    window::Window,
-    Result,
-};
+use crate::{matrix::Mat4, prelude::PhysicalSize, vector::Vec4, window::Window, Result};
 
 mod vulkan;
+use async_trait::async_trait;
+use std::path::PathBuf;
 pub(crate) use vulkan::Context as RenderContext;
 
 #[macro_export]
@@ -32,6 +27,7 @@ macro_rules! render_bail {
     };
 }
 
+#[async_trait]
 pub(crate) trait RenderBackend: Sized {
     /// Initialize the `RendererBackend`.
     fn initialize(
@@ -46,7 +42,7 @@ pub(crate) trait RenderBackend: Sized {
     fn on_resized(&mut self, size: PhysicalSize<u32>);
 
     /// Draws a frame.
-    fn draw_frame(&mut self, draw_data: &DrawData<'_>) -> Result<()>;
+    fn draw_frame(&mut self, draw_data: &mut DrawData<'_>) -> Result<()>;
 
     /// Set the clear color for the next frame.
     fn set_clear_color(&mut self, color: Vec4);
@@ -64,10 +60,10 @@ pub(crate) trait RenderBackend: Sized {
     fn set_object_transform(&mut self, name: &str, transform: Mat4);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, mesh: Mesh) -> Result<()>;
+    fn load_mesh(&mut self, name: String, filename: PathBuf) -> Result<()>;
 
-    /// Load a texture into memory.
-    fn load_texture(&mut self, texture: Texture, material: &str) -> Result<()>;
+    /// Load a texture asset into memory.
+    fn load_texture(&mut self, name: String, filename: PathBuf, material: &str) -> Result<()>;
 
     /// Load an object to the current scene.
     fn load_object(&mut self, mesh: String, material: String, transform: Mat4) -> Result<()>;

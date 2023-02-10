@@ -1,6 +1,7 @@
 //! Traits and types for window backends.
 
 use crate::config::Fullscreen;
+use serde::{Deserialize, Serialize};
 
 pub(crate) mod winit;
 
@@ -33,8 +34,7 @@ impl Default for WindowCreateInfo {
 #[must_use]
 pub struct WindowId(pub(crate) ::winit::window::WindowId);
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[must_use]
 pub enum Size {
     Physical(PhysicalSize<u32>),
@@ -71,8 +71,7 @@ impl Size {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct PhysicalSize<T> {
     pub width: T,
@@ -98,8 +97,7 @@ impl PhysicalSize<u32> {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct LogicalSize<T> {
     pub width: T,
@@ -125,8 +123,7 @@ impl LogicalSize<f64> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[must_use]
 pub enum Positioned {
     Center,
@@ -145,8 +142,7 @@ impl From<Position> for Positioned {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[must_use]
 pub enum Position {
     Physical(PhysicalPosition<i32>),
@@ -189,8 +185,7 @@ impl Position {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct PhysicalPosition<T> {
     pub x: T,
@@ -216,8 +211,7 @@ impl PhysicalPosition<i32> {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct LogicalPosition<T> {
     pub x: T,

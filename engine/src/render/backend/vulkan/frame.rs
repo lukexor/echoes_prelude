@@ -82,7 +82,7 @@ impl Frame {
                 );
             }
 
-            let camera_buffer = AllocatedBuffer::create(
+            let camera_buffer = AllocatedBuffer::create_mapped(
                 device,
                 "camera",
                 mem::size_of::<CameraData>() as u64,
@@ -90,7 +90,7 @@ impl Frame {
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
                 debug,
             )?;
-            let object_buffer = AllocatedBuffer::create(
+            let object_buffer = AllocatedBuffer::create_mapped(
                 device,
                 "object",
                 // TODO: Make this growable as objects are added.

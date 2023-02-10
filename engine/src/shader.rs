@@ -61,13 +61,12 @@ impl Shader {
         let mut file = BufReader::new(
             File::open(path)
                 .await
-                .with_context(|| format!("failed to open shader: {path:?}"))?,
+                .with_context(|| format!("failed to open shader file: {path:?}"))?,
         );
         let mut bytes = Vec::with_capacity(2048);
         file.read_to_end(&mut bytes)
             .await
             .with_context(|| format!("failed to read shader: {path:?}"))?;
-        dbg!(bytes.len());
         bytes.shrink_to_fit();
         Ok(Self::from_bytes(name, ty, bytes))
     }

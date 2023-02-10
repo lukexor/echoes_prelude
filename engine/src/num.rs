@@ -1,3 +1,8 @@
+use derive_more::{
+    Add, AddAssign, Deref, DerefMut, Div, DivAssign, From, Into, Mul, MulAssign, Neg, Sub,
+    SubAssign,
+};
+use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, PI};
 
 pub trait ApproxEq {
@@ -30,22 +35,23 @@ impl ApproxEq for f64 {
     Clone,
     PartialEq,
     PartialOrd,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::Deref,
-    derive_more::DerefMut,
-    derive_more::Add,
-    derive_more::AddAssign,
-    derive_more::Mul,
-    derive_more::MulAssign,
-    derive_more::Div,
-    derive_more::DivAssign,
-    derive_more::Sub,
-    derive_more::SubAssign,
-    derive_more::Neg,
+    From,
+    Into,
+    Deref,
+    DerefMut,
+    Add,
+    AddAssign,
+    Mul,
+    MulAssign,
+    Div,
+    DivAssign,
+    Sub,
+    SubAssign,
+    Neg,
+    Serialize,
+    Deserialize,
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
+#[serde(transparent)]
 #[must_use]
 #[repr(transparent)]
 pub struct Radians(f32);
@@ -96,22 +102,23 @@ impl From<&Degrees> for Radians {
     Clone,
     PartialEq,
     PartialOrd,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::Deref,
-    derive_more::DerefMut,
-    derive_more::Add,
-    derive_more::AddAssign,
-    derive_more::Mul,
-    derive_more::MulAssign,
-    derive_more::Div,
-    derive_more::DivAssign,
-    derive_more::Sub,
-    derive_more::SubAssign,
-    derive_more::Neg,
+    From,
+    Into,
+    Deref,
+    DerefMut,
+    Add,
+    AddAssign,
+    Mul,
+    MulAssign,
+    Div,
+    DivAssign,
+    Sub,
+    SubAssign,
+    Neg,
+    Serialize,
+    Deserialize,
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
+#[serde(transparent)]
 #[must_use]
 #[repr(transparent)]
 pub struct Degrees(f32);
@@ -155,9 +162,8 @@ impl From<&Radians> for Degrees {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, derive_more::From)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(untagged))]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, From, Serialize, Deserialize)]
+#[serde(untagged)]
 #[must_use]
 pub enum Angle {
     Radians(Radians),

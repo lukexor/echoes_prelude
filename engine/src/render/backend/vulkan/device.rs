@@ -222,7 +222,7 @@ impl DeviceInfo {
         };
         let queue_family_indices = QueueFamily::query(instance, physical_device, surface)?;
         let swapchain_support = SwapchainSupport::query(physical_device, surface)
-            .map_err(|err| tracing::error!("{err}"))
+            .map_err(|err| tracing::error!("{err:?}"))
             .ok();
         let sampler_anisotropy_support = features.sampler_anisotropy == 1;
 

@@ -66,11 +66,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[allow(variant_size_differences)]
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("invalid image format: bit_depth: {bit_depth:?}, color_type: {color_type:?}")]
-    UnsupportedImageFormat {
-        bit_depth: png::BitDepth,
-        color_type: png::ColorType,
-    },
     #[error("renderer error: {0}")]
     Renderer(anyhow::Error),
     #[error("platform error: {0}")]

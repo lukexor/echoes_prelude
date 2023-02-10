@@ -30,6 +30,7 @@ pub(crate) struct AllocatedBuffer {
     #[deref_mut]
     pub(crate) handle: vk::Buffer,
     pub(crate) memory: vk::DeviceMemory,
+    pub(crate) mapped_memory: Option<*mut c_void>,
 }
 
 impl AllocatedBuffer {
@@ -42,7 +43,7 @@ impl AllocatedBuffer {
         properties: vk::MemoryPropertyFlags,
         #[allow(unused)] debug: Option<&Debug>,
     ) -> Result<Self> {
-        tracing::debug!("creating `{name}` buffer");
+        tracing::debug!("creating `{name}` buffer, size: {}", size);
 
         // Buffer
         let buffer_create_info = vk::BufferCreateInfo::builder()
@@ -75,52 +76,34 @@ impl AllocatedBuffer {
         Ok(AllocatedBuffer {
             handle: buffer,
             memory,
+            mapped_memory: None,
         })
     }
 
     /// Create a generic memory-mapped `Buffer` instance of arbitrary length.
-    pub(crate) fn create_mapped<T>(
+    pub(crate) fn create_mapped(
         device: &Device,
         name: &str,
-        count: usize,
+        size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
+        properties: vk::MemoryPropertyFlags,
         #[allow(unused)] debug: Option<&Debug>,
-    ) -> Result<(Vec<Self>, Vec<*mut c_void>)> {
+    ) -> Result<Self> {
         tracing::debug!("creating `{name}` mapped buffer");
 
-        let size = mem::size_of::<T>() as u64;
-        let buffers = (0..count)
-            .map(|_| {
-                Self::create(
-                    device,
-                    name,
-                    size,
-                    usage,
-                    vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-                    debug,
-                )
-            })
-            .collect::<Result<Vec<_>>>()
-            .context("failed to create mapped buffers")?;
-
+        let buffer = Self::create(device, name, size, usage, properties, debug)?;
         let mapped_memory = unsafe {
-            buffers
-                .iter()
-                .map(|buffer| {
-                    Ok(device.map_memory(
-                        buffer.memory,
-                        0,
-                        mem::size_of::<T>() as u64,
-                        vk::MemoryMapFlags::empty(),
-                    )?)
-                })
-                .collect::<Result<Vec<_>>>()
+            device
+                .map_memory(buffer.memory, 0, size, vk::MemoryMapFlags::empty())
                 .context("failed to map buffer memory")?
         };
 
         tracing::debug!("created `{name}` mapped buffer successfully");
 
-        Ok((buffers, mapped_memory))
+        Ok(Self {
+            mapped_memory: Some(mapped_memory),
+            ..buffer
+        })
     }
 
     /// Create a generic array `Buffer` instance like a Vertex or Index buffer.
@@ -133,10 +116,10 @@ impl AllocatedBuffer {
         array: &[T],
         #[allow(unused)] debug: Option<&Debug>,
     ) -> Result<Self> {
-        tracing::debug!("creating `{name}` array buffer");
-
         // NOTE: mem::size_of::<T> must match typeof `vertices`
         let size = (mem::size_of::<T>() * array.len()) as u64;
+
+        tracing::debug!("creating `{name}` array buffer");
 
         // Staging Buffer
         let staging = Self::create(

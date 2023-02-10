@@ -39,7 +39,7 @@ impl ImGui {
             if let Err(err) =
                 window.set_cursor_position(PhysicalPosition::<f32>::from(io.mouse_pos))
             {
-                tracing::error!("failed to set cursor position: {err}");
+                tracing::error!("failed to set cursor position: {err:?}");
             }
         }
     }

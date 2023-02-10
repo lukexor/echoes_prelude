@@ -143,7 +143,7 @@ impl Engine {
                     )
                     .build(event_loop)
                     .context("failed to create window")
-                    .map_err(|err| tracing::error!("{err}")) else {
+                    .map_err(|err| tracing::error!("{err:?}")) else {
                         control_flow.set_exit_with_code(1);
                         return;
                     };
@@ -154,7 +154,7 @@ impl Engine {
                 #[cfg(feature = "imgui")]
                 let mut imgui = imgui::ImGui::initialize(engine_cx.window());
                 let Ok(renderer) = Renderer::initialize(engine_cx.window_title(), &self.version, engine_cx.window(), settings, #[cfg(feature = "imgui")] &mut imgui)
-                    .map_err(|err| tracing::error!("{err}")) else {
+                    .map_err(|err| tracing::error!("{err:?}")) else {
                     control_flow.set_exit_with_code(2);
                     return;
                 };
@@ -163,7 +163,7 @@ impl Engine {
                 if on_start.is_err() || engine_cx.should_quit() {
                     tracing::debug!("quitting after on_start with `Engine::on_stop`");
                     if let Err(ref err) = on_start {
-                        tracing::error!("{err}");
+                        tracing::error!("{err:?}");
                     }
                     app.on_stop(&mut engine_cx.context());
                     control_flow.set_exit_with_code(3);
@@ -184,7 +184,7 @@ impl Engine {
                         }
 
                         if let Err(err) = app.on_update(&mut cx) {
-                            tracing::error!("{err}");
+                            tracing::error!("{err:?}");
                             control_flow.set_exit_with_code(1);
                             return;
                         }
@@ -194,8 +194,8 @@ impl Engine {
                             imgui::ImGui::end_frame(ui, cx.window());
                         }
 
-                        if let Err(err) = renderer.draw_frame(&engine_cx.render(#[cfg(feature = "imgui")] imgui)) {
-                            tracing::error!("{err}");
+                        if let Err(err) = renderer.draw_frame(&mut engine_cx.render(#[cfg(feature = "imgui")] imgui)) {
+                            tracing::error!("{err:?}");
                             control_flow.set_exit_with_code(2);
                         };
 
