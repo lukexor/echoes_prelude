@@ -4,16 +4,18 @@ use async_compression::{
     Level,
 };
 use async_trait::async_trait;
+use bytes::Bytes;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
 use tokio::{
-    fs::{create_dir_all, File},
-    io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
+    io::{self, AsyncReadExt, AsyncWriteExt, BufReader},
     task,
 };
+
+pub mod filesystem;
 
 /// Current [Asset] format version.
 const ASSET_VERSION: u32 = 1;
@@ -144,34 +146,16 @@ pub trait Asset: Sized + Send + Serialize + DeserializeOwned {
 
     /// Save compressed asset data to disk.
     async fn save(&self, path: impl AsRef<Path> + Send) -> Result<()> {
-        let path = path.as_ref();
-        let directory = path.parent().context("can not save to root path")?;
-        if !directory.exists() {
-            create_dir_all(directory)
-                .await
-                .with_context(|| format!("failed to create directory {directory:?}"))?;
-        }
-
+        let mut file = filesystem::create_file(path).await?;
         let data = bincode::serialize(self).context("failed to serialize asset data")?;
-        let mut file = BufWriter::new(
-            File::create(path)
-                .await
-                .with_context(|| format!("failed to open asset for writing: {path:?}"))?,
-        );
         file.write_all(&data).await?;
         file.flush().await?;
-
         Ok(())
     }
 
     /// Load compressed asset data from disk.
     async fn load(path: impl AsRef<Path> + Send) -> Result<Self> {
-        let path = path.as_ref();
-        let mut file = BufReader::new(
-            File::open(path)
-                .await
-                .with_context(|| format!("failed to open asset for reading: {path:?}"))?,
-        );
+        let mut file = filesystem::open_file(path).await?;
         // Start off with 4MB
         let mut bytes = Vec::with_capacity(1 << 22);
         file.read_to_end(&mut bytes).await?;
@@ -205,17 +189,6 @@ pub trait Unpack {
 pub trait UnpackInto {
     /// Unpack asset data directly into a given byte buffer.
     async fn unpack_into(&self, destination: &mut [u8]) -> Result<()>;
-}
-
-/// A binary texture asset.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[must_use]
-pub struct TextureAsset {
-    pub meta: AssetMeta,
-    pub width: u32,
-    pub height: u32,
-    #[serde(with = "serde_bytes")]
-    pub data: Vec<u8>,
 }
 
 /// Generic packing of data for a given compression level.
@@ -252,6 +225,17 @@ async fn unpack_into(
     Ok(())
 }
 
+/// A binary texture asset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
+pub struct TextureAsset {
+    pub meta: AssetMeta,
+    pub width: u32,
+    pub height: u32,
+    #[serde(with = "serde_bytes")]
+    pub data: Vec<u8>,
+}
+
 #[async_trait]
 impl Asset for TextureAsset {
     /// The metadata for the asset.
@@ -266,12 +250,7 @@ impl Asset for TextureAsset {
 
         let texture_filename = filename.to_path_buf();
         let (info, pixels) = task::spawn_blocking(move || -> Result<(png::OutputInfo, Vec<u8>)> {
-            let image_file = std::io::BufReader::new(
-                std::fs::File::open(&texture_filename)
-                    .with_context(|| format!("failed to open texture: {texture_filename:?}"))?,
-            );
-
-            let decoder = png::Decoder::new(image_file);
+            let decoder = png::Decoder::new(filesystem::open_file_sync(&texture_filename)?);
             tracing::debug!("reading texture {texture_filename:?}");
             let mut reader = decoder.read_info().context("failed to read texture info")?;
             let mut pixels = vec![0; reader.output_buffer_size()];
@@ -382,6 +361,13 @@ impl MeshAsset {
             bincode::deserialize(&self.data).context("failed to deserialize vertices")?;
         Ok((vertices, indices))
     }
+
+    /// Return the vertex and index buffers from raw [Bytes].
+    pub fn buffers_from_bytes<T: DeserializeOwned>(bytes: Bytes) -> Result<(Vec<T>, Vec<u32>)> {
+        let (vertices, indices) =
+            bincode::deserialize(&bytes).context("failed to deserialize vertices")?;
+        Ok((vertices, indices))
+    }
 }
 
 #[async_trait]
@@ -396,11 +382,7 @@ impl Asset for MeshAsset {
         let filename = filename.as_ref().canonicalize()?;
         tracing::debug!("loading mesh {filename:?}");
 
-        let mut obj_file = std::io::BufReader::new(
-            std::fs::File::open(&filename)
-                .with_context(|| format!("failed to open mesh: {filename:?}"))?,
-        );
-
+        let mut obj_file = filesystem::open_file_sync(&filename)?;
         let (models, _) =
             tobj::load_obj_buf_async(&mut obj_file, &tobj::GPU_LOAD_OPTIONS, |_| async {
                 Ok((vec![tobj::Material::default()], Default::default()))

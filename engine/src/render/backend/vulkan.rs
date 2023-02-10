@@ -28,7 +28,7 @@ use crate::{
 };
 use anyhow::Context as _;
 use ash::vk;
-use asset_loader::{Asset, TextureAsset};
+use asset_loader::{filesystem::DataSource, Asset, TextureAsset};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
 use semver::Version;
@@ -89,7 +89,7 @@ pub(crate) struct Context {
     camera_view: CameraData,
     scene_attributes: SceneData,
     scene_buffer: AllocatedBuffer,
-    objects: Vec<Object>,
+    objects: FnvHashMap<String, Object>,
     materials: FnvHashMap<String, Material>,
     meshes: FnvHashMap<String, AllocatedMesh>,
     textures: FnvHashMap<String, AllocatedImage>,
@@ -278,7 +278,7 @@ impl RenderBackend for Context {
             scene_attributes,
             scene_buffer,
             camera_view: CameraData::default(),
-            objects: vec![],
+            objects: FnvHashMap::default(),
             materials,
             meshes: FnvHashMap::default(),
             textures: FnvHashMap::default(),
@@ -317,17 +317,18 @@ impl RenderBackend for Context {
                 DrawCmd::SetObjectTransform { name, transform } => {
                     self.set_object_transform(name, transform);
                 }
-                DrawCmd::LoadMesh { name, filename } => self.load_mesh(name, filename)?,
+                DrawCmd::LoadMesh { name, source } => self.load_mesh(name, source)?,
                 DrawCmd::LoadTexture {
                     name,
                     filename,
                     material,
                 } => self.load_texture(name, filename, material)?,
                 DrawCmd::LoadObject {
+                    name,
                     mesh,
                     material,
                     transform,
-                } => self.load_object(mesh.clone(), material.clone(), transform)?,
+                } => self.load_object(name, mesh.clone(), material.clone(), transform)?,
             }
         }
 
@@ -459,18 +460,18 @@ impl RenderBackend for Context {
 
     /// Set an objects transform matrix.
     #[inline]
-    fn set_object_transform(&mut self, mesh: &str, transform: Mat4) {
-        if let Some(object) = self.objects.iter_mut().find(|object| object.mesh == mesh) {
+    fn set_object_transform(&mut self, name: &str, transform: Mat4) {
+        if let Some(object) = self.objects.get_mut(name) {
             object.transform = transform;
         }
     }
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: String, filename: PathBuf) -> Result<()> {
-        let mesh = self
-            .runtime
-            .block_on(Mesh::from_file_asset(&filename))
-            .with_context(|| format!("failed to load mesh asset {filename:?}"))?;
+    fn load_mesh(&mut self, name: String, source: DataSource) -> Result<()> {
+        let mesh = match source {
+            DataSource::Path(path) => self.runtime.block_on(Mesh::from_asset_path(&path))?,
+            DataSource::Bytes(bytes) => Mesh::from_bytes(bytes)?,
+        };
 
         // TODO: allocate from larger buffer pool
         let vertex_buffer = AllocatedBuffer::create_array(
@@ -496,6 +497,19 @@ impl RenderBackend for Context {
             .insert(name, AllocatedMesh::new(mesh, vertex_buffer, index_buffer));
 
         Ok(())
+    }
+
+    /// Unload a named mesh from memory.
+    fn unload_mesh(&mut self, name: &str) -> Result<()> {
+        if let Some(mesh) = self.meshes.remove(name) {
+            unsafe {
+                self.device.device_wait_idle()?;
+                mesh.destroy(&self.device);
+            };
+            Ok(())
+        } else {
+            render_bail!("mesh {name} is not loaded");
+        }
     }
 
     /// Load a texture into memory.
@@ -538,9 +552,23 @@ impl RenderBackend for Context {
         Ok(())
     }
 
+    /// Unload a named texture from memory.
+    fn unload_texture(&mut self, name: &str) -> Result<()> {
+        if let Some(texture) = self.textures.remove(name) {
+            unsafe {
+                self.device.device_wait_idle()?;
+                texture.destroy(&self.device);
+            };
+            Ok(())
+        } else {
+            render_bail!("mesh {name} is not loaded");
+        }
+    }
+
     /// Load a mesh object to render in the current scene.
     fn load_object(
         &mut self,
+        name: String,
         mesh_name: String,
         material_name: String,
         transform: Mat4,
@@ -552,13 +580,23 @@ impl RenderBackend for Context {
             .materials
             .get(&material_name)
             .with_context(|| format!("material `{material_name}` does not exist"))?;
-        self.objects.push(Object {
-            mesh: mesh_name,
-            material: material_name,
-            texture_descriptor_set: Some(material.texture_descriptor_set),
-            transform,
-        });
+        self.objects.insert(
+            name,
+            Object {
+                mesh: mesh_name,
+                material: material_name,
+                texture_descriptor_set: Some(material.texture_descriptor_set),
+                transform,
+            },
+        );
         Ok(())
+    }
+
+    /// Unload a named object from the current scene.
+    fn unload_object(&mut self, name: &str) -> Result<()> {
+        self.objects
+            .remove(name)
+            .map_or_else(|| render_bail!("object {name} is not loaded"), |_| Ok(()))
     }
 }
 
@@ -713,7 +751,7 @@ impl Context {
 
         let mut last_mesh = "";
         let mut last_material = "";
-        for (i, object) in self.objects.iter().enumerate() {
+        for (i, (_, object)) in self.objects.iter().enumerate() {
             object_data[i].transform = object.transform;
 
             let material = self

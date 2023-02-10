@@ -1,9 +1,10 @@
 //! Traits and types for renderer backends.
 
+use asset_loader::filesystem::DataSource;
 use crate::{prelude::*, window::Window, Result};
+use std::{fmt, path::PathBuf};
 
 pub(crate) use backend::{RenderBackend, RenderContext};
-use std::{fmt, path::PathBuf};
 
 mod backend;
 
@@ -24,7 +25,7 @@ pub trait Render {
     fn set_object_transform(&mut self, mesh: &'static str, transform: impl Into<Mat4>);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>);
+    fn load_mesh(&mut self, name: impl Into<String>, source: impl Into<DataSource>);
 
     /// Load a texture into memory.
     fn load_texture(
@@ -37,6 +38,7 @@ pub trait Render {
     /// Load an object to the current scene.
     fn load_object(
         &mut self,
+        name: impl Into<String>,
         mesh: impl Into<String>,
         material: impl Into<String>,
         transform: impl Into<Mat4>,
@@ -120,10 +122,10 @@ impl<T> Render for Context<'_, T> {
 
     /// Load a mesh into memory.
     #[inline]
-    fn load_mesh(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>) {
+    fn load_mesh(&mut self, name: impl Into<String>, source: impl Into<DataSource>) {
         self.cx.draw_cmds.push(DrawCmd::LoadMesh {
             name: name.into(),
-            filename: filename.into(),
+            source: source.into(),
         });
     }
 
@@ -146,11 +148,13 @@ impl<T> Render for Context<'_, T> {
     #[inline]
     fn load_object(
         &mut self,
+        name: impl Into<String>,
         mesh: impl Into<String>,
         material: impl Into<String>,
         transform: impl Into<Mat4>,
     ) {
         self.cx.draw_cmds.push(DrawCmd::LoadObject {
+            name: name.into(),
             mesh: mesh.into(),
             material: material.into(),
             transform: transform.into(),
@@ -171,7 +175,7 @@ pub enum DrawCmd {
     },
     LoadMesh {
         name: String,
-        filename: PathBuf,
+        source: DataSource,
     },
     LoadTexture {
         name: String,
@@ -179,6 +183,7 @@ pub enum DrawCmd {
         material: &'static str,
     },
     LoadObject {
+        name: String,
         mesh: String,
         material: String,
         transform: Mat4,

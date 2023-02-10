@@ -15,9 +15,9 @@
 ## Tasks
 
 - 1 CORE Descriptor Abstraction <https://vkguide.dev/docs/extra-chapter/abstracting_descriptors/>
+- 1 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
 - 1 CORE GPU Driven <https://vkguide.dev/docs/gpudriven>
 - 2 CORE Fix mouse cursor to pointer for imgui
-- 2 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
 - 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database, early exit if already loaded
 - 2 CORE Add methods to load shaders
 - 2 PERF Add SIMD to vector/math operations

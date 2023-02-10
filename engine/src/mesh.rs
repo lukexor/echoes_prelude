@@ -5,6 +5,7 @@ use crate::{
 };
 use anyhow::Context;
 use asset_loader::{Asset, MeshAsset, Unpack};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -45,12 +46,12 @@ pub(crate) struct ObjectData {
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    pub filename: PathBuf,
+    pub filename: Option<PathBuf>,
 }
 
 impl Mesh {
     /// Load a new `Mesh` from an asset file.
-    pub async fn from_file_asset(filename: impl AsRef<Path>) -> Result<Self> {
+    pub async fn from_asset_path(filename: impl AsRef<Path>) -> Result<Self> {
         let filename = filename.as_ref();
         let mut mesh = MeshAsset::load(filename)
             .await
@@ -65,7 +66,18 @@ impl Mesh {
         Ok(Self {
             vertices,
             indices,
-            filename: filename.to_path_buf(),
+            filename: Some(filename.to_path_buf()),
+        })
+    }
+
+    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
+        let (vertices, indices) = MeshAsset::buffers_from_bytes::<Vertex>(bytes)
+            .context("failed to deserialize mesh from bytes")?;
+
+        Ok(Self {
+            vertices,
+            indices,
+            filename: None,
         })
     }
 }

@@ -46,7 +46,12 @@ impl Game {
             "lib/assets/textures/viking_room.tx",
             DEFAULT_MATERIAL,
         );
-        cx.load_object("viking_room", DEFAULT_MATERIAL, Mat4::identity());
+        cx.load_object(
+            "viking_room",
+            "viking_room",
+            DEFAULT_MATERIAL,
+            Mat4::identity(),
+        );
 
         cx.load_mesh("provence_house", "lib/assets/meshes/provence_house.mesh");
         cx.load_texture(
@@ -55,6 +60,7 @@ impl Game {
             DEFAULT_MATERIAL,
         );
         cx.load_object(
+            "provence_house",
             "provence_house",
             DEFAULT_MATERIAL,
             Mat4::translation([0.0, 3.0, 0.0]) * Mat4::rotation([90.0, 0.0, 0.0]),
@@ -73,6 +79,7 @@ impl Game {
         for x in -20..=20 {
             for y in -20..=20 {
                 cx.load_object(
+                    format!("triangle_{x}_{y}"),
                     "triangle",
                     DEFAULT_MATERIAL,
                     Mat4::translation([x as f32, 0.0, y as f32]) * Mat4::scaling([0.2; 3]),

@@ -12,7 +12,6 @@ use ash::vk;
 use asset_loader::{Asset, TextureAsset, UnpackInto};
 use derive_more::{Deref, DerefMut};
 use std::slice;
-use tokio::runtime::Runtime;
 
 #[derive(Deref, DerefMut)]
 #[must_use]

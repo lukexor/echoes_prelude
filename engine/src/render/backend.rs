@@ -1,7 +1,11 @@
 use super::{DrawData, RenderSettings};
 #[cfg(feature = "imgui")]
 use crate::imgui;
-use crate::{matrix::Mat4, prelude::PhysicalSize, vector::Vec4, window::Window, Result};
+use asset_loader::filesystem::DataSource;
+use crate::{
+    matrix::Mat4, prelude::PhysicalSize, vector::Vec4, window::Window,
+    Result,
+};
 
 mod vulkan;
 use async_trait::async_trait;
@@ -60,20 +64,26 @@ pub(crate) trait RenderBackend: Sized {
     fn set_object_transform(&mut self, name: &str, transform: Mat4);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: String, filename: PathBuf) -> Result<()>;
+    fn load_mesh(&mut self, name: String, source: DataSource) -> Result<()>;
+
+    /// Unload a named mesh from memory.
+    fn unload_mesh(&mut self, name: &str) -> Result<()>;
 
     /// Load a texture asset into memory.
     fn load_texture(&mut self, name: String, filename: PathBuf, material: &str) -> Result<()>;
 
+    /// Unload a named texture from memory.
+    fn unload_texture(&mut self, name: &str) -> Result<()>;
+
     /// Load an object to the current scene.
-    fn load_object(&mut self, mesh: String, material: String, transform: Mat4) -> Result<()>;
+    fn load_object(
+        &mut self,
+        name: String,
+        mesh: String,
+        material: String,
+        transform: Mat4,
+    ) -> Result<()>;
 
-    //     /// Unload a named mesh from memory.
-    //     fn unload_mesh(&mut self, name: &str) -> Result<()>;
-
-    //     /// Unload a named texture from memory.
-    //     fn unload_texture(&mut self, name: &str) -> Result<()>;
-
-    //     /// Unload a named object from the current scene.
-    //     fn unload_object(&mut self, id: &str) -> Result<()>;
+    /// Unload a named object from the current scene.
+    fn unload_object(&mut self, name: &str) -> Result<()>;
 }
