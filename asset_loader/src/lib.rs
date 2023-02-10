@@ -245,7 +245,7 @@ impl Asset for TextureAsset {
 
     /// Load an `Asset` from a file path.
     async fn from_file(filename: impl AsRef<Path> + Send) -> Result<Self> {
-        let filename = filename.as_ref().canonicalize()?;
+        let filename = filename.as_ref();
         tracing::debug!("loading texture {filename:?}");
 
         let texture_filename = filename.to_path_buf();
@@ -273,7 +273,7 @@ impl Asset for TextureAsset {
         // TODO: Generate mipmaps?
         Ok(Self {
             meta: AssetMeta {
-                original_file: filename,
+                original_file: filename.to_path_buf(),
                 unpacked_size: pixels.len(),
                 ..Default::default()
             },
@@ -285,11 +285,11 @@ impl Asset for TextureAsset {
 
     /// Convert a file from disk to a packed asset format.
     async fn convert(filename: impl AsRef<Path> + Send) -> Result<PathBuf> {
-        let filename = filename.as_ref().canonicalize()?;
+        let filename = filename.as_ref();
         tracing::info!("converting texture asset {filename:?}");
 
         time!(read_texture);
-        let mut texture = Self::from_file(&filename).await?;
+        let mut texture = Self::from_file(filename).await?;
         time!(end => read_texture);
 
         time!(pack_texture);
@@ -379,7 +379,7 @@ impl Asset for MeshAsset {
 
     /// Load an `Asset` from a file path.
     async fn from_file(filename: impl AsRef<Path> + Send) -> Result<Self> {
-        let filename = filename.as_ref().canonicalize()?;
+        let filename = filename.as_ref();
         tracing::debug!("loading mesh {filename:?}");
 
         let mut obj_file = filesystem::open_file_sync(&filename)?;
@@ -459,7 +459,7 @@ impl Asset for MeshAsset {
 
         Ok(Self {
             meta: AssetMeta {
-                original_file: filename.canonicalize()?,
+                original_file: filename.to_path_buf(),
                 unpacked_size: data.len(),
                 ..Default::default()
             },
@@ -573,7 +573,7 @@ mod tests {
         let mut mesh = MeshAsset::load(converted).await.expect("valid mesh load");
 
         assert_eq!(mesh.meta.version, ASSET_VERSION);
-        assert_eq!(mesh.meta.original_file, filename.canonicalize().unwrap());
+        assert_eq!(mesh.meta.original_file, filename);
         assert_eq!(mesh.meta.compression_level, Some(CompressionLevel::Default));
         assert_eq!(mesh.data.len(), 41140);
 
