@@ -119,7 +119,7 @@ impl Game {
         }
 
         if !self.menu_is_open {
-            let speed = 5.0 * cx.delta_time().as_secs_f32();
+            let speed = self.config.movement_speed * cx.delta_time().as_secs_f32();
             if cx.key_down(KeyCode::A) {
                 self.camera.move_left(speed);
             }
@@ -133,15 +133,15 @@ impl Game {
                 self.camera.move_backward(speed);
             }
 
-            let degrees = Degrees::new(-20.0 * speed);
+            let degrees = Degrees::new(self.config.mouse_sensitivity * speed);
             if cx.key_down(KeyCode::Left) {
-                self.camera.yaw(degrees);
+                self.camera.yaw(-degrees);
             }
             if cx.key_down(KeyCode::Right) {
                 self.camera.yaw(degrees);
             }
             if cx.key_down(KeyCode::Up) {
-                self.camera.pitch(degrees);
+                self.camera.pitch(-degrees);
             }
             if cx.key_down(KeyCode::Down) {
                 self.camera.pitch(degrees);
