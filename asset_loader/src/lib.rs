@@ -526,7 +526,7 @@ mod tests {
             .await
             .expect("valid texture load");
         assert_eq!(texture.meta.version, ASSET_VERSION);
-        assert_eq!(texture.meta.original_file, filename.canonicalize().unwrap());
+        assert_eq!(texture.meta.original_file, filename);
         assert_eq!(
             texture.meta.compression_level,
             Some(CompressionLevel::Default)

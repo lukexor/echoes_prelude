@@ -14,12 +14,12 @@
 
 ## Tasks
 
-- 1 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
 - 1 CORE GPU Driven <https://vkguide.dev/docs/gpudriven>
 - 2 CORE Fix mouse cursor to pointer for imgui
 - 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database, early exit if already loaded
 - 2 CORE Add methods to load shaders
 - 2 PERF Add SIMD to vector/math operations
+- 3 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
 - 3 CORE remove `imgui_rs_vulkan_renderer`
 - 3 CORE Replace winit with Windowing trait
 - 3 PERF Perform refactor/cleanup pass (incl. `cfg` conditions)
