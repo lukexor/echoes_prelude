@@ -14,7 +14,6 @@
 
 ## Tasks
 
-- 1 CORE Descriptor Abstraction <https://vkguide.dev/docs/extra-chapter/abstracting_descriptors/>
 - 1 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
 - 1 CORE GPU Driven <https://vkguide.dev/docs/gpudriven>
 - 2 CORE Fix mouse cursor to pointer for imgui
@@ -24,6 +23,7 @@
 - 3 CORE remove `imgui_rs_vulkan_renderer`
 - 3 CORE Replace winit with Windowing trait
 - 3 PERF Perform refactor/cleanup pass (incl. `cfg` conditions)
+- 4 CORE Figure out asset storage outside git
 - 4 CORE Shape drawing trait
 - 4 CORE Simplify physical device selection
 - 4 FEAT Add lighting

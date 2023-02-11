@@ -17,7 +17,12 @@ impl ImGui {
     #[inline]
     pub fn initialize(window: &Window) -> Self {
         let mut imgui = ::imgui::Context::create();
-
+        // TODO: Make saving imgui data configurable
+        // imgui.load_ini_settings(data);
+        // if io.want_save_ini_settings {
+        //     imgui.save_ini_settings(buf);
+        // }
+        imgui.set_ini_filename(None);
         let io = imgui.io_mut();
         let hidpi_factor = window.scale_factor().round() as f32;
         io.display_framebuffer_scale = [hidpi_factor; 2];

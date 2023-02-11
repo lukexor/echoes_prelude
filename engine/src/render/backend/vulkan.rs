@@ -5,6 +5,7 @@ use self::debug::VALIDATION_LAYER_NAME;
 use self::{
     buffer::{padded_uniform_buffer_size, AllocatedBuffer},
     debug::Debug,
+    descriptors::{DescriptorAllocator, DescriptorLayoutCache},
     device::{Device, QueueFamily},
     frame::Frame,
     image::AllocatedImage,
@@ -42,6 +43,7 @@ use tokio::runtime::{self, Runtime};
 
 mod buffer;
 mod command_pool;
+mod descriptors;
 mod device;
 mod frame;
 mod image;
@@ -75,6 +77,8 @@ pub(crate) struct Context {
     frames: Vec<Frame>,
     render_pass: vk::RenderPass,
 
+    descriptor_alloc: DescriptorAllocator,
+    descriptor_layout_cache: DescriptorLayoutCache,
     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
     global_descriptor_pool: vk::DescriptorPool,
     pipeline_layout: vk::PipelineLayout,
@@ -150,8 +154,11 @@ impl RenderBackend for Context {
             extent: swapchain.extent,
         };
 
+        let descriptor_alloc = DescriptorAllocator::initialize(device.handle.clone());
+        let descriptor_layout_cache = DescriptorLayoutCache::initialize(device.handle.clone());
         let (descriptor_set_layouts, global_descriptor_pool) =
             pipeline::create_global_descriptor_pool(&device)?;
+
         let scene_attributes = SceneData::default();
         let scene_buffer = AllocatedBuffer::create(
             &device,
@@ -255,6 +262,8 @@ impl RenderBackend for Context {
             frames,
             render_pass,
 
+            descriptor_alloc,
+            descriptor_layout_cache,
             descriptor_set_layouts,
             global_descriptor_pool,
             pipeline_layout,

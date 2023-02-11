@@ -382,7 +382,7 @@ impl Asset for MeshAsset {
         let filename = filename.as_ref();
         tracing::debug!("loading mesh {filename:?}");
 
-        let mut obj_file = filesystem::open_file_sync(&filename)?;
+        let mut obj_file = filesystem::open_file_sync(filename)?;
         let (models, _) =
             tobj::load_obj_buf_async(&mut obj_file, &tobj::GPU_LOAD_OPTIONS, |_| async {
                 Ok((vec![tobj::Material::default()], Default::default()))

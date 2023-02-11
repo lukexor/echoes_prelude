@@ -374,11 +374,11 @@ pub(crate) fn create_global_descriptor_pool(
             .build()
     });
 
-    let descriptor_pool_info = vk::DescriptorPoolCreateInfo::builder()
+    let pool_create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
         .max_sets(count);
 
-    let pool = unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }
+    let pool = unsafe { device.create_descriptor_pool(&pool_create_info, None) }
         .context("failed to create global descriptor pool")?;
 
     tracing::debug!("created global descriptor pool successfully");

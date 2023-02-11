@@ -100,11 +100,11 @@ impl Frame {
                 debug,
             )?;
 
-            let descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
+            let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::builder()
                 .descriptor_pool(descriptor_pool)
                 .set_layouts(descriptor_set_layouts);
             let descriptor_sets =
-                unsafe { device.allocate_descriptor_sets(&descriptor_set_allocate_info) }
+                unsafe { device.allocate_descriptor_sets(&descriptor_set_alloc_info) }
                     .context("failed to allocate descriptor sets")?;
 
             let camera_info = vk::DescriptorBufferInfo::builder()
