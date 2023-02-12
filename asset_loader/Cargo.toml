@@ -23,6 +23,7 @@ bincode = "1.3.3"
 bytes = { workspace = true }
 derive_more = { workspace = true }
 flate2 = "1.0.25"
+futures = { workspace = true }
 png = "~0.17.6"
 serde = { workspace = true }
 serde_bytes = "~0.11.9"

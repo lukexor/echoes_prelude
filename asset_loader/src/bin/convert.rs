@@ -1,10 +1,11 @@
 use anyhow::{bail, Result};
 use asset_loader::{time, Asset, MeshAsset, TextureAsset};
 use async_recursion::async_recursion;
+use futures::future;
 use std::{env, ffi::OsStr, path::PathBuf};
+use tokio::task;
 use tokio_stream::{wrappers::ReadDirStream, StreamExt};
-use tracing::Level;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::EnvFilter;
 
 #[async_recursion]
 async fn find_assets(directory: PathBuf) -> Result<Vec<PathBuf>> {
@@ -33,18 +34,11 @@ async fn find_assets(directory: PathBuf) -> Result<Vec<PathBuf>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::INFO.into())
-        .from_env_lossy();
-    let registry = tracing_subscriber::registry().with(env_filter);
-    let registry = registry.with(
-        fmt::Layer::new()
-            .compact()
-            .without_time()
-            .with_line_number(true)
-            .with_writer(std::io::stderr),
-    );
-    registry.try_init()?;
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .finish(),
+    )?;
 
     let Some(directory) = env::args().nth(1) else {
         bail!("must provide an assets file path to convert");
@@ -53,18 +47,25 @@ async fn main() -> Result<()> {
     tracing::info!("converting assets in {directory:?}");
 
     time!(total);
-    let asset_files = find_assets(directory.into()).await?;
-    for filename in asset_files {
-        match filename.extension().and_then(OsStr::to_str) {
-            Some("png") => {
-                TextureAsset::convert(filename).await?;
-            }
-            Some("obj") => {
-                MeshAsset::convert(filename).await?;
-            }
-            _ => (),
-        }
-    }
+    future::join_all(
+        find_assets(directory.into())
+            .await?
+            .into_iter()
+            .filter_map(|filename| {
+                filename
+                    .extension()
+                    .and_then(OsStr::to_str)
+                    .and_then(|extension| {
+                        Some(match extension {
+                            "png" => TextureAsset::convert(filename.clone()),
+                            "obj" => MeshAsset::convert(filename.clone()),
+                            _ => return None,
+                        })
+                    })
+                    .map(task::spawn)
+            }),
+    )
+    .await;
     time!(end => total);
 
     tracing::info!("assets converted successfully");

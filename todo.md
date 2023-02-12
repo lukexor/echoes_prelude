@@ -14,48 +14,57 @@
 
 ## Tasks
 
-- 1 CORE GPU Driven <https://vkguide.dev/docs/gpudriven>
+- 1 CORE Material System <https://vkguide.dev/docs/gpudriven/material_system/>: Default, Textured, ShadewCast. Samplers: Smooth, Blocky
+- 1 CORE Mesh System <https://vkguide.dev/docs/gpudriven/mesh_rendering/>
+- 1 CORE Compute Culling <https://vkguide.dev/docs/gpudriven/compute_culling/>
+- 2 CORE Change begin/end submit to `immediate_submit` with a closure
+- 2 CORE Custom Materials
 - 2 CORE Fix mouse cursor to pointer for imgui
-- 2 CORE Load mesh: name, `impl Into<DataSource>`. DataSource: File, Bytes, Network, Database, early exit if already loaded
-- 2 CORE Add methods to load shaders
+- 2 LIB Change asset conversion to use Bytes to avoid cloning
 - 2 PERF Add SIMD to vector/math operations
-- 3 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>
-- 3 CORE remove `imgui_rs_vulkan_renderer`
+- 3 CORE Multithreading <https://vkguide.dev/docs/extra-chapter/multithreading/>. Asset Actor thread
 - 3 CORE Replace winit with Windowing trait
+- 3 CORE remove `imgui_rs_vulkan_renderer`
 - 3 PERF Perform refactor/cleanup pass (incl. `cfg` conditions)
 - 4 CORE Figure out asset storage outside git
 - 4 CORE Shape drawing trait
 - 4 CORE Simplify physical device selection
 - 4 FEAT Add lighting
 - 4 PERF Clean up old swapchains properly
+- 5 DX Combine short modules for less files
+- 5 DX Remove smaller dependencies and use custom impls
 - 5 FEAT Switch RenderSettings to read from config file/env. Maybe use `cvars` crate
 - 5 TEST Plug values into `glm` to generate vec/mat/quat unit tests
+- 6 Add `--debug` flag which enables imgui console
 - 6 FEAT Controller Input
 - 7 CORE Ensure pre-multiplied alpha blending
 - 7 CORE Ensure shader snaps pixels to whole numbers
 - 7 CORE Fallback textures in case resource on disk is missing
 - 7 CORE Maybe switch to `image` crate
 - 7 FEAT Add FromStr impls for Vec\*, Mat4, and other level-specific data.
+- 8 API Condense time/timeEnd into a single macro
 - 8 API Explore better library error types
+- 8 API Make example constructing EngineContext standalone with bring-your-own render loop
+- 8 ART Ensure images are pre-multiplied alpha
+- 8 ART First screen background
+- 8 ART Main character animation sprites
+- 8 ART Main character sprite
+- 8 CI <https://www.lurklurk.org/effective-rust/ci.html> - -Z minimal-versions
+- 8 CI Automate cargo update and cargo fmt
+- 8 CI Ensure crate deps at ~0.x.x - allow warnings in CI (though leave for push hooks)
 - 8 CORE Add more `assert` and `debug_assert` checks
+- 8 DEBUG Game editor crate
+- 8 DOC Doc comments
+- 8 DOC Feature list
+- 8 DOC README with architecture
+- 8 DOC SAFETY comments
+- 8 DOC hot-reloading example for engine
 - 8 FEAT Audio System
 - 8 FEAT Create texture atlas/sprite sheet
 - 8 PERF Add `assert` bounds checks to hot loops to avoid index checking
-- 9 API Condense time/timeEnd into a single macro
-- 9 API Make example constructing EngineContext standalone with bring-your-own render loop
-- 9 ART Ensure images are pre-multiplied alpha
-- 9 ART First screen background
-- 9 ART Main character animation sprites
-- 9 ART Main character sprite
-- 9 CI <https://www.lurklurk.org/effective-rust/ci.html> - -Z minimal-versions
-- 9 CI Automate cargo update and cargo fmt
-- 9 CI Ensure crate deps at ~0.x.x - allow warnings in CI (though leave for push hooks)
-- 9 DEBUG Game editor crate
-- 9 DOC Doc comments
-- 9 DOC Feature list
-- 9 DOC README with architecture
-- 9 DOC SAFETY comments
-- 9 DOC hot-reloading example for engine
+- 8 TEST Doc tests
+- 8 TEST Integration tests
+- 8 TEST Try testing through Miri
 - 9 EXP Experiment with a delete queue for vulkan objects
 - 9 FEAT Create particle system
 - 9 FEAT Profiling features
@@ -65,12 +74,10 @@
 - 9 RLS <https://github.com/mozilla/cargo-vet>
 - 9 RLS <https://github.com/rust-lang/rust-semverver>
 - 9 RLS Build platform executables: <https://github.com/fenhl/oottracker/blob/main/crate/oottracker-utils/src/release.rs>
+- 9 RLS Check out `cargo-dist`
 - 9 RLS Check out cargo-audit
 - 9 RLS Check out cargo-semver-check and cargo-public-api
 - 9 RLS README
 - 9 RLS Review all pub items for correct documentation, `#[must_use]` ,`#[non_exhausvive]`
 - 9 RLS Review supported device features and available layers across multiple platforms
 - 9 RLS unit tests, doctests, integration tests
-- 9 TEST Doc tests
-- 9 TEST Integration tests
-- 9 TEST Try testing through Miri
