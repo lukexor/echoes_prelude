@@ -1,4 +1,4 @@
-//! Platform-specific implementations.
+//! Platform implementations.
 
 #[cfg(target_os = "linux")]
 mod linux;

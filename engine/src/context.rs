@@ -6,6 +6,7 @@ use crate::{
     prelude::*,
     render::{DrawCmd, DrawData},
     window::{winit::FullscreenModeExt, EventLoopProxy, Window},
+    Result,
 };
 use std::{
     fmt::{Debug, Write},
@@ -221,7 +222,7 @@ impl<T: Copy + Debug> Context<'_, T> {
 #[cfg(feature = "imgui")]
 impl<T: Copy + Debug> Context<'_, T> {
     /// Get the UI instance to draw into.
-    pub fn ui(&mut self) -> crate::Result<&mut imgui::Ui> {
+    pub fn ui(&mut self) -> Result<&mut imgui::Ui> {
         match &mut self.ui {
             Some(ui) => Ok(ui),
             None => {
@@ -296,10 +297,18 @@ impl<T> EngineContext<T> {
 
     /// Begin a frame.
     #[inline]
-    pub fn begin_frame(&mut self, now: Instant) -> Context<'_, T> {
-        self.frame_start = Some(now);
-        self.delta_time = now - self.last_frame_time;
-        self.context()
+    pub fn begin_frame<'a>(
+        &'a mut self,
+        delta_time: Duration,
+        #[cfg(feature = "imgui")] ui: &'a mut imgui::Ui,
+    ) -> Context<'a, T> {
+        self.frame_start = Some(Instant::now());
+        self.delta_time = delta_time;
+        Context {
+            cx: self,
+            #[cfg(feature = "imgui")]
+            ui: Some(ui),
+        }
     }
 
     /// End a frame.

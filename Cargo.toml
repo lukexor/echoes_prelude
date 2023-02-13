@@ -12,7 +12,7 @@ default-members = ["echoes_prelude", "asset_loader"]
 anyhow = "1.0.66"
 asset_loader = { path = "asset_loader" }
 async-trait = "~0.1.64"
-bytes = "1.4.0"
+bytes = { version = "1.4.0", features = ["serde"] }
 derive_more = "~0.99.17"
 futures = "~0.3.26"
 pix-engine = { path = "engine", features = ["imgui"] }
@@ -26,8 +26,7 @@ tracing-subscriber = { version = "~0.3.7", features = ["env-filter"] }
 inherits = "dev"
 opt-level = 2
 
-[profile.release-debug]
-inherits = "release"
+[profile.release]
 debug = true
 debug-assertions = true
 

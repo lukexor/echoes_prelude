@@ -1,4 +1,4 @@
-//! Camera functionality.
+//! Camera types and methods.
 
 use crate::{matrix::Mat4, num::Degrees, vec3, vector::Vec3};
 
@@ -10,15 +10,20 @@ const PITCH_LIMIT: Degrees = Degrees::new_unchecked(89.0);
 const FOV_MIN: Degrees = Degrees::new_unchecked(1.0);
 const FOV_MAX: Degrees = Degrees::new_unchecked(45.0);
 
+/// Camera matricies for use by the renderer/GPU.
 #[derive(Default, Debug, Copy, Clone)]
 #[repr(C)]
 #[must_use]
 pub struct CameraData {
+    /// Projection matrix.
     pub projection: Mat4,
+    /// View matrix.
     pub view: Mat4,
+    /// Combined Projection/View matrix.
     pub projection_view: Mat4,
 }
 
+/// Camera representation in 3D space.
 #[derive(Default, Debug, Copy, Clone)]
 #[must_use]
 pub struct Camera {

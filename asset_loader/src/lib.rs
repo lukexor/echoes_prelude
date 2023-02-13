@@ -4,7 +4,6 @@ use async_compression::{
     Level,
 };
 use async_trait::async_trait;
-use bytes::Bytes;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     ffi::OsStr,
@@ -44,9 +43,11 @@ pub enum Error {
 #[macro_export]
 macro_rules! time {
     ($label:ident) => {
+        #[cfg(debug_assertions)]
         let mut $label = Some(::std::time::Instant::now());
     };
-    (log => $label:ident) => {
+    (log: $label:ident) => {
+        #[cfg(debug_assertions)]
         match $label {
             Some(label) => {
                 ::tracing::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32())
@@ -54,7 +55,8 @@ macro_rules! time {
             None => ::tracing::warn!("Timer `{}` has been terminated.", stringify!($label)),
         };
     };
-    (end => $label:ident) => {{
+    (end: $label:ident) => {{
+        #[cfg(debug_assertions)]
         match $label.take() {
             Some(label) => {
                 ::tracing::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32())
@@ -290,11 +292,11 @@ impl Asset for TextureAsset {
 
         time!(read_texture);
         let mut texture = Self::from_file(filename).await?;
-        time!(end => read_texture);
+        time!(end: read_texture);
 
         time!(pack_texture);
         texture.pack().await?;
-        time!(end => pack_texture);
+        time!(end: pack_texture);
 
         let new_filename = filename.with_extension("tx");
         texture.save(&new_filename).await?;
@@ -362,10 +364,10 @@ impl MeshAsset {
         Ok((vertices, indices))
     }
 
-    /// Return the vertex and index buffers from raw [Bytes].
-    pub fn buffers_from_bytes<T: DeserializeOwned>(bytes: Bytes) -> Result<(Vec<T>, Vec<u32>)> {
+    /// Return the vertex and index buffers from a byte slice.
+    pub fn buffers_from_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<(Vec<T>, Vec<u32>)> {
         let (vertices, indices) =
-            bincode::deserialize(&bytes).context("failed to deserialize vertices")?;
+            bincode::deserialize(bytes).context("failed to deserialize vertices")?;
         Ok((vertices, indices))
     }
 }
@@ -424,11 +426,19 @@ impl Asset for MeshAsset {
                         mesh.normals[3 * v + 2],
                     ]
                 };
-                // TODO: colors
                 let color = if mesh.vertex_color.is_empty() {
-                    [normal[0], normal[1], normal[2], 1.0]
+                    if cfg!(debug_assertions) {
+                        [normal[0], normal[1], normal[2], 1.0]
+                    } else {
+                        [1.0; 4]
+                    }
                 } else {
-                    [1.0, 1.0, 1.0, 1.0]
+                    [
+                        mesh.vertex_color[3 * v],
+                        mesh.vertex_color[3 * v + 1],
+                        mesh.vertex_color[3 * v + 2],
+                        1.0,
+                    ]
                 };
                 let uv = if mesh.texcoords.is_empty() {
                     [0.0; 2]
@@ -474,11 +484,11 @@ impl Asset for MeshAsset {
 
         time!(read_mesh);
         let mut mesh = MeshAsset::from_file(filename).await?;
-        time!(end => read_mesh);
+        time!(end: read_mesh);
 
         time!(pack_mesh);
         mesh.pack().await?;
-        time!(end => pack_mesh);
+        time!(end: pack_mesh);
 
         let new_filename = filename.with_extension("mesh");
         mesh.save(&new_filename).await?;

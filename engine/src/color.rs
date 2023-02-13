@@ -1,3 +1,5 @@
+//! Color types and methods.
+
 /// Convert separate RGB values to a single u32.
 #[inline]
 #[must_use]

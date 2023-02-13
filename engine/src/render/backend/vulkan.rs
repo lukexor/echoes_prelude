@@ -1,4 +1,4 @@
-//! Vulkan renderer backend
+//! Vulkan renderer backendvulkanrs
 
 #[cfg(debug_assertions)]
 use self::debug::VALIDATION_LAYER_NAME;
@@ -18,7 +18,7 @@ use super::{RenderBackend, RenderSettings};
 use crate::{
     camera::CameraData,
     hash_map,
-    mesh::{Mesh, ObjectData, DEFAULT_MATERIAL},
+    mesh::{MaterialType, Mesh, ObjectData},
     platform,
     prelude::*,
     render::{DrawCmd, DrawData},
@@ -94,7 +94,7 @@ pub(crate) struct Context {
     scene_attributes: SceneData,
     scene_buffer: AllocatedBuffer,
     objects: FnvHashMap<String, Object>,
-    materials: FnvHashMap<String, Material>,
+    materials: FnvHashMap<MaterialType, Material>,
     meshes: FnvHashMap<String, AllocatedMesh>,
     textures: FnvHashMap<String, AllocatedImage>,
 
@@ -171,7 +171,10 @@ impl RenderBackend for Context {
         let frames = Frame::create(
             &device,
             global_descriptor_pool,
-            &descriptor_set_layouts[set_layouts::GLOBAL..=set_layouts::OBJECT],
+            &[
+                descriptor_set_layouts[set_layouts::GLOBAL],
+                descriptor_set_layouts[set_layouts::OBJECT],
+            ],
             &scene_buffer,
             debug.as_ref(),
         )?;
@@ -193,20 +196,8 @@ impl RenderBackend for Context {
 
         let sampler = AllocatedImage::create_sampler(&device, &settings)?;
 
-        let descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
-            .descriptor_pool(global_descriptor_pool)
-            .set_layouts(slice::from_ref(
-                &descriptor_set_layouts[set_layouts::TEXTURE],
-            ));
-        let descriptor_sets =
-            unsafe { device.allocate_descriptor_sets(&descriptor_set_allocate_info) }
-                .context("failed to allocate descriptor sets")?;
         let materials = hash_map! {
-            DEFAULT_MATERIAL.to_string() => Material {
-                pipeline: pipelines[0],
-                pipeline_layout,
-                texture_descriptor_set: descriptor_sets[0],
-            }
+            MaterialType::Default => Material::new(pipelines[pipeline::DEFAULT], pipeline_layout, None),
         };
         let color_image = if settings.msaa {
             Some(AllocatedImage::create_color(
@@ -327,17 +318,13 @@ impl RenderBackend for Context {
                     self.set_object_transform(name, transform);
                 }
                 DrawCmd::LoadMesh { name, source } => self.load_mesh(name, source)?,
-                DrawCmd::LoadTexture {
-                    name,
-                    filename,
-                    material,
-                } => self.load_texture(name, filename, material)?,
+                DrawCmd::LoadTexture { name, filename } => self.load_texture(name, filename)?,
                 DrawCmd::LoadObject {
                     name,
                     mesh,
-                    material,
+                    material_type,
                     transform,
-                } => self.load_object(name, mesh.clone(), material.clone(), transform)?,
+                } => self.load_object(name, mesh, material_type, transform)?,
             }
         }
 
@@ -479,7 +466,7 @@ impl RenderBackend for Context {
     fn load_mesh(&mut self, name: String, source: DataSource) -> Result<()> {
         let mesh = match source {
             DataSource::Path(path) => self.runtime.block_on(Mesh::from_asset_path(&path))?,
-            DataSource::Bytes(bytes) => Mesh::from_bytes(bytes)?,
+            DataSource::Bytes(bytes) => Mesh::from_bytes(&bytes)?,
         };
 
         // TODO: allocate from larger buffer pool
@@ -522,7 +509,7 @@ impl RenderBackend for Context {
     }
 
     /// Load a texture into memory.
-    fn load_texture(&mut self, name: String, filename: PathBuf, material_name: &str) -> Result<()> {
+    fn load_texture(&mut self, name: String, filename: PathBuf) -> Result<()> {
         let texture = self
             .runtime
             .block_on(TextureAsset::load(&filename))
@@ -536,10 +523,24 @@ impl RenderBackend for Context {
             self.debug.as_ref(),
         ))?;
 
-        let material = self
-            .materials
-            .get(material_name)
-            .with_context(|| format!("material `{material_name}` does not exist"))?;
+        let descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(self.global_descriptor_pool)
+            .set_layouts(slice::from_ref(
+                &self.descriptor_set_layouts[set_layouts::TEXTURE],
+            ));
+        let descriptor_sets = unsafe {
+            self.device
+                .allocate_descriptor_sets(&descriptor_set_allocate_info)
+        }
+        .context("failed to allocate descriptor sets")?;
+
+        let material = Material::new(
+            self.pipelines[pipeline::TEXTURE],
+            self.pipeline_layout,
+            descriptor_sets[0],
+        );
+        self.materials
+            .insert(MaterialType::Texture(name.clone()), material);
 
         let texture_info = vk::DescriptorImageInfo::builder()
             .sampler(self.sampler)
@@ -547,7 +548,7 @@ impl RenderBackend for Context {
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         let texture_write = vk::WriteDescriptorSet::builder()
             .dst_binding(0)
-            .dst_set(material.texture_descriptor_set)
+            .dst_set(descriptor_sets[0])
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(slice::from_ref(&texture_info))
             .build();
@@ -579,7 +580,7 @@ impl RenderBackend for Context {
         &mut self,
         name: String,
         mesh_name: String,
-        material_name: String,
+        material_type: MaterialType,
         transform: Mat4,
     ) -> Result<()> {
         if !self.meshes.contains_key(&mesh_name) {
@@ -587,14 +588,14 @@ impl RenderBackend for Context {
         }
         let material = self
             .materials
-            .get(&material_name)
-            .with_context(|| format!("material `{material_name}` does not exist"))?;
+            .get(&material_type)
+            .cloned()
+            .with_context(|| format!("material `{material_type}` does not exist"))?;
         self.objects.insert(
             name,
             Object {
                 mesh: mesh_name,
-                material: material_name,
-                texture_descriptor_set: Some(material.texture_descriptor_set),
+                material,
                 transform,
             },
         );
@@ -691,8 +692,11 @@ impl Context {
         Ok(())
     }
 
+    // TODO: Refine scene lighting functionality
     /// Updates the scene buffer for this frame.
     fn update_scene_buffer(&mut self) -> Result<()> {
+        // let (frame_sin, frame_cos) = (self.frame_number as f32 / 120.0).sin_cos();
+        // self.scene_attributes.ambient_color = vec4!(frame_sin, 0.0, frame_cos, 1.0);
         self.scene_attributes.ambient_color = vec4!(0.0, 0.0, 0.0, 1.0);
 
         unsafe {
@@ -758,22 +762,19 @@ impl Context {
             );
         }
 
-        let mut last_mesh = "";
-        let mut last_material = "";
+        let mut last_mesh = None;
+        let mut last_material = None;
         for (i, (_, object)) in self.objects.iter().enumerate() {
             object_data[i].transform = object.transform;
 
-            let material = self
-                .materials
-                .get(&object.material)
-                .with_context(|| format!("material {} does not exist", object.material))?;
             let mesh = self
                 .meshes
                 .get(&object.mesh)
                 .with_context(|| format!("mesh {} does not exist", object.mesh))?;
+            let material = &object.material;
 
             // Bind material pipeline
-            if object.material != last_material {
+            if Some(material) != last_material {
                 unsafe {
                     self.device.cmd_bind_pipeline(
                         command_buffer,
@@ -808,7 +809,7 @@ impl Context {
                         &[],
                     );
 
-                    if let Some(descriptor_set) = &object.texture_descriptor_set {
+                    if let Some(descriptor_set) = &material.texture_descriptor_set {
                         self.device.cmd_bind_descriptor_sets(
                             command_buffer,
                             vk::PipelineBindPoint::GRAPHICS,
@@ -819,10 +820,10 @@ impl Context {
                         );
                     }
                 }
-                last_material = &object.material;
+                last_material = Some(material);
             }
 
-            if object.mesh != last_mesh {
+            if Some(&object.mesh) != last_mesh {
                 unsafe {
                     self.device.cmd_bind_vertex_buffers(
                         command_buffer,
@@ -830,15 +831,14 @@ impl Context {
                         slice::from_ref(&mesh.vertex_buffer.handle),
                         slice::from_ref(&0),
                     );
-                    // NOTE: Must match indices datatype
                     self.device.cmd_bind_index_buffer(
                         command_buffer,
                         *mesh.index_buffer,
                         0,
-                        vk::IndexType::UINT32,
+                        vk::IndexType::UINT32, // NOTE: Must match indices datatype
                     );
                 }
-                last_mesh = &object.mesh;
+                last_mesh = Some(&object.mesh);
             }
 
             unsafe {
@@ -1117,6 +1117,15 @@ fn create_render_pass(
 
     Ok(render_pass)
 }
+
+// /// Create a new material pipeline.
+// fn create_material(
+//     &mut self,
+//     pipeline: vk::Pipeline,
+//     layout: vk::PipelineLayout,
+//     texture_descriptor_set: Option<vk::DescriptorSet>,
+// ) {
+// }
 
 mod shader {
     use crate::{

@@ -39,22 +39,20 @@
 use std::io;
 
 pub mod camera;
-#[cfg(feature = "imgui")]
-pub mod imgui;
-pub mod mesh;
-pub mod scene;
-#[macro_use]
-pub mod profiling;
 pub mod color;
 pub mod config;
 pub mod context;
 pub mod core;
 pub mod event;
+#[cfg(feature = "imgui")]
+pub mod imgui;
 pub mod math;
 pub mod matrix;
+pub mod mesh;
 pub mod num;
 pub mod platform;
 pub mod render;
+pub mod scene;
 pub mod shader;
 pub mod vector;
 pub mod window;
@@ -76,6 +74,7 @@ pub enum Error {
     Other(#[from] anyhow::Error),
 }
 
+/// Create a FnvHashMap.
 #[macro_export]
 macro_rules! hash_map {
     ($($key:expr => $value:expr),* $(,)?) => {{
@@ -84,6 +83,33 @@ macro_rules! hash_map {
         map.insert($key, $value);
         )*
         map
+    }};
+}
+
+/// Create a profiling timer for a section of code.
+#[macro_export]
+macro_rules! time {
+    ($label:ident) => {
+        #[cfg(debug_assertions)]
+        let mut $label = Some(::std::time::Instant::now());
+    };
+    (log: $label:ident) => {
+        #[cfg(debug_assertions)]
+        match $label {
+            Some(label) => {
+                ::tracing::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32())
+            }
+            None => tracing::warn!("Timer `{}` has been terminated.", stringify!($label)),
+        };
+    };
+    (end: $label:ident) => {{
+        #[cfg(debug_assertions)]
+        match $label.take() {
+            Some(label) => {
+                ::tracing::debug!("{}: {}", stringify!($label), label.elapsed().as_secs_f32())
+            }
+            None => ::tracing::warn!("Timer `{}` has been terminated.", stringify!($label)),
+        };
     }};
 }
 
@@ -101,6 +127,7 @@ pub mod prelude {
             WindowEvent,
         },
         matrix::Mat4,
+        mesh::MaterialType,
         num::{Degrees, Radians},
         render::Render,
         shader::{Shader, ShaderStage},

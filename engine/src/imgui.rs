@@ -1,3 +1,5 @@
+//! Immediate-mode GUI methods.
+
 use crate::{prelude::*, window::Window, Error};
 use ::imgui::{ConfigFlags, MouseCursor};
 use anyhow::anyhow;

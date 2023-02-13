@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use derive_more::{From, TryInto};
 use std::path::{Path, PathBuf};
 use std::{fs::File as FileSync, io::BufReader as BufReaderSync};
@@ -12,10 +12,39 @@ use tokio::{
 #[derive(Debug, Clone, PartialEq, From, TryInto)]
 #[must_use]
 pub enum DataSource {
-    #[from(forward)]
     Path(PathBuf),
     Bytes(Bytes),
     // TODO: Could add Network(Ipv4Addr) or Database
+}
+
+impl From<&str> for DataSource {
+    fn from(path: &str) -> Self {
+        Self::Path(path.into())
+    }
+}
+
+impl From<String> for DataSource {
+    fn from(path: String) -> Self {
+        Self::Path(path.into())
+    }
+}
+
+impl From<BytesMut> for DataSource {
+    fn from(bytes: BytesMut) -> Self {
+        Self::Bytes(bytes.into())
+    }
+}
+
+impl From<Vec<u8>> for DataSource {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::Bytes(bytes.into())
+    }
+}
+
+impl From<&'static [u8]> for DataSource {
+    fn from(bytes: &'static [u8]) -> Self {
+        Self::Bytes(bytes.into())
+    }
 }
 
 #[inline]

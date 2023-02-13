@@ -49,19 +49,32 @@ pub(crate) struct MeshPushConstants {
     pub(crate) transform: Mat4,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[must_use]
 pub(crate) struct Material {
     pub(crate) pipeline: vk::Pipeline,
     pub(crate) pipeline_layout: vk::PipelineLayout,
-    pub(crate) texture_descriptor_set: vk::DescriptorSet,
+    pub(crate) texture_descriptor_set: Option<vk::DescriptorSet>,
 }
 
+impl Material {
+    pub(crate) fn new(
+        pipeline: vk::Pipeline,
+        layout: vk::PipelineLayout,
+        texture_descriptor_set: impl Into<Option<vk::DescriptorSet>>,
+    ) -> Self {
+        Self {
+            pipeline,
+            pipeline_layout: layout,
+            texture_descriptor_set: texture_descriptor_set.into(),
+        }
+    }
+}
 #[derive(Clone)]
 #[must_use]
 pub(crate) struct Object {
     pub(crate) mesh: String,
-    pub(crate) material: String,
-    pub(crate) texture_descriptor_set: Option<vk::DescriptorSet>,
+    pub(crate) material: Material,
     pub(crate) transform: Mat4,
 }
 

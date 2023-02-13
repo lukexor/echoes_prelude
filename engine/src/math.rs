@@ -1,4 +1,4 @@
-//! Math utilities.
+//! Math traits and methods.
 
 /// Generic range mapping trait for numbers.
 pub trait Map {
@@ -6,6 +6,7 @@ pub trait Map {
     fn map(&self, from_min: Self, from_max: Self, to_min: Self, to_max: Self) -> Self;
 }
 
+/// Implements the [Map] trait for a given type.
 macro_rules! impl_map {
     ($($ty:ty),+ $(,)?) => {
         $(
@@ -20,7 +21,6 @@ macro_rules! impl_map {
         )+
     }
 }
-
 impl_map!(i8, u8, i16, u16, i32, u32, i64, u64, f32, f64, isize, usize);
 
 /// Generic linear interpolation trait for numbers.
@@ -29,6 +29,7 @@ pub trait Lerp {
     fn lerp(&self, to: Self, amount: Self) -> Self;
 }
 
+/// Implements the [Lerp] trait for a given type.
 macro_rules! impl_lerp {
     ($($ty:ty),+ $(,)?) => {
         $(
@@ -43,7 +44,6 @@ macro_rules! impl_lerp {
         )+
     }
 }
-
 impl_lerp!(f32, f64);
 
 #[cfg(feature = "rand")]

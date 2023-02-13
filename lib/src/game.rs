@@ -2,11 +2,7 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use pix_engine::{
-    camera::Camera,
-    mesh::{Vertex, DEFAULT_MATERIAL},
-    prelude::*,
-};
+use pix_engine::{camera::Camera, mesh::Vertex, prelude::*};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GameEvent {
@@ -40,48 +36,37 @@ impl Game {
     pub fn initialize(&mut self, cx: &mut Context<'_, GameEvent>) -> Result<()> {
         self.update_projection(cx.width(), cx.height());
 
-        cx.load_mesh("viking_room", "lib/assets/meshes/viking_room.mesh");
-        cx.load_texture(
-            "viking_room",
-            "lib/assets/textures/viking_room.tx",
-            DEFAULT_MATERIAL,
-        );
+        cx.load_mesh("viking_room_mesh", "lib/assets/meshes/viking_room.mesh");
+        cx.load_texture("viking_room_texture", "lib/assets/textures/viking_room.tx");
         cx.load_object(
             "viking_room",
-            "viking_room",
-            DEFAULT_MATERIAL,
+            "viking_room_mesh",
+            MaterialType::Texture("viking_room_texture".into()),
             Mat4::identity(),
         );
 
-        cx.load_mesh("provence_house", "lib/assets/meshes/provence_house.mesh");
+        cx.load_mesh(
+            "provence_house_mesh",
+            "lib/assets/meshes/provence_house.mesh",
+        );
         cx.load_texture(
-            "provence_house",
+            "provence_house_texture",
             "lib/assets/textures/provence_house.tx",
-            DEFAULT_MATERIAL,
         );
         cx.load_object(
             "provence_house",
-            "provence_house",
-            DEFAULT_MATERIAL,
+            "provence_house_mesh",
+            MaterialType::Texture("provence_house_texture".into()),
             Mat4::translation([0.0, 3.0, 0.0]) * Mat4::rotation([90.0, 0.0, 0.0]),
         );
 
-        // FIXME: tmp
-        let mut vertices = vec![Vertex::default(); 3];
-        vertices[0].position = vec3![1.0, 1.0, 0.0];
-        vertices[1].position = vec3![-1.0, 1.0, 0.0];
-        vertices[2].position = vec3![0.0, -1.0, 0.0];
-        // All green
-        vertices[0].color = vec4![0.0, 1.0, 0.0, 1.0];
-        vertices[1].color = vec4![0.0, 1.0, 0.0, 1.0];
-        vertices[2].color = vec4![0.0, 1.0, 0.0, 1.0];
-        cx.load_mesh("triangle", "lib/assets/meshes/triangle.mesh");
+        cx.load_mesh("triangle_mesh", "lib/assets/meshes/triangle.mesh");
         for x in -20..=20 {
             for y in -20..=20 {
                 cx.load_object(
                     format!("triangle_{x}_{y}"),
-                    "triangle",
-                    DEFAULT_MATERIAL,
+                    "triangle_mesh",
+                    MaterialType::Default,
                     Mat4::translation([x as f32, 0.0, y as f32]) * Mat4::scaling([0.2; 3]),
                 );
             }

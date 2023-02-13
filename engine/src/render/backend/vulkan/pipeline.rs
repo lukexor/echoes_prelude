@@ -8,12 +8,15 @@ use super::{
 use crate::{
     prelude::ShaderStage,
     render::{CullMode, FrontFace, RenderSettings},
-    shader::{DEFAULT_FRAGMENT_SHADER, DEFAULT_VERTEX_SHADER},
+    shader::{DEFAULT_FRAGMENT_SHADER, DEFAULT_VERTEX_SHADER, TEXTURE_FRAGMENT_SHADER},
     Result,
 };
 use anyhow::Context;
 use ash::vk;
 use std::{mem, slice};
+
+pub(crate) const DEFAULT: usize = 0;
+pub(crate) const TEXTURE: usize = 1;
 
 pub(crate) mod set_layouts {
     pub(crate) const GLOBAL: usize = 0;
@@ -31,22 +34,34 @@ pub(crate) fn create_default(
     settings: &RenderSettings,
 ) -> Result<(vk::PipelineLayout, Vec<vk::Pipeline>)> {
     // Shader Stages
-    let vertex_shader_module = shader::create_module(
+    let default_vertex_shader_module = shader::create_module(
         device,
         "default_vertex",
         ShaderStage::Vertex,
         DEFAULT_VERTEX_SHADER.to_vec(),
     )?;
-    let fragment_shader_module = shader::create_module(
+    let default_fragment_shader_module = shader::create_module(
         device,
         "default_fragment",
         ShaderStage::Fragment,
         DEFAULT_FRAGMENT_SHADER.to_vec(),
     )?;
-    let vertex_stage_info =
-        shader::build_stage_info(vk::ShaderStageFlags::VERTEX, vertex_shader_module)?;
-    let fragment_stage_info =
-        shader::build_stage_info(vk::ShaderStageFlags::FRAGMENT, fragment_shader_module)?;
+    let texture_fragment_shader_module = shader::create_module(
+        device,
+        "texture_fragment",
+        ShaderStage::Fragment,
+        TEXTURE_FRAGMENT_SHADER.to_vec(),
+    )?;
+    let default_vertex_stage_info =
+        shader::build_stage_info(vk::ShaderStageFlags::VERTEX, default_vertex_shader_module)?;
+    let default_fragment_stage_info = shader::build_stage_info(
+        vk::ShaderStageFlags::FRAGMENT,
+        default_fragment_shader_module,
+    )?;
+    let texture_fragment_stage_info = shader::build_stage_info(
+        vk::ShaderStageFlags::FRAGMENT,
+        texture_fragment_shader_module,
+    )?;
 
     let vertex_description = VertexInputDescription::get();
     let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
@@ -111,10 +126,12 @@ pub(crate) fn create_default(
     let layout = unsafe { device.create_pipeline_layout(&layout_info, None) }
         .context("failed to create graphics pipeline layout")?;
 
-    let shader_stages = [vertex_stage_info, fragment_stage_info];
+    let default_shader_stages = [default_vertex_stage_info, default_fragment_stage_info];
+    let texture_shader_stages = [default_vertex_stage_info, texture_fragment_stage_info];
+
     let mut pipeline_builder = PipelineBuilder::new();
     pipeline_builder
-        .shader_stages(&shader_stages)
+        .shader_stages(&default_shader_stages)
         .vertex_input_state(vertex_input_state)
         .input_assembly_state(input_assembly_state)
         .viewport(viewport)
@@ -125,15 +142,19 @@ pub(crate) fn create_default(
         .multisample_state(multisample_state)
         .layout(layout);
 
-    let primary_pipeline = pipeline_builder.build(device, render_pass)?;
+    let default_pipeline = pipeline_builder.build(device, render_pass)?;
+
+    pipeline_builder.shader_stages(&texture_shader_stages);
+    let texture_pipeline = pipeline_builder.build(device, render_pass)?;
 
     // Cleanup
     unsafe {
-        device.destroy_shader_module(vertex_shader_module, None);
-        device.destroy_shader_module(fragment_shader_module, None);
+        device.destroy_shader_module(default_vertex_shader_module, None);
+        device.destroy_shader_module(default_fragment_shader_module, None);
+        device.destroy_shader_module(texture_fragment_shader_module, None);
     }
 
-    Ok((layout, vec![primary_pipeline]))
+    Ok((layout, vec![default_pipeline, texture_pipeline]))
 }
 
 #[derive(Default, Clone)]

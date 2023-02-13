@@ -1,4 +1,4 @@
-//! Core engine logic.
+//! Core engine traits and functionality.
 
 use crate::{
     config::{Config, Fullscreen},
@@ -12,7 +12,7 @@ use crate::{
     Result,
 };
 use anyhow::Context as _;
-use std::{fmt::Debug, time::Instant};
+use std::fmt::Debug;
 use winit::{
     event::{Event as WinitEvent, StartCause},
     event_loop::EventLoopBuilder,
@@ -175,13 +175,10 @@ impl Engine {
             if let Some(EngineState { engine_cx, renderer, #[cfg(feature = "imgui")] imgui }) = &mut engine_state {
                 match event {
                     WinitEvent::MainEventsCleared if engine_cx.is_running() => {
-                        let now = Instant::now();
-                        let mut cx = engine_cx.begin_frame(now);
+                        let delta_time = engine_cx.last_frame_time.elapsed();
                         #[cfg(feature = "imgui")]
-                        {
-                            imgui.begin_frame(cx.delta_time(), cx.window());
-                            cx.ui = Some(imgui.new_frame());
-                        }
+                        imgui.begin_frame(delta_time, engine_cx.window());
+                        let mut cx = engine_cx.begin_frame(delta_time, #[cfg(feature = "imgui")] imgui.new_frame());
 
                         if let Err(err) = app.on_update(&mut cx) {
                             tracing::error!("{err:?}");

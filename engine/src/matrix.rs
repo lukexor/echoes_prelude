@@ -1,3 +1,5 @@
+//! Matrix types and methods.
+
 use crate::{
     num::{Angle, ApproxEq},
     vec3, vec4,
@@ -9,6 +11,7 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+/// Implements matrix multiplication with a vector with a given dimensionality.
 macro_rules! mul_vector {
     ($Mat:ident, $Vec:ident, Vec3) => {
         Vec3::new(
@@ -27,6 +30,7 @@ macro_rules! mul_vector {
     };
 }
 
+/// Implements matrix multiplication with given size.
 macro_rules! mul_matrix {
     ($Mat:ident, $Rhs:ident, Mat3) => {
         Mat3::new($Mat * $Rhs.col0, $Mat * $Rhs.col1, $Mat * $Rhs.col2)
@@ -41,6 +45,7 @@ macro_rules! mul_matrix {
     };
 }
 
+/// Implements matrix type and methods for a given size.
 macro_rules! impl_matrix {
     ($({
         $Mat:ident, $Vec:ident, $col_dim:expr, $row_dim:expr => $($field:ident),+
@@ -527,13 +532,12 @@ macro_rules! impl_matrix {
         )+
     }
 }
-
 impl_matrix! {
     { Mat3, Vec3, 3, 3 => col0, col1, col2 },
     { Mat4, Vec4, 4, 4 => col0, col1, col2, col3 },
 }
 
-/// Constructs a new [Mat3].
+/// Constructs a new [Mat3] (3x3 matrix).
 #[macro_export]
 macro_rules! mat3 {
     () => {
@@ -550,7 +554,7 @@ macro_rules! mat3 {
     };
 }
 
-/// Constructs a new [Mat4].
+/// Constructs a new [Mat4] (4x4 matrix).
 #[macro_export]
 macro_rules! mat4 {
     () => {

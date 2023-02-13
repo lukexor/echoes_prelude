@@ -1,11 +1,10 @@
 use super::{DrawData, RenderSettings};
 #[cfg(feature = "imgui")]
 use crate::imgui;
-use asset_loader::filesystem::DataSource;
 use crate::{
-    matrix::Mat4, prelude::PhysicalSize, vector::Vec4, window::Window,
-    Result,
+    matrix::Mat4, mesh::MaterialType, prelude::PhysicalSize, vector::Vec4, window::Window, Result,
 };
+use asset_loader::filesystem::DataSource;
 
 mod vulkan;
 use async_trait::async_trait;
@@ -70,7 +69,7 @@ pub(crate) trait RenderBackend: Sized {
     fn unload_mesh(&mut self, name: &str) -> Result<()>;
 
     /// Load a texture asset into memory.
-    fn load_texture(&mut self, name: String, filename: PathBuf, material: &str) -> Result<()>;
+    fn load_texture(&mut self, name: String, filename: PathBuf) -> Result<()>;
 
     /// Unload a named texture from memory.
     fn unload_texture(&mut self, name: &str) -> Result<()>;
@@ -80,7 +79,7 @@ pub(crate) trait RenderBackend: Sized {
         &mut self,
         name: String,
         mesh: String,
-        material: String,
+        material_type: MaterialType,
         transform: Mat4,
     ) -> Result<()>;
 

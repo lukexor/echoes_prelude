@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
             }),
     )
     .await;
-    time!(end => total);
+    time!(end: total);
 
     tracing::info!("assets converted successfully");
 

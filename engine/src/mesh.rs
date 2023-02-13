@@ -1,3 +1,5 @@
+//! 3D Mesh types and methods.
+
 use crate::{
     matrix::Mat4,
     vector::{Vec2, Vec3, Vec4},
@@ -5,12 +7,29 @@ use crate::{
 };
 use anyhow::Context;
 use asset_loader::{Asset, MeshAsset, Unpack};
-use bytes::Bytes;
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_MATERIAL: &str = "default_material";
 pub(crate) const MAX_OBJECTS: usize = 10_000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+#[must_use]
+pub enum MaterialType {
+    Default,
+    Texture(String),
+    ShadowCast,
+}
+
+impl AsRef<str> for MaterialType {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Default => "default",
+            Self::Texture(name) => name,
+            Self::ShadowCast => "shadow_cast",
+        }
+    }
+}
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[repr(C)]
@@ -70,7 +89,7 @@ impl Mesh {
         })
     }
 
-    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let (vertices, indices) = MeshAsset::buffers_from_bytes::<Vertex>(bytes)
             .context("failed to deserialize mesh from bytes")?;
 

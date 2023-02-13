@@ -1,3 +1,5 @@
+//! Generic number traits, types, and methods.
+
 use derive_more::{
     Add, AddAssign, Deref, DerefMut, Div, DivAssign, From, Into, Mul, MulAssign, Neg, Sub,
     SubAssign,

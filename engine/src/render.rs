@@ -1,7 +1,7 @@
-//! Traits and types for renderer backends.
+//! Render traits, types and methods.
 
+use crate::{mesh::MaterialType, prelude::*, window::Window, Result};
 use asset_loader::filesystem::DataSource;
-use crate::{prelude::*, window::Window, Result};
 use std::{fmt, path::PathBuf};
 
 pub(crate) use backend::{RenderBackend, RenderContext};
@@ -28,19 +28,14 @@ pub trait Render {
     fn load_mesh(&mut self, name: impl Into<String>, source: impl Into<DataSource>);
 
     /// Load a texture into memory.
-    fn load_texture(
-        &mut self,
-        name: impl Into<String>,
-        filename: impl Into<PathBuf>,
-        material: &'static str,
-    );
+    fn load_texture(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>);
 
     /// Load an object to the current scene.
     fn load_object(
         &mut self,
         name: impl Into<String>,
         mesh: impl Into<String>,
-        material: impl Into<String>,
+        material_type: impl Into<MaterialType>,
         transform: impl Into<Mat4>,
     );
 }
@@ -131,16 +126,10 @@ impl<T> Render for Context<'_, T> {
 
     /// Load a texture into memory.
     #[inline]
-    fn load_texture(
-        &mut self,
-        name: impl Into<String>,
-        filename: impl Into<PathBuf>,
-        material: &'static str,
-    ) {
+    fn load_texture(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>) {
         self.cx.draw_cmds.push(DrawCmd::LoadTexture {
             name: name.into(),
             filename: filename.into(),
-            material,
         });
     }
 
@@ -150,13 +139,13 @@ impl<T> Render for Context<'_, T> {
         &mut self,
         name: impl Into<String>,
         mesh: impl Into<String>,
-        material: impl Into<String>,
+        material_type: impl Into<MaterialType>,
         transform: impl Into<Mat4>,
     ) {
         self.cx.draw_cmds.push(DrawCmd::LoadObject {
             name: name.into(),
             mesh: mesh.into(),
-            material: material.into(),
+            material_type: material_type.into(),
             transform: transform.into(),
         });
     }
@@ -180,12 +169,11 @@ pub enum DrawCmd {
     LoadTexture {
         name: String,
         filename: PathBuf,
-        material: &'static str,
     },
     LoadObject {
         name: String,
         mesh: String,
-        material: String,
+        material_type: MaterialType,
         transform: Mat4,
     },
 }
