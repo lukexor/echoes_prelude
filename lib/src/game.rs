@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use pix_engine::{camera::Camera, mesh::Vertex, prelude::*};
+use pix_engine::{camera::Camera, prelude::*};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GameEvent {

@@ -1,10 +1,6 @@
 //! Vulkan buffer and device memory allocations.
 
-use super::{
-    command_pool::{begin_one_time_command, end_one_time_command},
-    debug::Debug,
-    device::Device,
-};
+use super::{command_pool, debug::Debug, device::Device};
 use anyhow::{Context, Result};
 use ash::vk;
 use derive_more::{Deref, DerefMut};
@@ -174,19 +170,17 @@ impl AllocatedBuffer {
         size: vk::DeviceSize,
     ) -> Result<()> {
         // TODO: need to wait for device idle?
-        let command_buffer = begin_one_time_command(device, command_pool)?;
-
-        let region = vk::BufferCopy::builder().size(size);
-        unsafe {
-            device.cmd_copy_buffer(
-                command_buffer,
-                self.handle,
-                destination.handle,
-                slice::from_ref(&region),
-            );
-        };
-
-        end_one_time_command(device, command_pool, command_buffer, queue)?;
+        command_pool::immediate_command(device, command_pool, queue, |command_buffer| {
+            let region = vk::BufferCopy::builder().size(size);
+            unsafe {
+                device.cmd_copy_buffer(
+                    command_buffer,
+                    self.handle,
+                    destination.handle,
+                    slice::from_ref(&region),
+                );
+            };
+        })?;
         Ok(())
     }
 
@@ -200,39 +194,36 @@ impl AllocatedBuffer {
         width: u32,
         height: u32,
     ) -> Result<()> {
-        let command_buffer = begin_one_time_command(device, command_pool)?;
+        command_pool::immediate_command(device, command_pool, queue, |command_buffer| {
+            let region = vk::BufferImageCopy::builder()
+                .buffer_offset(0)
+                .buffer_row_length(0)
+                .buffer_image_height(0)
+                .image_subresource(
+                    vk::ImageSubresourceLayers::builder()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                )
+                .image_offset(vk::Offset3D::default())
+                .image_extent(vk::Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                });
 
-        let region = vk::BufferImageCopy::builder()
-            .buffer_offset(0)
-            .buffer_row_length(0)
-            .buffer_image_height(0)
-            .image_subresource(
-                vk::ImageSubresourceLayers::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .mip_level(0)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .image_offset(vk::Offset3D::default())
-            .image_extent(vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            });
-
-        unsafe {
-            device.cmd_copy_buffer_to_image(
-                command_buffer,
-                self.handle,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                slice::from_ref(&region),
-            );
-        }
-
-        end_one_time_command(device, command_pool, command_buffer, queue)?;
-
+            unsafe {
+                device.cmd_copy_buffer_to_image(
+                    command_buffer,
+                    self.handle,
+                    image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    slice::from_ref(&region),
+                );
+            }
+        })?;
         Ok(())
     }
 

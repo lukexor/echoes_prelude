@@ -41,12 +41,14 @@ pub(crate) fn create_buffers(
     Ok(buffers)
 }
 
-/// Creates a one-time [`vk::CommandBuffer`] instance to write commands to.
-pub(crate) fn begin_one_time_command(
+/// Submits an immediate command to a [`vk::CommandBuffer`].
+pub(crate) fn immediate_command<F: FnOnce(vk::CommandBuffer)>(
     device: &ash::Device,
     pool: vk::CommandPool,
-) -> Result<vk::CommandBuffer> {
-    tracing::debug!("beginning single time command. creating command buffer");
+    queue: vk::Queue,
+    f: F,
+) -> Result<()> {
+    tracing::debug!("submitting immediate command.");
 
     // Allocate
     let command_allocate_info = vk::CommandBufferAllocateInfo::builder()
@@ -63,19 +65,7 @@ pub(crate) fn begin_one_time_command(
     unsafe { device.begin_command_buffer(command_buffer, &command_begin_info) }
         .context("failed to begin command buffer")?;
 
-    tracing::debug!("created command buffer successfully");
-
-    Ok(command_buffer)
-}
-
-/// Finishes a one-time [`vk::CommandBuffer`] and submits it to the queue.
-pub(crate) fn end_one_time_command(
-    device: &ash::Device,
-    pool: vk::CommandPool,
-    command_buffer: vk::CommandBuffer,
-    queue: vk::Queue,
-) -> Result<()> {
-    tracing::debug!("finishing single time command");
+    f(command_buffer);
 
     unsafe { device.end_command_buffer(command_buffer) }.context("failed to end command buffer")?;
 
@@ -86,14 +76,11 @@ pub(crate) fn end_one_time_command(
     unsafe {
         device.queue_submit(queue, slice::from_ref(&submit_info), vk::Fence::null())?;
         device.queue_wait_idle(queue)?;
-    }
-
-    // Cleanup
-    unsafe {
+        // Cleanup
         device.free_command_buffers(pool, &command_buffers);
     }
 
-    tracing::debug!("finished single time command successfully");
+    tracing::debug!("submitted immediate command successfully");
 
     Ok(())
 }

@@ -17,7 +17,7 @@
 - 1 CORE Material System <https://vkguide.dev/docs/gpudriven/material_system/>: Default, Textured, ShadewCast. Samplers: Smooth, Blocky
 - 1 CORE Mesh System <https://vkguide.dev/docs/gpudriven/mesh_rendering/>
 - 1 CORE Compute Culling <https://vkguide.dev/docs/gpudriven/compute_culling/>
-- 2 CORE Change begin/end submit to `immediate_submit` with a closure
+- 1 CORE Add mipmapping to asset generation
 - 2 CORE Custom Materials
 - 2 CORE Fix mouse cursor to pointer for imgui
 - 2 LIB Change asset conversion to use Bytes to avoid cloning
