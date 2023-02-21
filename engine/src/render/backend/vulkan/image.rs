@@ -82,7 +82,7 @@ impl AllocatedImage {
     }
 
     /// Destroy an `Image` intance.
-    pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+    pub(crate) unsafe fn destroy(&mut self, device: &ash::Device) {
         device.destroy_image_view(self.view, None);
         device.free_memory(self.memory, None);
         device.destroy_image(self.handle, None);
@@ -180,7 +180,6 @@ impl AllocatedImage {
     }
 
     /// Create a [vk::Image] instance to be used as a texture.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn create_texture(
         instance: &ash::Instance,
         device: &Device,
@@ -197,7 +196,7 @@ impl AllocatedImage {
         );
 
         // Staging Buffer
-        let staging_buffer = AllocatedBuffer::create(
+        let mut staging_buffer = AllocatedBuffer::create(
             device,
             texture_name,
             texture.size() as u64,

@@ -119,6 +119,7 @@ pub mod prelude {
     #[cfg(feature = "imgui")]
     pub use crate::imgui;
     pub use crate::{
+        camera::Camera,
         config::Config,
         context::Context,
         core::{Engine, OnUpdate},
@@ -129,7 +130,7 @@ pub mod prelude {
         matrix::Mat4,
         mesh::MaterialType,
         num::{Degrees, Radians},
-        render::Render,
+        render::{Render, RenderBackend, RenderContext},
         shader::{Shader, ShaderStage},
         vector::{Vec2, Vec3, Vec4},
         window::{PhysicalPosition, PhysicalSize, Position, Size},

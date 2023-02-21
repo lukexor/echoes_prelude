@@ -5,11 +5,11 @@ use crate::{
     matrix::Mat4, mesh::MaterialType, prelude::PhysicalSize, vector::Vec4, window::Window, Result,
 };
 use asset_loader::filesystem::DataSource;
+use async_trait::async_trait;
+use std::path::Path;
 
 mod vulkan;
-use async_trait::async_trait;
-use std::path::PathBuf;
-pub(crate) use vulkan::Context as RenderContext;
+pub use vulkan::Context as RenderContext;
 
 #[macro_export]
 macro_rules! render_bail {
@@ -31,15 +31,18 @@ macro_rules! render_bail {
 }
 
 #[async_trait]
-pub(crate) trait RenderBackend: Sized {
+pub trait RenderBackend: Sized {
     /// Initialize the `RendererBackend`.
     fn initialize(
         application_name: &str,
         application_version: &str,
         window: &Window,
         settings: RenderSettings,
-        #[cfg(feature = "imgui")] imgui: &mut imgui::ImGui,
     ) -> Result<Self>;
+
+    /// Initialize imgui renderer.
+    #[cfg(feature = "imgui")]
+    fn initialize_imgui(&mut self, imgui: &mut imgui::ImGui) -> Result<()>;
 
     /// Handle window resized event.
     fn on_resized(&mut self, size: PhysicalSize<u32>);
@@ -63,13 +66,13 @@ pub(crate) trait RenderBackend: Sized {
     fn set_object_transform(&mut self, name: &str, transform: Mat4);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: String, source: DataSource) -> Result<()>;
+    fn load_mesh(&mut self, name: &str, source: &DataSource) -> Result<()>;
 
     /// Unload a named mesh from memory.
     fn unload_mesh(&mut self, name: &str) -> Result<()>;
 
     /// Load a texture asset into memory.
-    fn load_texture(&mut self, name: String, filename: PathBuf) -> Result<()>;
+    fn load_texture(&mut self, name: &str, filename: &Path) -> Result<()>;
 
     /// Unload a named texture from memory.
     fn unload_texture(&mut self, name: &str) -> Result<()>;
@@ -77,8 +80,8 @@ pub(crate) trait RenderBackend: Sized {
     /// Load an object to the current scene.
     fn load_object(
         &mut self,
-        name: String,
-        mesh: String,
+        name: &str,
+        mesh: &str,
         material_type: MaterialType,
         transform: Mat4,
     ) -> Result<()>;

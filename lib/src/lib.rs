@@ -6,7 +6,6 @@
     clippy::branches_sharing_code,
     clippy::map_unwrap_or,
     clippy::match_wildcard_for_single_variants,
-    // clippy::missing_errors_doc,
     clippy::must_use_candidate,
     clippy::needless_for_each,
     clippy::redundant_closure_for_method_calls,
@@ -19,6 +18,8 @@
     future_incompatible,
     missing_copy_implementations,
     missing_debug_implementations,
+    // TODO: Re-enable
+    // clippy::missing_errors_doc,
     // missing_docs,
     nonstandard_style,
     rust_2018_compatibility,
@@ -41,22 +42,45 @@ pub mod config;
 pub mod game;
 pub mod trace;
 
-// pub use is required all exposed types for `hot_lib_reloader`
+// NOTE: pub use is required for any types used in hot-reloadable functions to expose them to
+// the `hot_lib_reloader` macro.
 pub use anyhow::Result;
-pub use game::{Game, GameEvent};
+pub use game::{Cx, Game, GameEvent};
 pub use pix_engine::prelude::*;
+pub use trace::TraceGuard;
 
+/// Hot-reloadable [trace::initialize]. Because globals are not shared across dynamic library
+/// boundaries, tracing has to be re-initialized on every reload.
+#[inline]
 #[no_mangle]
-pub fn on_update(game: &mut Game, cx: &mut Context<'_, GameEvent>) -> Result<()> {
+pub fn initialize_trace() -> TraceGuard {
+    trace::initialize()
+}
+
+/// Hot-reloadable [Game::on_update].
+#[inline]
+#[no_mangle]
+pub fn on_update(game: &mut Game, cx: &mut Cx) -> Result<()> {
     game.on_update(cx)
 }
 
+/// Hot-reloadable [Game::on_reload].
+#[inline]
+#[no_mangle]
+pub fn on_reload(game: &mut Game, cx: &mut Cx) -> Result<()> {
+    game.on_reload(cx)
+}
+
+/// Hot-reloadable [Game::audio_samples].
+#[inline]
 #[no_mangle]
 pub fn audio_samples(game: &mut Game) -> Result<Vec<f32>> {
     game.audio_samples()
 }
 
+/// Hot-reloadable [Game::on_event].
+#[inline]
 #[no_mangle]
-pub fn on_event(game: &mut Game, cx: &mut Context<'_, GameEvent>, event: Event<GameEvent>) {
+pub fn on_event(game: &mut Game, cx: &mut Cx, event: Event<GameEvent>) {
     game.on_event(cx, event);
 }

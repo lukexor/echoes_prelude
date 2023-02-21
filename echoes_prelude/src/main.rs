@@ -37,25 +37,28 @@
 )]
 
 use anyhow::Result;
-use pix_engine::{prelude::*, window::Positioned};
+use pix_engine::{prelude::*, window::Positioned, Result as PixResult};
 
-#[cfg(not(feature = "hot_reload"))]
+#[cfg(not(feature = "reload"))]
 use echoes_prelude_lib::*;
-#[cfg(feature = "hot_reload")]
+#[cfg(feature = "reload")]
 use hot_echoes_prelude_lib::*;
 
-#[cfg(feature = "hot_reload")]
+#[cfg(feature = "reload")]
 #[hot_lib_reloader::hot_module(
     dylib = "echoes_prelude_lib",
     lib_dir = concat!(env!("CARGO_TARGET_DIR"), "/debug")
 )]
 mod hot_echoes_prelude_lib {
     pub(crate) use echoes_prelude_lib::*;
-    hot_functions_from_file!("engine/src/lib.rs");
+    hot_functions_from_file!("lib/src/lib.rs");
 
     // TODO: React to reloads to re-initialize if needed
-    #[lib_change_subscription]
-    pub(crate) fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
+    // See: https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
+    // #[lib_change_subscription]
+    // pub(crate) fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
+    #[lib_updated]
+    pub(crate) fn was_updated() -> bool {}
 }
 
 const APPLICATION_NAME: &str = "Echoes: Prelude in Shadow";
@@ -63,8 +66,6 @@ const WINDOW_WIDTH: u32 = 1440;
 const WINDOW_HEIGHT: u32 = 900;
 
 fn main() -> Result<()> {
-    // TODO: tokio/reload https://github.com/rksm/hot-lib-reloader-rs/blob/master/examples/reload-events/src/main.rs
-    // TODO: Re-init logger on hot reload
     let _trace = trace::initialize();
     run_application()
 }
@@ -88,39 +89,64 @@ fn run_application() -> Result<()> {
 #[must_use]
 struct Application {
     game: Game,
+    imgui: imgui::ImGui,
+    #[cfg(feature = "reload")]
+    _trace_guard: TraceGuard,
 }
 
 impl Application {
     fn initialize() -> Result<Self> {
         let game = Game::new()?;
-        Ok(Self { game })
+        Ok(Self {
+            game,
+            imgui: imgui::ImGui::create(),
+            #[cfg(feature = "reload")]
+            _trace_guard: initialize_trace(),
+        })
     }
 }
 
 impl OnUpdate for Application {
     type UserEvent = GameEvent;
+    type Renderer = RenderContext;
 
     /// Called on engine start.
-    fn on_start(&mut self, cx: &mut Context<'_, Self::UserEvent>) -> pix_engine::Result<()> {
-        tracing::info!("application started");
+    #[inline]
+    fn on_start(&mut self, cx: &mut Cx) -> PixResult<()> {
+        tracing::info!("echoes prelude start");
         self.game.initialize(cx)?;
+        self.imgui.initialize(cx)?;
         Ok(())
     }
 
     /// Called every frame.
-    fn on_update(&mut self, cx: &mut Context<'_, Self::UserEvent>) -> pix_engine::Result<()> {
+    #[inline]
+    fn on_update(&mut self, cx: &mut Cx) -> PixResult<()> {
+        #[cfg(feature = "reload")]
+        if hot_echoes_prelude_lib::was_updated() {
+            self._trace_guard = initialize_trace();
+        }
         on_update(&mut self.game, cx)?;
         let _ = audio_samples(&mut self.game)?;
         Ok(())
     }
 
+    /// Render UI.
+    #[inline]
+    fn render_imgui(&mut self, cx: &mut Cx) -> PixResult<&imgui::DrawData> {
+        Ok(self.game.render_imgui(cx, &mut self.imgui)?)
+    }
+
     /// Called on engine shutdown.
-    fn on_stop(&mut self, _cx: &mut Context<'_, Self::UserEvent>) {
-        tracing::info!("application shutting down");
+    #[inline]
+    fn on_stop(&mut self, _cx: &mut Cx) {
+        tracing::info!("echoes prelude stop");
     }
 
     /// Called on every event.
-    fn on_event(&mut self, cx: &mut Context<'_, Self::UserEvent>, event: Event<Self::UserEvent>) {
+    #[inline]
+    fn on_event(&mut self, cx: &mut Cx, event: Event<Self::UserEvent>) {
+        self.imgui.on_event(event);
         on_event(&mut self.game, cx, event);
     }
 }

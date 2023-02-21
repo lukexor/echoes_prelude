@@ -13,9 +13,6 @@ build = "build.rs"
 [package.metadata]
 msrv = "1.66.0"
 
-[lib]
-crate-type = ["rlib", "dylib"]
-
 [features]
 default = []
 imgui = ["dep:imgui", "dep:imgui-rs-vulkan-renderer"]

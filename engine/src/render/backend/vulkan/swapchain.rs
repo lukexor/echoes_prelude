@@ -204,7 +204,7 @@ impl Swapchain {
 
     /// Destroy a `Swapchain` instance.
     pub(crate) unsafe fn destroy(
-        &self,
+        &mut self,
         device: &ash::Device,
         allocator: Option<&vk::AllocationCallbacks>,
     ) {

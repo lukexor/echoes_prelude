@@ -2,7 +2,9 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use pix_engine::{camera::Camera, prelude::*};
+use pix_engine::prelude::*;
+
+pub type Cx = Context<GameEvent, RenderContext>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GameEvent {
@@ -10,7 +12,7 @@ pub enum GameEvent {
 }
 
 #[allow(missing_copy_implementations)]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[must_use]
 pub struct Game {
     config: Config,
@@ -33,7 +35,9 @@ impl Game {
     }
 
     /// Initialize the `Game` instance.
-    pub fn initialize(&mut self, cx: &mut Context<'_, GameEvent>) -> Result<()> {
+    #[inline]
+    pub fn initialize(&mut self, cx: &mut Cx) -> Result<()> {
+        tracing::debug!("initializing echoes prelude");
         self.update_projection(cx.width(), cx.height());
 
         cx.load_mesh("viking_room_mesh", "lib/assets/meshes/viking_room.mesh");
@@ -71,12 +75,20 @@ impl Game {
                 );
             }
         }
+        tracing::debug!("initialized echoes prelude successfully");
 
         Ok(())
     }
 
+    /// Hot-reload global state.
+    #[inline]
+    pub fn on_reload(&mut self, _cx: &mut Cx) -> Result<()> {
+        Ok(())
+    }
+
     /// Called every frame to update game state.
-    pub fn on_update(&mut self, cx: &mut Context<'_, GameEvent>) -> Result<()> {
+    #[inline]
+    pub fn on_update(&mut self, cx: &mut Cx) -> Result<()> {
         // TODO: Reduce framerate when not focused.
 
         self.handle_input(cx)?;
@@ -90,17 +102,11 @@ impl Game {
         cx.set_clear_color([0.0, 0.0, flash, 1.0]);
         cx.set_object_transform("viking_room", Mat4::rotation([90.0, 0.0, time * 20.0]));
 
-        if self.menu_is_open {
-            cx.ui()?.show_demo_window(&mut self.menu_is_open);
-            cx.set_cursor_grab(false);
-        } else {
-            cx.set_cursor_grab(true);
-        }
-
         Ok(())
     }
 
-    fn handle_input(&mut self, cx: &mut Context<'_, GameEvent>) -> Result<()> {
+    #[inline]
+    fn handle_input(&mut self, cx: &mut Cx) -> Result<()> {
         // FIXME: temporary
         if cx.key_typed(KeyCode::T) {
             cx.send_event(GameEvent::Debug);
@@ -158,14 +164,34 @@ impl Game {
         Ok(())
     }
 
+    /// Render UI
+    #[inline]
+    pub fn render_imgui<'a>(
+        &'a mut self,
+        cx: &mut Cx,
+        imgui: &'a mut imgui::ImGui,
+    ) -> Result<&imgui::DrawData> {
+        let ui = cx.new_ui_frame(imgui);
+        if self.menu_is_open {
+            cx.set_cursor_grab(false);
+            ui.show_demo_window(&mut self.menu_is_open);
+        } else {
+            cx.set_cursor_grab(true);
+        }
+        cx.end_ui_frame(ui);
+        Ok(cx.render_ui_frame(imgui))
+    }
+
     /// Called every frame to retrieve audio samples to be played.
+    #[inline]
     pub fn audio_samples(&mut self) -> Result<Vec<f32>> {
         // TODO audio_samples https://github.com/RustAudio/cpal?
         Ok(vec![])
     }
 
     /// Called on every event.
-    pub fn on_event(&mut self, cx: &mut Context<'_, GameEvent>, event: Event<GameEvent>) {
+    #[inline]
+    pub fn on_event(&mut self, cx: &mut Cx, event: Event<GameEvent>) {
         if !cx.focused() {
             return;
         }
@@ -173,11 +199,6 @@ impl Game {
         match event {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::Resized(_) => self.projection_dirty = true,
-                WindowEvent::MouseInput {
-                    button: _,
-                    state: _,
-                    ..
-                } => {}
                 WindowEvent::CloseRequested | WindowEvent::Destroyed { .. } => cx.quit(),
                 _ => (),
             },
@@ -198,10 +219,6 @@ impl Game {
                     self.camera.zoom(Degrees::new(y));
                     self.projection_dirty = true;
                 }
-                DeviceEvent::Button {
-                    button: _,
-                    state: _,
-                } => {}
                 _ => (),
             },
             _ => (),

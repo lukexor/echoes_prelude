@@ -1,72 +1,62 @@
 //! Immediate-mode GUI methods.
 
-use crate::{prelude::*, window::Window, Error};
+use crate::{prelude::*, render::RenderBackend, Error, Result};
 use ::imgui::{ConfigFlags, MouseCursor};
 use anyhow::anyhow;
 use derive_more::{Deref, DerefMut};
-use std::time::Duration;
+use std::path::PathBuf;
 
 pub use ::imgui::{DrawData, Ui};
 
 #[derive(Debug, Deref, DerefMut)]
 #[must_use]
 pub struct ImGui {
+    #[deref]
+    #[deref_mut]
     pub(crate) cx: ::imgui::Context,
+    pub(crate) initialized: bool,
 }
 
 impl ImGui {
     /// Initialize the imgui `Context`.
     #[inline]
-    pub fn initialize(window: &Window) -> Self {
-        let mut imgui = ::imgui::Context::create();
+    pub fn create() -> Self {
+        let mut cx = ::imgui::Context::create();
+        cx.set_ini_filename(None);
         // TODO: Make saving imgui data configurable
         // imgui.load_ini_settings(data);
         // if io.want_save_ini_settings {
         //     imgui.save_ini_settings(buf);
         // }
-        imgui.set_ini_filename(None);
-        let io = imgui.io_mut();
-        let hidpi_factor = window.scale_factor().round() as f32;
-        io.display_framebuffer_scale = [hidpi_factor; 2];
-        let logical_size = window.inner_size().to_logical::<f32>(hidpi_factor as f64);
-        io.display_size = [logical_size.width, logical_size.height];
-
-        Self { cx: imgui }
+        cx.set_log_filename(PathBuf::from("logs/imgui.log"));
+        cx.set_platform_name("winit".to_string());
+        cx.set_renderer_name("vulkan".to_string());
+        Self {
+            cx,
+            initialized: false,
+        }
     }
 
-    /// Called at the beginning of a frame to prepare the imgui for rendering.
+    /// Initialize the imgui `Context`.
     #[inline]
-    pub fn begin_frame(&mut self, delta_time: Duration, window: &Window) {
-        use winit::dpi::PhysicalPosition;
+    pub fn initialize<T, R: RenderBackend>(&mut self, cx: &mut Context<T, R>) -> Result<()> {
+        let window = cx.window();
+        let hidpi_factor = window.scale_factor().round() as f32;
+        let logical_size = window.inner_size().to_logical::<f32>(hidpi_factor as f64);
 
         let io = self.io_mut();
-        io.update_delta_time(delta_time);
+        io.display_framebuffer_scale = [hidpi_factor; 2];
+        io.display_size = [logical_size.width, logical_size.height];
 
-        if io.want_set_mouse_pos {
-            if let Err(err) =
-                window.set_cursor_position(PhysicalPosition::<f32>::from(io.mouse_pos))
-            {
-                tracing::error!("failed to set cursor position: {err:?}");
-            }
-        }
+        cx.renderer.initialize_imgui(self)?;
+        self.initialized = true;
+
+        Ok(())
     }
 
-    /// Called at the end of a frame to submit updates to imgui.
     #[inline]
-    pub fn end_frame(ui: &mut Ui, window: &Window) {
-        if !ui
-            .io()
-            .config_flags
-            .contains(ConfigFlags::NO_MOUSE_CURSOR_CHANGE)
-        {
-            match ui.mouse_cursor() {
-                Some(cursor) if !ui.io().mouse_draw_cursor => {
-                    window.set_cursor_visible(true);
-                    window.set_cursor_icon(cursor_into_winit(cursor));
-                }
-                _ => window.set_cursor_visible(false),
-            }
-        }
+    pub fn suspend(self) -> ::imgui::SuspendedContext {
+        self.cx.suspend()
     }
 
     /// Called on every event.
@@ -125,6 +115,51 @@ impl ImGui {
                 _ => (),
             }
         }
+    }
+}
+
+impl<T, R> Context<T, R> {
+    /// Begin a UI frame.
+    #[inline]
+    pub fn new_ui_frame<'a>(&mut self, imgui: &'a mut imgui::ImGui) -> &'a mut imgui::Ui {
+        use winit::dpi::PhysicalPosition;
+
+        let io = imgui.io_mut();
+        io.update_delta_time(self.delta_time());
+
+        if io.want_set_mouse_pos {
+            if let Err(err) = self
+                .window()
+                .set_cursor_position(PhysicalPosition::<f32>::from(io.mouse_pos))
+            {
+                tracing::error!("failed to set cursor position: {err:?}");
+            }
+        }
+        imgui.new_frame()
+    }
+
+    /// Called at the end of a frame to submit updates to imgui.
+    #[inline]
+    pub fn end_ui_frame(&mut self, ui: &mut Ui) {
+        if !ui
+            .io()
+            .config_flags
+            .contains(ConfigFlags::NO_MOUSE_CURSOR_CHANGE)
+        {
+            match ui.mouse_cursor() {
+                Some(cursor) if !ui.io().mouse_draw_cursor => {
+                    self.window().set_cursor_visible(true);
+                    self.window().set_cursor_icon(cursor_into_winit(cursor));
+                }
+                _ => self.window().set_cursor_visible(false),
+            }
+        }
+    }
+
+    /// Render a UI frame.
+    #[inline]
+    pub fn render_ui_frame<'a>(&mut self, imgui: &'a mut imgui::ImGui) -> &'a imgui::DrawData {
+        imgui.render()
     }
 }
 

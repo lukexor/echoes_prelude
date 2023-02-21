@@ -163,7 +163,7 @@ impl Frame {
     }
 
     /// Destroy a `Sync` instance.
-    pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+    pub(crate) unsafe fn destroy(&mut self, device: &ash::Device) {
         self.object_buffer.destroy(device);
         self.camera_buffer.destroy(device);
         device.destroy_command_pool(self.command_pool, None);

@@ -228,7 +228,7 @@ impl AllocatedBuffer {
     }
 
     /// Destroy a `Buffer` instance.
-    pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+    pub(crate) unsafe fn destroy(&mut self, device: &ash::Device) {
         device.free_memory(self.memory, None);
         device.destroy_buffer(self.handle, None);
     }

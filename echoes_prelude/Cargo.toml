@@ -14,7 +14,7 @@ default-run = "echoes_prelude"
 msrv = "1.66.0"
 
 [features]
-hot_reload = ["dep:hot-lib-reloader"]
+reload = ["dep:hot-lib-reloader"]
 
 [dependencies]
 anyhow = { workspace = true }

@@ -67,7 +67,7 @@ impl Renderer {
         Ok(())
     }
 
-    /// Draw imggui for this frame.
+    /// Draw imgui for this frame.
     pub(crate) fn draw(
         &mut self,
         device: &Device,

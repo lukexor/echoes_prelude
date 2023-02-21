@@ -36,7 +36,7 @@ use semver::Version;
 use std::{
     ffi::{CStr, CString},
     fmt, mem,
-    path::PathBuf,
+    path::Path,
     ptr, slice,
 };
 use tokio::runtime::{self, Runtime};
@@ -59,7 +59,7 @@ pub(crate) const ENABLED_LAYER_NAMES: [&CStr; 1] = [VALIDATION_LAYER_NAME];
 #[cfg(not(debug_assertions))]
 pub(crate) const ENABLED_LAYER_NAMES: [&CStr; 0] = [];
 
-pub(crate) struct Context {
+pub struct Context {
     size: PhysicalSize<u32>,
     resized: bool,
     frame_number: usize,
@@ -104,7 +104,7 @@ pub(crate) struct Context {
     primary_framebuffers: Vec<vk::Framebuffer>,
 
     #[cfg(feature = "imgui")]
-    imgui_renderer: imgui_renderer::Renderer,
+    imgui_renderer: Option<imgui_renderer::Renderer>,
 }
 
 impl fmt::Debug for Context {
@@ -121,7 +121,6 @@ impl RenderBackend for Context {
         application_version: &str,
         window: &Window,
         settings: RenderSettings,
-        #[cfg(feature = "imgui")] imgui: &mut imgui::ImGui,
     ) -> Result<Self> {
         tracing::debug!("initializing vulkan renderer backend");
 
@@ -224,15 +223,6 @@ impl RenderBackend for Context {
             Some(depth_image.view),
         )?;
 
-        #[cfg(feature = "imgui")]
-        let imgui_renderer = imgui_renderer::Renderer::initialize(
-            &instance,
-            &device,
-            &swapchain,
-            graphics_command_pool,
-            imgui,
-        )?;
-
         tracing::debug!("initialized vulkan renderer backend successfully");
 
         Ok(Self {
@@ -289,8 +279,21 @@ impl RenderBackend for Context {
             primary_framebuffers,
 
             #[cfg(feature = "imgui")]
-            imgui_renderer,
+            imgui_renderer: None,
         })
+    }
+
+    /// Initialize imgui renderer.
+    #[cfg(feature = "imgui")]
+    fn initialize_imgui(&mut self, imgui: &mut imgui::ImGui) -> Result<()> {
+        self.imgui_renderer = Some(imgui_renderer::Renderer::initialize(
+            &self.instance,
+            &self.device,
+            &self.swapchain,
+            self.graphics_command_pool,
+            imgui,
+        )?);
+        Ok(())
     }
 
     /// Handle window resized event.
@@ -306,16 +309,16 @@ impl RenderBackend for Context {
     /// Called at the end of a frame to submit updates to the renderer.
     #[inline]
     fn draw_frame(&mut self, draw_data: &mut DrawData<'_>) -> Result<()> {
-        for cmd in draw_data.data.drain(..) {
+        for cmd in draw_data.commands {
             match cmd {
-                DrawCmd::ClearColor(color) => self.set_clear_color(color),
+                DrawCmd::ClearColor(color) => self.set_clear_color(*color),
                 DrawCmd::ClearDepthStencil((depth, stencil)) => {
-                    self.set_clear_depth_stencil(depth, stencil);
+                    self.set_clear_depth_stencil(*depth, *stencil);
                 }
-                DrawCmd::SetProjection(projection) => self.set_projection(projection),
-                DrawCmd::SetView(view) => self.set_view(view),
+                DrawCmd::SetProjection(projection) => self.set_projection(*projection),
+                DrawCmd::SetView(view) => self.set_view(*view),
                 DrawCmd::SetObjectTransform { name, transform } => {
-                    self.set_object_transform(name, transform);
+                    self.set_object_transform(name, *transform);
                 }
                 DrawCmd::LoadMesh { name, source } => self.load_mesh(name, source)?,
                 DrawCmd::LoadTexture { name, filename } => self.load_texture(name, filename)?,
@@ -324,7 +327,7 @@ impl RenderBackend for Context {
                     mesh,
                     material_type,
                     transform,
-                } => self.load_object(name, mesh, material_type, transform)?,
+                } => self.load_object(name, mesh, material_type.clone(), *transform)?,
             }
         }
 
@@ -361,22 +364,27 @@ impl RenderBackend for Context {
             image_index,
         )?;
         #[cfg(feature = "imgui")]
-        if let Some(draw_data) = &draw_data.imgui {
-            self.imgui_renderer.draw(
+        if let Some(imgui_renderer) = &mut self.imgui_renderer {
+            imgui_renderer.draw(
                 &self.device,
                 &self.swapchain,
                 self.frames[self.current_frame].command_buffers[1],
                 image_index,
-                draw_data,
+                draw_data.imgui,
             )?;
         }
 
+        let command_buffers = if cfg!(feature = "imgui") && self.imgui_renderer.is_some() {
+            &self.frames[self.current_frame].command_buffers
+        } else {
+            slice::from_ref(&self.frames[self.current_frame].command_buffers[0])
+        };
         let wait_stages = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
         let render_semaphor = self.frames[self.current_frame].render_semaphor;
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(slice::from_ref(&present_semaphor))
             .wait_dst_stage_mask(slice::from_ref(&wait_stages))
-            .command_buffers(&self.frames[self.current_frame].command_buffers)
+            .command_buffers(command_buffers)
             .signal_semaphores(slice::from_ref(&render_semaphor))
             .build();
 
@@ -463,10 +471,10 @@ impl RenderBackend for Context {
     }
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: String, source: DataSource) -> Result<()> {
+    fn load_mesh(&mut self, name: &str, source: &DataSource) -> Result<()> {
         let mesh = match source {
             DataSource::Path(path) => self.runtime.block_on(Mesh::from_asset_path(&path))?,
-            DataSource::Bytes(bytes) => Mesh::from_bytes(&bytes)?,
+            DataSource::Bytes(bytes) => Mesh::from_bytes(bytes)?,
         };
 
         // TODO: allocate from larger buffer pool
@@ -489,15 +497,17 @@ impl RenderBackend for Context {
             self.debug.as_ref(),
         )?;
 
-        self.meshes
-            .insert(name, AllocatedMesh::new(mesh, vertex_buffer, index_buffer));
+        self.meshes.insert(
+            name.to_string(),
+            AllocatedMesh::new(mesh, vertex_buffer, index_buffer),
+        );
 
         Ok(())
     }
 
     /// Unload a named mesh from memory.
     fn unload_mesh(&mut self, name: &str) -> Result<()> {
-        if let Some(mesh) = self.meshes.remove(name) {
+        if let Some(mut mesh) = self.meshes.remove(name) {
             unsafe {
                 self.device.device_wait_idle()?;
                 mesh.destroy(&self.device);
@@ -509,10 +519,10 @@ impl RenderBackend for Context {
     }
 
     /// Load a texture into memory.
-    fn load_texture(&mut self, name: String, filename: PathBuf) -> Result<()> {
+    fn load_texture(&mut self, name: &str, filename: &Path) -> Result<()> {
         let texture = self
             .runtime
-            .block_on(TextureAsset::load(&filename))
+            .block_on(TextureAsset::load(filename))
             .context("failed to load texture {filename:?}")?;
         let texture_image = self.runtime.block_on(AllocatedImage::create_texture(
             &self.instance,
@@ -540,7 +550,7 @@ impl RenderBackend for Context {
             descriptor_sets[0],
         );
         self.materials
-            .insert(MaterialType::Texture(name.clone()), material);
+            .insert(MaterialType::Texture(name.to_string()), material);
 
         let texture_info = vk::DescriptorImageInfo::builder()
             .sampler(self.sampler)
@@ -558,13 +568,13 @@ impl RenderBackend for Context {
             self.device.update_descriptor_sets(&write_sets, &[]);
         };
 
-        self.textures.insert(name, texture_image);
+        self.textures.insert(name.to_string(), texture_image);
         Ok(())
     }
 
     /// Unload a named texture from memory.
     fn unload_texture(&mut self, name: &str) -> Result<()> {
-        if let Some(texture) = self.textures.remove(name) {
+        if let Some(mut texture) = self.textures.remove(name) {
             unsafe {
                 self.device.device_wait_idle()?;
                 texture.destroy(&self.device);
@@ -578,12 +588,12 @@ impl RenderBackend for Context {
     /// Load a mesh object to render in the current scene.
     fn load_object(
         &mut self,
-        name: String,
-        mesh_name: String,
+        name: &str,
+        mesh_name: &str,
         material_type: MaterialType,
         transform: Mat4,
     ) -> Result<()> {
-        if !self.meshes.contains_key(&mesh_name) {
+        if !self.meshes.contains_key(mesh_name) {
             render_bail!("mesh {} does not exist", mesh_name);
         }
         let material = self
@@ -592,9 +602,9 @@ impl RenderBackend for Context {
             .cloned()
             .with_context(|| format!("material `{material_type}` does not exist"))?;
         self.objects.insert(
-            name,
+            name.to_string(),
             Object {
-                mesh: mesh_name,
+                mesh: mesh_name.to_string(),
                 material,
                 transform,
             },
@@ -623,7 +633,7 @@ impl Context {
                 self.device.destroy_framebuffer(framebuffer, None);
             }
             self.swapchain.destroy(&self.device, None);
-            if let Some(image) = &self.color_image {
+            if let Some(image) = &mut self.color_image {
                 image.destroy(&self.device);
             }
             self.depth_image.destroy(&self.device);
@@ -671,8 +681,9 @@ impl Context {
             Some(self.depth_image.view),
         )?;
         #[cfg(feature = "imgui")]
-        self.imgui_renderer
-            .recreate_framebuffers(&self.device, &self.swapchain)?;
+        if let Some(imgui_renderer) = &mut self.imgui_renderer {
+            imgui_renderer.recreate_framebuffers(&self.device, &self.swapchain)?;
+        }
 
         tracing::debug!("re-created swapchain successfully");
 
@@ -881,21 +892,23 @@ impl Drop for Context {
             }
 
             #[cfg(feature = "imgui")]
-            self.imgui_renderer.destroy(&self.device);
+            if let Some(imgui_renderer) = &mut self.imgui_renderer {
+                imgui_renderer.destroy(&self.device);
+            }
 
             for &framebuffer in self.primary_framebuffers.iter() {
                 self.device.destroy_framebuffer(framebuffer, None);
             }
             self.swapchain.destroy(&self.device, None);
 
-            if let Some(image) = &self.color_image {
+            if let Some(image) = &mut self.color_image {
                 image.destroy(&self.device);
             }
             self.depth_image.destroy(&self.device);
-            for mesh in self.meshes.values() {
+            for mesh in self.meshes.values_mut() {
                 mesh.destroy(&self.device);
             }
-            for texture in self.textures.values() {
+            for texture in self.textures.values_mut() {
                 texture.destroy(&self.device);
             }
             for pipeline in self.pipelines.iter().copied() {
@@ -909,7 +922,7 @@ impl Drop for Context {
                 self.device.destroy_descriptor_set_layout(layout, None);
             }
             self.device.destroy_render_pass(self.render_pass, None);
-            for frame in &self.frames {
+            for frame in &mut self.frames {
                 frame.destroy(&self.device);
             }
             self.scene_buffer.destroy(&self.device);
@@ -918,7 +931,7 @@ impl Drop for Context {
                 .destroy_command_pool(self.graphics_command_pool, None);
             self.device.destroy_device(None);
             self.surface.destroy(None);
-            if let Some(debug) = &self.debug {
+            if let Some(debug) = &mut self.debug {
                 debug.destroy();
             }
             self.instance.destroy_instance(None);
@@ -1230,7 +1243,7 @@ mod debug {
         }
 
         /// Destroy a `Debug` instance.
-        pub(crate) unsafe fn destroy(&self) {
+        pub(crate) unsafe fn destroy(&mut self) {
             self.utils
                 .destroy_debug_utils_messenger(self.messenger, None);
         }

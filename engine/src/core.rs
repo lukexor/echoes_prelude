@@ -2,39 +2,50 @@
 
 use crate::{
     config::{Config, Fullscreen},
-    context::{Context, EngineContext},
+    context::Context,
     prelude::*,
-    render::{RenderSettings, Renderer},
+    render::{RenderBackend, RenderSettings, Renderer},
     window::{
         winit::{FullscreenModeExt, PositionedExt},
         Positioned, WindowCreateInfo,
     },
-    Result,
+    Error, Result,
 };
 use anyhow::Context as _;
 use std::fmt::Debug;
 use winit::{
     event::{Event as WinitEvent, StartCause},
-    event_loop::EventLoopBuilder,
+    event_loop::{ControlFlow, EventLoopBuilder},
     window::WindowBuilder,
 };
 
 pub trait OnUpdate {
     type UserEvent: Copy + Debug + 'static;
+    type Renderer: RenderBackend;
 
     /// Called on engine start for initializing resources and state.
-    fn on_start(&mut self, _cx: &mut Context<'_, Self::UserEvent>) -> Result<()> {
+    fn on_start(&mut self, _cx: &mut Context<Self::UserEvent, Self::Renderer>) -> Result<()> {
         Ok(())
     }
 
     /// Called every frame to update state and render frames.
-    fn on_update(&mut self, cx: &mut Context<'_, Self::UserEvent>) -> Result<()>;
+    fn on_update(&mut self, cx: &mut Context<Self::UserEvent, Self::Renderer>) -> Result<()>;
+
+    #[cfg(feature = "imgui")]
+    fn render_imgui(
+        &mut self,
+        _cx: &mut Context<Self::UserEvent, Self::Renderer>,
+    ) -> Result<&imgui::DrawData>;
 
     /// Called on engine shutdown to clean up resources.
-    fn on_stop(&mut self, _cx: &mut Context<'_, Self::UserEvent>) {}
+    fn on_stop(&mut self, _cx: &mut Context<Self::UserEvent, Self::Renderer>) {}
 
     /// Called on every event.
-    fn on_event(&mut self, _cx: &mut Context<'_, Self::UserEvent>, _event: Event<Self::UserEvent>) {
+    fn on_event(
+        &mut self,
+        _cx: &mut Context<Self::UserEvent, Self::Renderer>,
+        _event: Event<Self::UserEvent>,
+    ) {
     }
 }
 
@@ -92,15 +103,6 @@ impl EngineBuilder {
     }
 }
 
-#[derive(Debug)]
-#[must_use]
-pub(crate) struct EngineState<T: 'static> {
-    engine_cx: EngineContext<T>,
-    renderer: Renderer,
-    #[cfg(feature = "imgui")]
-    imgui: imgui::ImGui,
-}
-
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct Engine {
@@ -127,7 +129,7 @@ impl Engine {
     pub fn run<A: OnUpdate + 'static>(self, mut app: A) -> Result<()> {
         let event_loop = EventLoopBuilder::<A::UserEvent>::with_user_event().build();
         let event_proxy = event_loop.create_proxy();
-        let mut engine_state = None;
+        let mut cx = None;
 
         tracing::debug!("starting `Engine::on_update` loop.");
         event_loop.run(move |event, event_loop, control_flow| {
@@ -148,86 +150,73 @@ impl Engine {
                         return;
                     };
 
-                let mut engine_cx = EngineContext::<A::UserEvent>::with_user_events(self.config.clone(), window, event_proxy.clone());
                 // TODO: Read from saved configuration
                 let settings = RenderSettings::default();
-                #[cfg(feature = "imgui")]
-                let mut imgui = imgui::ImGui::initialize(engine_cx.window());
-                let Ok(renderer) = Renderer::initialize(engine_cx.window_title(), &self.version, engine_cx.window(), settings, #[cfg(feature = "imgui")] &mut imgui)
+                let Ok(renderer) = Renderer::initialize(&self.config.window_title, &self.version, &window, settings)
                     .map_err(|err| tracing::error!("{err:?}")) else {
                     control_flow.set_exit_with_code(2);
                     return;
                 };
+                let mut context = Context::<A::UserEvent, A::Renderer>::with_user_events(self.config.clone(), window, event_proxy.clone(), renderer);
 
-                let on_start = app.on_start(&mut engine_cx.context());
-                if on_start.is_err() || engine_cx.should_quit() {
+                let on_start = app.on_start(&mut context);
+                if on_start.is_err() || context.should_quit() {
                     tracing::debug!("quitting after on_start with `Engine::on_stop`");
-                    if let Err(ref err) = on_start {
-                        tracing::error!("{err:?}");
+                    app.on_stop(&mut context);
+                    return match on_start {
+                        Ok(_) => control_flow.set_exit(),
+                        Err(err) => Self::handle_error(control_flow, 1, err),
                     }
-                    app.on_stop(&mut engine_cx.context());
-                    control_flow.set_exit_with_code(3);
                 } else {
-                    engine_state = Some(EngineState { engine_cx, renderer, #[cfg(feature = "imgui")] imgui });
+                    cx = Some(context);
                 }
             }
 
-            if let Some(EngineState { engine_cx, renderer, #[cfg(feature = "imgui")] imgui }) = &mut engine_state {
+            if let Some(cx) = &mut cx {
                 match event {
-                    WinitEvent::MainEventsCleared if engine_cx.is_running() => {
-                        let delta_time = engine_cx.last_frame_time.elapsed();
-                        #[cfg(feature = "imgui")]
-                        imgui.begin_frame(delta_time, engine_cx.window());
-                        let mut cx = engine_cx.begin_frame(delta_time, #[cfg(feature = "imgui")] imgui.new_frame());
-
-                        if let Err(err) = app.on_update(&mut cx) {
-                            tracing::error!("{err:?}");
-                            control_flow.set_exit_with_code(1);
-                            return;
+                    WinitEvent::MainEventsCleared if cx.is_running() => {
+                        cx.begin_frame();
+                        if let Err(err) = app.on_update(cx) {
+                            return Self::handle_error(control_flow, 1, err);
                         }
 
                         #[cfg(feature = "imgui")]
-                        if let Some(ui) = cx.ui.take() {
-                            imgui::ImGui::end_frame(ui, cx.window());
-                        }
-
-                        if let Err(err) = renderer.draw_frame(&mut engine_cx.render(#[cfg(feature = "imgui")] imgui)) {
-                            tracing::error!("{err:?}");
-                            control_flow.set_exit_with_code(2);
+                        let ui_data = match app.render_imgui(cx) {
+                            Ok(ui_data) => ui_data,
+                            Err(err) => return Self::handle_error(control_flow, 1, err),
                         };
-
-                        engine_cx.end_frame();
+                        if let Err(err) = cx.draw_frame(#[cfg(feature = "imgui")] ui_data) {
+                            return Self::handle_error(control_flow, 2, err);
+                        }
+                        cx.end_frame();
                     }
                     _ => {
                         tracing::trace!("received event: {event:?}");
                         if let Ok(event) = event.try_into() {
-                            if let Event::WindowEvent {
-                                window_id: _,
-                                event: WindowEvent::Resized(size),
-                            } = event {
-                                renderer.on_resized(size);
-                            }
-                            engine_cx.on_event(event);
-                            #[cfg(feature = "imgui")]
-                            imgui.on_event(event);
-                            app.on_event(&mut engine_cx.context(), event);
+                            cx.on_event(event);
+                            app.on_event(cx, event);
                         }
                     }
                 }
 
-                if engine_cx.should_quit() && !engine_cx.is_quitting {
-                    engine_cx.is_quitting = true;
+                if cx.should_quit() && !cx.is_quitting {
+                    cx.is_quitting = true;
                     tracing::debug!("shutting down with `Engine::on_stop`");
-                    app.on_stop(&mut engine_cx.context());
+                    app.on_stop(cx);
                     // on_stop allows aborting the quit request
-                    if engine_cx.should_quit() {
+                    if cx.should_quit() {
                         tracing::debug!("shutting down...");
                         control_flow.set_exit();
                     } else {
-                        engine_cx.is_quitting = false;
+                        cx.is_quitting = false;
                     }
                 }
             }
         });
+    }
+
+    fn handle_error(control_flow: &mut ControlFlow, code: i32, err: Error) {
+        tracing::error!("{err:?}");
+        control_flow.set_exit_with_code(code);
     }
 }

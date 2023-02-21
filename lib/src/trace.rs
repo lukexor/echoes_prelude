@@ -10,12 +10,12 @@ const LOG_FILENAME_PREFIX: &str = "echoes_prelude.log";
 
 #[derive(Debug)]
 #[must_use]
-pub struct Trace {
+pub struct TraceGuard {
     _file_log_guard: WorkerGuard,
 }
 
 /// Initialize the tracing library.
-pub fn initialize() -> Trace {
+pub fn initialize() -> TraceGuard {
     let env_filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
@@ -44,5 +44,5 @@ pub fn initialize() -> Trace {
         eprintln!("setting tracing default failed: {err:?}");
     }
 
-    Trace { _file_log_guard }
+    TraceGuard { _file_log_guard }
 }

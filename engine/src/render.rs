@@ -4,9 +4,9 @@ use crate::{mesh::MaterialType, prelude::*, window::Window, Result};
 use asset_loader::filesystem::DataSource;
 use std::{fmt, path::PathBuf};
 
-pub(crate) use backend::{RenderBackend, RenderContext};
+pub use backend::{RenderBackend, RenderContext};
 
-mod backend;
+pub mod backend;
 
 pub trait Render {
     /// Set the clear color for the next frame.
@@ -41,75 +41,71 @@ pub trait Render {
 }
 
 #[derive(Debug)]
-pub(crate) struct Renderer<C = RenderContext> {
-    cx: C,
+pub struct Renderer<Ctx = RenderContext> {
+    cx: Ctx,
 }
 
-impl<C: RenderBackend> Renderer<C> {
+impl<Ctx: RenderBackend> Renderer<Ctx> {
     /// Initialize the `Renderer`.
-    pub(crate) fn initialize(
+    pub fn initialize(
         application_name: &str,
         applcation_version: &str,
         window: &Window,
         settings: RenderSettings,
-        #[cfg(feature = "imgui")] imgui: &mut imgui::ImGui,
     ) -> Result<Self> {
         Ok(Self {
-            cx: C::initialize(
-                application_name,
-                applcation_version,
-                window,
-                settings,
-                #[cfg(feature = "imgui")]
-                imgui,
-            )?,
+            cx: Ctx::initialize(application_name, applcation_version, window, settings)?,
         })
     }
 
+    /// Initialize imgui renderer.
+    #[cfg(feature = "imgui")]
+    pub fn initialize_imgui(&mut self, imgui: &mut imgui::ImGui) -> Result<()> {
+        self.cx.initialize_imgui(imgui)
+    }
+
     /// Handle window resized event.
-    pub(crate) fn on_resized(&mut self, size: PhysicalSize<u32>) {
+    pub fn on_resized(&mut self, size: PhysicalSize<u32>) {
         self.cx.on_resized(size);
     }
 
     /// Draws a frame.
-    pub(crate) fn draw_frame(&mut self, draw_data: &mut DrawData<'_>) -> Result<()> {
+    pub fn draw_frame(&mut self, draw_data: &mut DrawData<'_>) -> Result<()> {
         self.cx.draw_frame(draw_data)
     }
 }
 
-impl<T> Render for Context<'_, T> {
+impl<T, R: RenderBackend> Render for Context<T, R> {
     /// Set the clear color for the next frame.
     #[inline]
     fn set_clear_color(&mut self, color: impl Into<Vec4>) {
-        self.cx.draw_cmds.push(DrawCmd::ClearColor(color.into()));
+        self.draw_cmds.push(DrawCmd::ClearColor(color.into()));
     }
 
     /// Set the clear depth and/or stencil for the next frame.
     #[inline]
     fn set_clear_depth_stencil(&mut self, depth: f32, stencil: u32) {
-        self.cx
-            .draw_cmds
+        self.draw_cmds
             .push(DrawCmd::ClearDepthStencil((depth, stencil)));
     }
 
     /// Set the projection matrix for the next frame.
     #[inline]
     fn set_projection(&mut self, projection: impl Into<Mat4>) {
-        self.cx
-            .draw_cmds
+        self.draw_cmds
             .push(DrawCmd::SetProjection(projection.into()));
     }
 
     /// Set the view matrix for the next frame.
     #[inline]
     fn set_view(&mut self, view: impl Into<Mat4>) {
-        self.cx.draw_cmds.push(DrawCmd::SetView(view.into()));
+        self.draw_cmds.push(DrawCmd::SetView(view.into()));
     }
 
     /// Set an objects transform matrix.
     #[inline]
     fn set_object_transform(&mut self, name: &'static str, transform: impl Into<Mat4>) {
-        self.cx.draw_cmds.push(DrawCmd::SetObjectTransform {
+        self.draw_cmds.push(DrawCmd::SetObjectTransform {
             name,
             transform: transform.into(),
         });
@@ -118,7 +114,7 @@ impl<T> Render for Context<'_, T> {
     /// Load a mesh into memory.
     #[inline]
     fn load_mesh(&mut self, name: impl Into<String>, source: impl Into<DataSource>) {
-        self.cx.draw_cmds.push(DrawCmd::LoadMesh {
+        self.draw_cmds.push(DrawCmd::LoadMesh {
             name: name.into(),
             source: source.into(),
         });
@@ -127,7 +123,7 @@ impl<T> Render for Context<'_, T> {
     /// Load a texture into memory.
     #[inline]
     fn load_texture(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>) {
-        self.cx.draw_cmds.push(DrawCmd::LoadTexture {
+        self.draw_cmds.push(DrawCmd::LoadTexture {
             name: name.into(),
             filename: filename.into(),
         });
@@ -142,7 +138,7 @@ impl<T> Render for Context<'_, T> {
         material_type: impl Into<MaterialType>,
         transform: impl Into<Mat4>,
     ) {
-        self.cx.draw_cmds.push(DrawCmd::LoadObject {
+        self.draw_cmds.push(DrawCmd::LoadObject {
             name: name.into(),
             mesh: mesh.into(),
             material_type: material_type.into(),
@@ -178,18 +174,17 @@ pub enum DrawCmd {
     },
 }
 
-#[derive(Default)]
 #[must_use]
 pub struct DrawData<'a> {
-    pub(crate) data: Vec<DrawCmd>,
+    pub(crate) commands: &'a [DrawCmd],
     #[cfg(feature = "imgui")]
-    pub(crate) imgui: Option<&'a imgui::DrawData>,
+    pub(crate) imgui: &'a imgui::DrawData,
 }
 
 impl fmt::Debug for DrawData<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DrawData")
-            .field("data", &self.data)
+            .field("commands", &self.commands)
             .finish_non_exhaustive()
     }
 }

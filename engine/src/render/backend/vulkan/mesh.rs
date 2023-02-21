@@ -35,7 +35,7 @@ impl AllocatedMesh {
     }
 
     /// Destroy a `Mesh` intance.
-    pub(crate) unsafe fn destroy(&self, device: &ash::Device) {
+    pub(crate) unsafe fn destroy(&mut self, device: &ash::Device) {
         self.vertex_buffer.destroy(device);
         self.index_buffer.destroy(device);
     }

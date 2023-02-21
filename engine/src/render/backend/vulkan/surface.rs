@@ -32,7 +32,7 @@ impl Surface {
         Ok(Self { loader, handle })
     }
 
-    pub(crate) unsafe fn destroy(&self, allocator: Option<&vk::AllocationCallbacks>) {
+    pub(crate) unsafe fn destroy(&mut self, allocator: Option<&vk::AllocationCallbacks>) {
         self.loader.destroy_surface(self.handle, allocator);
     }
 }
