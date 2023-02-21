@@ -30,7 +30,6 @@ use crate::{
 use anyhow::Context as _;
 use ash::vk;
 use asset_loader::{filesystem::DataSource, Asset, TextureAsset};
-use async_trait::async_trait;
 use fnv::FnvHashMap;
 use semver::Version;
 use std::{
@@ -113,7 +112,6 @@ impl fmt::Debug for Context {
     }
 }
 
-#[async_trait]
 impl RenderBackend for Context {
     /// Initialize Vulkan `Context`.
     fn initialize(
@@ -374,11 +372,14 @@ impl RenderBackend for Context {
             )?;
         }
 
-        let command_buffers = if cfg!(feature = "imgui") && self.imgui_renderer.is_some() {
+        #[cfg(feature = "imgui")]
+        let command_buffers = if self.imgui_renderer.is_some() {
             &self.frames[self.current_frame].command_buffers
         } else {
             slice::from_ref(&self.frames[self.current_frame].command_buffers[0])
         };
+        #[cfg(not(feature = "imgui"))]
+        let command_buffers = slice::from_ref(&self.frames[self.current_frame].command_buffers[0]);
         let wait_stages = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
         let render_semaphor = self.frames[self.current_frame].render_semaphor;
         let submit_info = vk::SubmitInfo::builder()

@@ -5,7 +5,6 @@ use crate::{
     matrix::Mat4, mesh::MaterialType, prelude::PhysicalSize, vector::Vec4, window::Window, Result,
 };
 use asset_loader::filesystem::DataSource;
-use async_trait::async_trait;
 use std::path::Path;
 
 mod vulkan;
@@ -30,7 +29,6 @@ macro_rules! render_bail {
     };
 }
 
-#[async_trait]
 pub trait RenderBackend: Sized {
     /// Initialize the `RendererBackend`.
     fn initialize(
