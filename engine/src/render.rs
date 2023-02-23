@@ -222,9 +222,9 @@ pub struct RenderSettings {
 impl Default for RenderSettings {
     fn default() -> Self {
         Self {
-            sampler_ansiotropy: true,
-            sample_shading: true,
-            msaa: true,
+            sampler_ansiotropy: false,
+            sample_shading: false,
+            msaa: false,
             wireframe: false,
             line_width: 1.0,
             level_of_detail: 1.0,

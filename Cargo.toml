@@ -3,10 +3,11 @@ resolver = "2"
 members = [
     "echoes_prelude",
     "engine",
+    "engine/examples/models",
     "lib",
     "asset_loader",
 ]
-default-members = ["echoes_prelude", "asset_loader"]
+default-members = ["echoes_prelude", "asset_loader", "engine/examples/models"]
 
 [workspace.dependencies]
 anyhow = "1.0.66"

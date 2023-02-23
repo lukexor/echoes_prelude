@@ -349,7 +349,7 @@ impl RenderBackend for Context {
             match result {
                 Ok((index, _is_sub_optimal)) => index as usize,
                 Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    tracing::warn!("swapchain image out of date");
+                    tracing::debug!("swapchain image out of date");
                     self.recreate_swapchain()?;
                     return Ok(());
                 }
@@ -419,7 +419,7 @@ impl RenderBackend for Context {
         };
 
         if is_resized {
-            tracing::warn!("swapchain is suboptimal for surface");
+            tracing::debug!("swapchain is suboptimal for surface");
             self.recreate_swapchain()?;
             self.resized = false;
         }
@@ -1313,7 +1313,7 @@ mod debug {
         } else if severity >= vk::DebugUtilsMessageSeverityFlagsEXT::WARNING {
             tracing::warn!("{msg_type} {message}");
         } else if severity >= vk::DebugUtilsMessageSeverityFlagsEXT::INFO {
-            tracing::info!("{msg_type} {message}");
+            tracing::debug!("{msg_type} {message}");
         } else if severity >= vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE {
             tracing::trace!("{msg_type} {message}");
         };

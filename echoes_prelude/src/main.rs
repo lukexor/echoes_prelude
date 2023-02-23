@@ -67,10 +67,7 @@ const WINDOW_HEIGHT: u32 = 900;
 
 fn main() -> Result<()> {
     let _trace = trace::initialize();
-    run_application()
-}
 
-fn run_application() -> Result<()> {
     let application = Application::initialize()?;
     let engine = Engine::builder()
         .title(APPLICATION_NAME)
@@ -79,9 +76,10 @@ fn run_application() -> Result<()> {
         .positioned(Positioned::Center)
         // TODO: pull from saved configuration
         // .fullscreen(Fullscreen::Borderless)
-        .cursor_grab(true)
+        // .cursor_grab(true)
         .build();
     engine.run(application)?;
+
     Ok(())
 }
 
@@ -113,7 +111,7 @@ impl OnUpdate for Application {
     /// Called on engine start.
     #[inline]
     fn on_start(&mut self, cx: &mut Cx) -> PixResult<()> {
-        tracing::info!("echoes prelude start");
+        tracing::info!("initializing");
         self.game.initialize(cx)?;
         self.imgui.initialize(cx)?;
         Ok(())
@@ -140,7 +138,7 @@ impl OnUpdate for Application {
     /// Called on engine shutdown.
     #[inline]
     fn on_stop(&mut self, _cx: &mut Cx) {
-        tracing::info!("echoes prelude stop");
+        tracing::debug!("shutting down");
     }
 
     /// Called on every event.

@@ -1,0 +1,11 @@
+[package]
+name = "models"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+pix-engine = { path = "../../", features = ["imgui"] }
+imgui = { version = "~0.10.0" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

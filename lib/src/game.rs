@@ -11,14 +11,10 @@ pub enum GameEvent {
     Debug, // FIXME: Temporary
 }
 
-#[allow(missing_copy_implementations)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[must_use]
 pub struct Game {
     config: Config,
-    camera: Camera,
-    projection: Mat4,
-    projection_dirty: bool,
     menu_is_open: bool,
 }
 
@@ -27,9 +23,6 @@ impl Game {
     pub fn new() -> Result<Self> {
         Ok(Self {
             config: Config::new(),
-            camera: Camera::new([0.0, 0.5, 3.0]),
-            projection: Mat4::identity(),
-            projection_dirty: true,
             menu_is_open: false,
         })
     }
@@ -38,43 +31,19 @@ impl Game {
     #[inline]
     pub fn initialize(&mut self, cx: &mut Cx) -> Result<()> {
         tracing::debug!("initializing echoes prelude");
-        self.update_projection(cx.width(), cx.height());
+        std::env::set_current_dir(env!("CARGO_MANIFEST_DIR"))?;
 
-        cx.load_mesh("viking_room_mesh", "lib/assets/meshes/viking_room.mesh");
-        cx.load_texture("viking_room_texture", "lib/assets/textures/viking_room.tx");
+        cx.set_projection(Mat4::identity().inverted_y());
+
+        cx.load_mesh("viewport_mesh", "assets/meshes/rectangle.mesh");
+        cx.load_texture("cyberpunk_test", "assets/textures/cyberpunk_test.tx");
         cx.load_object(
-            "viking_room",
-            "viking_room_mesh",
-            MaterialType::Texture("viking_room_texture".into()),
+            "viewport",
+            "viewport_mesh",
+            MaterialType::Texture("cyberpunk_test".into()),
             Mat4::identity(),
         );
 
-        cx.load_mesh(
-            "provence_house_mesh",
-            "lib/assets/meshes/provence_house.mesh",
-        );
-        cx.load_texture(
-            "provence_house_texture",
-            "lib/assets/textures/provence_house.tx",
-        );
-        cx.load_object(
-            "provence_house",
-            "provence_house_mesh",
-            MaterialType::Texture("provence_house_texture".into()),
-            Mat4::translation([0.0, 3.0, 0.0]) * Mat4::rotation([90.0, 0.0, 0.0]),
-        );
-
-        cx.load_mesh("triangle_mesh", "lib/assets/meshes/triangle.mesh");
-        for x in -20..=20 {
-            for y in -20..=20 {
-                cx.load_object(
-                    format!("triangle_{x}_{y}"),
-                    "triangle_mesh",
-                    MaterialType::Default,
-                    Mat4::translation([x as f32, 0.0, y as f32]) * Mat4::scaling([0.2; 3]),
-                );
-            }
-        }
         tracing::debug!("initialized echoes prelude successfully");
 
         Ok(())
@@ -92,15 +61,6 @@ impl Game {
         // TODO: Reduce framerate when not focused.
 
         self.handle_input(cx)?;
-        self.update_projection(cx.width(), cx.height());
-        cx.set_projection(self.projection);
-        cx.set_view(self.camera.view());
-
-        // FIXME: temporary
-        let time = cx.elapsed().as_secs_f32();
-        let flash = time.sin().abs();
-        cx.set_clear_color([0.0, 0.0, flash, 1.0]);
-        cx.set_object_transform("viking_room", Mat4::rotation([90.0, 0.0, time * 20.0]));
 
         Ok(())
     }
@@ -112,53 +72,17 @@ impl Game {
             cx.send_event(GameEvent::Debug);
         }
 
+        #[cfg(debug_assertions)]
+        if cx.key_typed(KeyCode::Escape) {
+            cx.quit();
+        }
+
         if cx.key_typed(KeyCode::M) {
             self.menu_is_open = !self.menu_is_open;
         }
 
-        if !self.menu_is_open {
-            let speed = self.config.movement_speed * cx.delta_time().as_secs_f32();
-            if cx.key_down(KeyCode::A) {
-                self.camera.move_left(speed);
-            }
-            if cx.key_down(KeyCode::D) {
-                self.camera.move_right(speed);
-            }
-            if cx.key_down(KeyCode::W) {
-                self.camera.move_forward(speed);
-            }
-            if cx.key_down(KeyCode::S) {
-                self.camera.move_backward(speed);
-            }
-
-            let degrees = Degrees::new(self.config.mouse_sensitivity * speed);
-            if cx.key_down(KeyCode::Left) {
-                self.camera.yaw(-degrees);
-            }
-            if cx.key_down(KeyCode::Right) {
-                self.camera.yaw(degrees);
-            }
-            if cx.key_down(KeyCode::Up) {
-                self.camera.pitch(-degrees);
-            }
-            if cx.key_down(KeyCode::Down) {
-                self.camera.pitch(degrees);
-            }
-
-            if cx.modifiers_down(ModifierKeys::SHIFT) && cx.key_down(KeyCode::Space) {
-                self.camera.move_down(speed);
-            } else if cx.key_down(KeyCode::Space) {
-                self.camera.move_up(speed);
-            }
-        }
-
         if cx.key_typed(KeyCode::Return) && cx.modifiers_down(ModifierKeys::CTRL) {
             cx.toggle_fullscreen(self.config.fullscreen_mode);
-        }
-
-        #[cfg(debug_assertions)]
-        if cx.key_typed(KeyCode::Escape) {
-            cx.quit();
         }
 
         Ok(())
@@ -173,10 +97,8 @@ impl Game {
     ) -> Result<&imgui::DrawData> {
         let ui = cx.new_ui_frame(imgui);
         if self.menu_is_open {
-            cx.set_cursor_grab(false);
             ui.show_demo_window(&mut self.menu_is_open);
         } else {
-            cx.set_cursor_grab(true);
         }
         cx.end_ui_frame(ui);
         Ok(cx.render_ui_frame(imgui))
@@ -196,48 +118,11 @@ impl Game {
             return;
         }
 
-        match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(_) => self.projection_dirty = true,
+        if let Event::WindowEvent { event, .. } = event {
+            match event {
                 WindowEvent::CloseRequested | WindowEvent::Destroyed { .. } => cx.quit(),
                 _ => (),
-            },
-            Event::DeviceEvent { event, .. } => match event {
-                DeviceEvent::MouseMotion { delta: (x, y) } if !self.menu_is_open => {
-                    self.camera.yaw(Degrees::new(
-                        x as f32 * self.config.mouse_sensitivity * cx.delta_time().as_secs_f32(),
-                    ));
-                    self.camera.pitch(Degrees::new(
-                        y as f32 * self.config.mouse_sensitivity * cx.delta_time().as_secs_f32(),
-                    ));
-                }
-                DeviceEvent::MouseWheel { delta } if !self.menu_is_open => {
-                    let y = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y * self.config.scroll_pixels_per_line,
-                        MouseScrollDelta::PixelDelta(position) => position.y as f32,
-                    };
-                    self.camera.zoom(Degrees::new(y));
-                    self.projection_dirty = true;
-                }
-                _ => (),
-            },
-            _ => (),
+            }
         }
-    }
-
-    /// Update the projection/view matrices.
-    #[inline]
-    fn update_projection(&mut self, width: u32, height: u32) {
-        if !self.projection_dirty {
-            return;
-        }
-        self.projection = Mat4::perspective(
-            self.camera.fov(),
-            width as f32 / height as f32,
-            self.config.near_clip,
-            self.config.far_clip,
-        )
-        .inverted_y();
-        self.projection_dirty = false;
     }
 }

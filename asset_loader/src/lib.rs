@@ -273,10 +273,11 @@ impl Asset for TextureAsset {
         );
 
         // TODO: Generate mipmaps?
+        assert_eq!((info.width * info.height * 4) as usize, info.buffer_size());
         Ok(Self {
             meta: AssetMeta {
                 original_file: filename.to_path_buf(),
-                unpacked_size: pixels.len(),
+                unpacked_size: info.buffer_size(),
                 ..Default::default()
             },
             width: info.width,
