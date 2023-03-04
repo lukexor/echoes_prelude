@@ -69,6 +69,11 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    /// A default mesh that can be used for textured rectangles.
+    pub const RECTANGLE: &str = "assets/meshes/rectangle.mesh";
+    /// A default mesh that can be used for colored triangles.
+    pub const TRIANGLE: &str = "assets/meshes/triangle.mesh";
+
     /// Load a new `Mesh` from an asset file.
     pub async fn from_asset_path(filename: impl AsRef<Path>) -> Result<Self> {
         let filename = filename.as_ref();
@@ -86,17 +91,6 @@ impl Mesh {
             vertices,
             indices,
             filename: Some(filename.to_path_buf()),
-        })
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let (vertices, indices) = MeshAsset::buffers_from_bytes::<Vertex>(bytes)
-            .context("failed to deserialize mesh from bytes")?;
-
-        Ok(Self {
-            vertices,
-            indices,
-            filename: None,
         })
     }
 }

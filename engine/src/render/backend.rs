@@ -4,7 +4,6 @@ use crate::imgui;
 use crate::{
     matrix::Mat4, mesh::MaterialType, prelude::PhysicalSize, vector::Vec4, window::Window, Result,
 };
-use asset_loader::filesystem::DataSource;
 use std::path::Path;
 
 mod vulkan;
@@ -64,7 +63,7 @@ pub trait RenderBackend: Sized {
     fn set_object_transform(&mut self, name: &str, transform: Mat4);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: &str, source: &DataSource) -> Result<()>;
+    fn load_mesh(&mut self, name: &str, filename: &Path) -> Result<()>;
 
     /// Unload a named mesh from memory.
     fn unload_mesh(&mut self, name: &str) -> Result<()>;

@@ -29,7 +29,7 @@ use crate::{
 };
 use anyhow::Context as _;
 use ash::vk;
-use asset_loader::{filesystem::DataSource, Asset, TextureAsset};
+use asset_loader::{Asset, TextureAsset};
 use fnv::FnvHashMap;
 use semver::Version;
 use std::{
@@ -318,7 +318,7 @@ impl RenderBackend for Context {
                 DrawCmd::SetObjectTransform { name, transform } => {
                     self.set_object_transform(name, *transform);
                 }
-                DrawCmd::LoadMesh { name, source } => self.load_mesh(name, source)?,
+                DrawCmd::LoadMesh { name, filename } => self.load_mesh(name, filename)?,
                 DrawCmd::LoadTexture { name, filename } => self.load_texture(name, filename)?,
                 DrawCmd::LoadObject {
                     name,
@@ -472,11 +472,8 @@ impl RenderBackend for Context {
     }
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: &str, source: &DataSource) -> Result<()> {
-        let mesh = match source {
-            DataSource::Path(path) => self.runtime.block_on(Mesh::from_asset_path(&path))?,
-            DataSource::Bytes(bytes) => Mesh::from_bytes(bytes)?,
-        };
+    fn load_mesh(&mut self, name: &str, filename: &Path) -> Result<()> {
+        let mesh = self.runtime.block_on(Mesh::from_asset_path(filename))?;
 
         // TODO: allocate from larger buffer pool
         let vertex_buffer = AllocatedBuffer::create_array(

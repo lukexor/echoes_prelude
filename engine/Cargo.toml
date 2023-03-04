@@ -37,6 +37,12 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 winit = "~0.28.1"
 
+[build-dependencies]
+anyhow = { workspace = true }
+asset_loader = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "~0.24.1"
 metal = "~0.24.0"

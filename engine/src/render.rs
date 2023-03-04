@@ -1,7 +1,6 @@
 //! Render traits, types and methods.
 
 use crate::{mesh::MaterialType, prelude::*, window::Window, Result};
-use asset_loader::filesystem::DataSource;
 use std::{fmt, path::PathBuf};
 
 pub use backend::{RenderBackend, RenderContext};
@@ -25,7 +24,7 @@ pub trait Render {
     fn set_object_transform(&mut self, mesh: &'static str, transform: impl Into<Mat4>);
 
     /// Load a mesh into memory.
-    fn load_mesh(&mut self, name: impl Into<String>, source: impl Into<DataSource>);
+    fn load_mesh(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>);
 
     /// Load a texture into memory.
     fn load_texture(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>);
@@ -113,19 +112,21 @@ impl<T, R: RenderBackend> Render for Context<T, R> {
 
     /// Load a mesh into memory.
     #[inline]
-    fn load_mesh(&mut self, name: impl Into<String>, source: impl Into<DataSource>) {
+    fn load_mesh(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>) {
+        let filename = self.config.resolve_asset_path(filename.into());
         self.draw_cmds.push(DrawCmd::LoadMesh {
             name: name.into(),
-            source: source.into(),
+            filename,
         });
     }
 
     /// Load a texture into memory.
     #[inline]
     fn load_texture(&mut self, name: impl Into<String>, filename: impl Into<PathBuf>) {
+        let filename = self.config.resolve_asset_path(filename.into());
         self.draw_cmds.push(DrawCmd::LoadTexture {
             name: name.into(),
-            filename: filename.into(),
+            filename,
         });
     }
 
@@ -160,7 +161,7 @@ pub enum DrawCmd {
     },
     LoadMesh {
         name: String,
-        source: DataSource,
+        filename: PathBuf,
     },
     LoadTexture {
         name: String,

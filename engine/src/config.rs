@@ -1,6 +1,6 @@
 //! Engine configuration.
 
-use std::{env, time::Duration};
+use std::{env, path::PathBuf, time::Duration};
 
 #[derive(Debug, Clone)]
 #[must_use]
@@ -11,6 +11,7 @@ pub struct Config {
     pub(crate) double_click_speed: Duration,
     pub(crate) fullscreen: Option<Fullscreen>,
     pub(crate) cursor_grab: bool,
+    pub(crate) asset_directory: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -25,13 +26,25 @@ impl Default for Config {
             double_click_speed: Duration::from_millis(400),
             fullscreen: None,
             cursor_grab: false,
+            asset_directory: None,
         }
     }
 }
 
 impl Config {
+    /// Create a new default `Config` instance.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Resolve the path where an asset conversion is stored, based on whether this path is a
+    /// `pix-engine`-provided asset, or an application-provided asset with an optional
+    /// `asset_directory` defined.
+    #[inline]
+    #[must_use]
+    pub fn resolve_asset_path(&self, path: PathBuf) -> PathBuf {
+        PathBuf::from(env!("OUT_DIR")).join(path)
     }
 }
 

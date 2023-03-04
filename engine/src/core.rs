@@ -12,7 +12,17 @@ use crate::{
     Error, Result,
 };
 use anyhow::Context as _;
-use std::fmt::Debug;
+use std::{
+    env,
+    fmt::Debug,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tokio::{
+    fs::{self, File},
+    io::{AsyncReadExt, BufReader},
+    runtime,
+};
 use winit::{
     event::{Event as WinitEvent, StartCause},
     event_loop::{ControlFlow, EventLoopBuilder},
@@ -88,13 +98,13 @@ impl EngineBuilder {
         self
     }
 
-    pub fn resizable(&mut self, resizable: bool) -> &mut Self {
-        self.0.window_create_info.resizable = resizable;
+    pub fn assets_directory(&mut self, directory: impl Into<PathBuf>) -> &mut Self {
+        self.0.config.asset_directory = Some(directory.into());
         self
     }
 
-    pub fn config(&mut self, config: Config) -> &mut Self {
-        self.0.config = config;
+    pub fn resizable(&mut self, resizable: bool) -> &mut Self {
+        self.0.window_create_info.resizable = resizable;
         self
     }
 
@@ -127,6 +137,11 @@ impl Engine {
     }
 
     pub fn run<A: OnUpdate + 'static>(self, mut app: A) -> Result<()> {
+        if let Some(assets_directory) = &self.config.asset_directory {
+            let runtime = runtime::Builder::new_multi_thread().enable_all().build()?;
+            runtime.block_on(Self::check_convert_assets(assets_directory))?;
+        }
+
         let event_loop = EventLoopBuilder::<A::UserEvent>::with_user_event().build();
         let event_proxy = event_loop.create_proxy();
         let mut cx = None;
@@ -213,6 +228,57 @@ impl Engine {
                 }
             }
         });
+    }
+
+    async fn check_convert_assets(assets_dir: &PathBuf) -> Result<()> {
+        let out_dir = PathBuf::from(env!("OUT_DIR"));
+
+        let asset_mtime_file = out_dir.join(assets_dir).with_extension("mtime");
+        let should_convert = if asset_mtime_file.exists() {
+            let mut asset_mtime_reader =
+                BufReader::new(File::open(&asset_mtime_file).await.with_context(|| {
+                    format!("failed to open asset mtime file: {asset_mtime_file:?}")
+                })?);
+            let mut last_modified_timestamp = String::with_capacity(16);
+            asset_mtime_reader
+                .read_to_string(&mut last_modified_timestamp)
+                .await?;
+            let last_modified =
+                Duration::from_secs(last_modified_timestamp.parse::<u64>().unwrap_or_default());
+
+            let asset_dir_metadata = fs::metadata(assets_dir).await?;
+            let current_modified = asset_dir_metadata
+                .modified()?
+                .duration_since(UNIX_EPOCH)
+                .context("invalid unix epoch")?;
+
+            tracing::debug!(
+                "asset modified {}. last modified: {}",
+                current_modified.as_secs(),
+                last_modified.as_secs()
+            );
+            current_modified > last_modified
+        } else {
+            tracing::debug!("asset modified timestamp doesn't exist");
+            true
+        };
+
+        if should_convert {
+            asset_loader::convert_all(assets_dir, out_dir)
+                .await
+                .context("failed to convert assets directory")?;
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("invalid unix epoch")?
+                .as_secs();
+            fs::write(&asset_mtime_file, now.to_string())
+                .await
+                .with_context(|| {
+                    format!("failed to write asset mtime file: {asset_mtime_file:?}")
+                })?;
+        }
+        Ok(())
     }
 
     fn handle_error(control_flow: &mut ControlFlow, code: i32, err: Error) {

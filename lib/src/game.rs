@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use pix_engine::prelude::*;
+use pix_engine::{mesh::Mesh, prelude::*};
 
 pub type Cx = Context<GameEvent, RenderContext>;
 
@@ -31,12 +31,11 @@ impl Game {
     #[inline]
     pub fn initialize(&mut self, cx: &mut Cx) -> Result<()> {
         tracing::debug!("initializing echoes prelude");
-        std::env::set_current_dir(env!("CARGO_MANIFEST_DIR"))?;
 
         cx.set_projection(Mat4::identity().inverted_y());
 
-        cx.load_mesh("viewport_mesh", "assets/meshes/rectangle.mesh");
-        cx.load_texture("cyberpunk_test", "assets/textures/cyberpunk_test.tx");
+        cx.load_mesh("viewport_mesh", Mesh::RECTANGLE);
+        cx.load_texture("cyberpunk_test", "lib/assets/textures/cyberpunk_test.tx");
         cx.load_object(
             "viewport",
             "viewport_mesh",

@@ -1,34 +1,42 @@
+use anyhow::Result;
 use std::{
     env,
     ffi::OsStr,
-    fs,
     io::{self, Write},
     path::{Path, PathBuf},
     process::Command,
 };
+use tokio::fs;
+use tokio_stream::{wrappers::ReadDirStream, StreamExt};
 
-fn find_shaders(directory: &Path) -> io::Result<Vec<PathBuf>> {
-    fs::read_dir(directory).map(|read_dir| {
-        read_dir
-            .filter_map(Result::ok)
-            .filter_map(|entry| {
-                let path = entry.path();
-                let extension = path.extension().and_then(OsStr::to_str);
-                matches!(extension, Some("frag" | "vert")).then_some(path)
-            })
-            .collect::<Vec<PathBuf>>()
-    })
+async fn find_shaders(directory: &Path) -> Result<Vec<PathBuf>> {
+    let mut shaders = vec![];
+
+    let mut dirs = ReadDirStream::new(fs::read_dir(&directory).await?);
+    while let Some(Ok(entry)) = dirs.next().await {
+        let path = entry.path();
+        let extension = path.extension().and_then(OsStr::to_str);
+        if matches!(extension, Some("frag" | "vert")) {
+            shaders.push(path);
+        }
+    }
+
+    Ok(shaders)
 }
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=assets/shaders");
+    println!("cargo:rerun-if-changed=assets");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("valid OUT_DIR"));
-    println!("cargo:rustc-env=OUT_DIR={}", out_dir.display());
+    println!("cargo:rustc-env=OUT_DIR={}/", out_dir.display());
 
-    let shader_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/shaders");
-    let shaders = find_shaders(&shader_dir).map_err(|err| {
+    let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+    asset_loader::convert_all(&assets_dir, &out_dir).await?;
+
+    let shader_dir = assets_dir.join("shaders");
+    let shaders = find_shaders(&shader_dir).await.map_err(|err| {
         eprintln!("failed to find shaders in {shader_dir:?}");
         err
     })?;

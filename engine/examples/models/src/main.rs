@@ -31,6 +31,7 @@ fn main() -> Result<()> {
         .version(env!("CARGO_PKG_VERSION"))
         .inner_size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .positioned(Positioned::Center)
+        .assets_directory("assets")
         .build();
     engine.run(application)?;
     Ok(())

@@ -30,6 +30,6 @@ serde_bytes = "~0.11.9"
 thiserror = { workspace = true }
 tobj = { version = "3.2.3", features = ["async"] }
 tokio = { workspace = true }
-tokio-stream = { version = "~0.1.11", features = ["fs"] }
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

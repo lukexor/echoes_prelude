@@ -11,7 +11,13 @@ async fn main() -> Result<()> {
     )?;
 
     match env::args().nth(1) {
-        Some(directory) => asset_loader::convert_all(directory).await?,
+        Some(directory) => {
+            asset_loader::convert_all(
+                &directory,
+                env::args().nth(2).unwrap_or_else(|| directory.clone()),
+            )
+            .await?
+        }
         None => bail!("must provide an assets file path to convert"),
     }
 

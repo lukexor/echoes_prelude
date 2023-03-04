@@ -9,11 +9,11 @@ use tokio::{
 };
 
 pub(crate) const DEFAULT_VERTEX_SHADER: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/default.vert.spv"));
+    include_bytes!(concat!(env!("OUT_DIR"), "default.vert.spv"));
 pub(crate) const DEFAULT_FRAGMENT_SHADER: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/default.frag.spv"));
+    include_bytes!(concat!(env!("OUT_DIR"), "default.frag.spv"));
 pub(crate) const TEXTURE_FRAGMENT_SHADER: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/texture.frag.spv"));
+    include_bytes!(concat!(env!("OUT_DIR"), "texture.frag.spv"));
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[must_use]

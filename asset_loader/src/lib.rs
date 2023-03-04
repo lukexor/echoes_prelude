@@ -6,10 +6,12 @@ use async_compression::{
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use futures::future;
+use png::{BitDepth, ColorType};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
+    result::Result as StdResult,
 };
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -30,11 +32,13 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("this asset is the wrong type")]
     InvalidAssetType,
+    #[error("this asset format is not currently supported: {0}")]
+    InvalidFormat(String),
     #[error("this method requires a destination buffer to be unpacked with")]
     MissingBuffer,
     #[error("this method requires a data buffer to be packed with")]
     MissingData,
-    #[error("failed to deserialize asset data")]
+    #[error("failed to deserialize asset data: {0}")]
     DeserializeError(anyhow::Error),
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -45,8 +49,6 @@ pub enum Error {
 #[async_recursion]
 async fn find_assets(directory: PathBuf) -> Result<Vec<PathBuf>> {
     let mut assets = vec![];
-
-    tracing::debug!("looking for assets in {directory:?}");
 
     if directory.is_dir() {
         let mut dirs = ReadDirStream::new(tokio::fs::read_dir(&directory).await?);
@@ -68,14 +70,22 @@ async fn find_assets(directory: PathBuf) -> Result<Vec<PathBuf>> {
 }
 
 /// Convert all assets in a given directory into a compressed engine format.
-pub async fn convert_all(directory: impl AsRef<Path>) -> Result<()> {
-    let directory = directory.as_ref();
+pub async fn convert_all(source: impl AsRef<Path>, destination: impl Into<PathBuf>) -> Result<()> {
+    let mut source = source.as_ref();
+    let destination = destination.into();
 
-    tracing::info!("converting assets in {directory:?}");
+    let current_dir = std::env::current_dir()?;
+    if source.starts_with(&current_dir) {
+        source = source
+            .strip_prefix(current_dir)
+            .context("failed to strip current_dir prefix")?;
+    }
+
+    tracing::info!("converting assets in {source:?}");
 
     time!(total);
     future::join_all(
-        find_assets(directory.into())
+        find_assets(source.into())
             .await?
             .into_iter()
             .filter_map(|filename| {
@@ -84,15 +94,19 @@ pub async fn convert_all(directory: impl AsRef<Path>) -> Result<()> {
                     .and_then(OsStr::to_str)
                     .and_then(|extension| {
                         Some(match extension {
-                            "png" => TextureAsset::convert(filename.clone()),
-                            "obj" => MeshAsset::convert(filename.clone()),
+                            "png" => TextureAsset::convert(filename.clone(), destination.clone()),
+                            "obj" => MeshAsset::convert(filename.clone(), destination.clone()),
                             _ => return None,
                         })
                     })
                     .map(task::spawn)
             }),
     )
-    .await;
+    .await
+    .into_iter()
+    .collect::<StdResult<StdResult<Vec<_>, _>, _>>()
+    .context("failed to convert all assets")?
+    .context("failed to join all conversion threads")?;
     time!(end: total);
 
     tracing::info!("assets converted successfully");
@@ -228,7 +242,10 @@ pub trait Asset: Sized + Send + Serialize + DeserializeOwned {
     }
 
     /// Convert a file from disk to a packed format.
-    async fn convert(filename: impl AsRef<Path> + Send) -> Result<PathBuf>
+    async fn convert(
+        filename: impl AsRef<Path> + Send,
+        destination: impl AsRef<Path> + Send,
+    ) -> Result<PathBuf>
     where
         Self: Pack;
 }
@@ -320,6 +337,14 @@ impl Asset for TextureAsset {
             let info = reader
                 .next_frame(&mut pixels)
                 .context("failed to read texture frame {filename:?}")?;
+            tracing::debug!("{texture_filename:?} info: {info:?}");
+            if info.bit_depth != BitDepth::Eight || info.color_type != ColorType::Rgba {
+                return Err(Error::InvalidFormat(format!(
+                    "{:?}, {:?}",
+                    info.bit_depth, info.color_type
+                )));
+            }
+
             // let mip_levels = (info.width.max(info.height) as f32).log2().floor() as u32 + 1;
 
             Ok((info, pixels))
@@ -348,8 +373,13 @@ impl Asset for TextureAsset {
     }
 
     /// Convert a file from disk to a packed asset format.
-    async fn convert(filename: impl AsRef<Path> + Send) -> Result<PathBuf> {
+    async fn convert(
+        filename: impl AsRef<Path> + Send,
+        destination: impl AsRef<Path> + Send,
+    ) -> Result<PathBuf> {
         let filename = filename.as_ref();
+        let destination = destination.as_ref();
+
         tracing::info!("converting texture asset {filename:?}");
 
         time!(read_texture);
@@ -360,10 +390,10 @@ impl Asset for TextureAsset {
         texture.pack().await?;
         time!(end: pack_texture);
 
-        let new_filename = filename.with_extension("tx");
+        let new_filename = destination.join(filename.with_extension("tx"));
         texture.save(&new_filename).await?;
 
-        tracing::info!("converted texture asset {filename:?} successsfully");
+        tracing::info!("converted texture asset {filename:?} into {new_filename:?} successsfully");
 
         Ok(new_filename)
     }
@@ -540,8 +570,13 @@ impl Asset for MeshAsset {
     }
 
     /// Convert a file from disk to a packed asset format.
-    async fn convert(filename: impl AsRef<Path> + Send) -> Result<PathBuf> {
+    async fn convert(
+        filename: impl AsRef<Path> + Send,
+        destination: impl AsRef<Path> + Send,
+    ) -> Result<PathBuf> {
         let filename = filename.as_ref();
+        let destination = destination.as_ref();
+
         tracing::info!("converting mesh asset {filename:?}");
 
         time!(read_mesh);
@@ -552,10 +587,10 @@ impl Asset for MeshAsset {
         mesh.pack().await?;
         time!(end: pack_mesh);
 
-        let new_filename = filename.with_extension("mesh");
+        let new_filename = destination.join(filename.with_extension("mesh"));
         mesh.save(&new_filename).await?;
 
-        tracing::info!("converted mesh asset {filename:?} successfully");
+        tracing::info!("converted mesh asset {filename:?} into {new_filename:?} successsfully");
 
         Ok(new_filename)
     }
@@ -584,6 +619,7 @@ impl Unpack for MeshAsset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::fs;
 
     #[tokio::test]
     async fn texture_convert() {
@@ -591,12 +627,13 @@ mod tests {
         let expected = TextureAsset::from_file(&filename)
             .await
             .expect("valid texture file");
-        let converted = TextureAsset::convert(&filename)
+        let converted = TextureAsset::convert(&filename, "tests")
             .await
             .expect("valid texture conversion");
         let mut texture = TextureAsset::load(&converted)
             .await
             .expect("valid texture load");
+        let _ = fs::remove_file(converted).await;
         assert_eq!(texture.meta.version, ASSET_VERSION);
         assert_eq!(texture.meta.original_file, filename);
         assert_eq!(
@@ -605,7 +642,7 @@ mod tests {
         );
         assert_eq!(texture.width, 920);
         assert_eq!(texture.height, 920);
-        assert_eq!(texture.data.len(), 608);
+        assert_eq!(texture.data.len(), 11311);
 
         texture.unpack().await.expect("valid texture unpack");
         assert_eq!(texture, expected);
@@ -639,10 +676,11 @@ mod tests {
         let (expected_vertices, expected_indices) = expected
             .get_buffers::<Vertex>()
             .expect("valid mesh deserialization");
-        let converted = MeshAsset::convert(&filename)
+        let converted = MeshAsset::convert(&filename, "tests")
             .await
             .expect("valid mesh conversion");
-        let mut mesh = MeshAsset::load(converted).await.expect("valid mesh load");
+        let mut mesh = MeshAsset::load(&converted).await.expect("valid mesh load");
+        let _ = fs::remove_file(&converted).await;
 
         assert_eq!(mesh.meta.version, ASSET_VERSION);
         assert_eq!(mesh.meta.original_file, filename);
