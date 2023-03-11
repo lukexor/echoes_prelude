@@ -81,3 +81,5 @@
 - 9 RLS Review all pub items for correct documentation, `#[must_use]` ,`#[non_exhausvive]`
 - 9 RLS Review supported device features and available layers across multiple platforms
 - 9 RLS unit tests, doctests, integration tests
+
+- Better API and error handling for asset conversion
