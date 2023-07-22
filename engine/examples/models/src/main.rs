@@ -144,8 +144,6 @@ impl OnUpdate for Application {
         cx.set_projection(self.projection);
         cx.set_view(self.camera.view());
 
-        tracing::info!("hi");
-
         cx.load_mesh("viking_room_mesh", "assets/meshes/viking_room.mesh");
         cx.load_texture("viking_room_texture", "assets/textures/viking_room.tx");
         cx.load_object(
@@ -206,6 +204,12 @@ impl OnUpdate for Application {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::Resized(_) => self.projection_dirty = true,
                 WindowEvent::CloseRequested | WindowEvent::Destroyed { .. } => cx.quit(),
+                WindowEvent::KeyboardInput { keycode, state, .. } => {
+                    #[cfg(debug_assertions)]
+                    if let (InputState::Pressed, Some(KeyCode::Escape)) = (state, keycode) {
+                        cx.quit();
+                    }
+                }
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => match event {

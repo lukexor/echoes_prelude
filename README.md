@@ -8,3 +8,9 @@ automated systems.
 
 It's a utopia for those in the simulation, everything existing in harmony, but
 something stirs within. Echoes of human consciousness that do not belong.
+
+## Development
+
+### Prerequisites
+
+The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) must be installed.

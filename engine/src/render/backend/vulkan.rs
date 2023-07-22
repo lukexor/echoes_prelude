@@ -468,6 +468,8 @@ impl RenderBackend for Context {
     fn set_object_transform(&mut self, name: &str, transform: Mat4) {
         if let Some(object) = self.objects.get_mut(name) {
             object.transform = transform;
+        } else {
+            tracing::warn!("object `{name}` not found");
         }
     }
 
@@ -736,6 +738,7 @@ impl Context {
         self.update_scene_buffer()?;
 
         let object_buffer = &self.frames[self.current_frame].object_buffer;
+
         let Some(object_data) = object_buffer.mapped_memory.map(|memory| {
             unsafe { slice::from_raw_parts_mut::<ObjectData>(memory.cast(), self.objects.len()) }
         }) else {
@@ -773,8 +776,8 @@ impl Context {
 
         let mut last_mesh = None;
         let mut last_material = None;
-        for (i, (_, object)) in self.objects.iter().enumerate() {
-            object_data[i].transform = object.transform;
+        for (i, (object, object_data)) in self.objects.values().zip(object_data).enumerate() {
+            object_data.transform = object.transform;
 
             let mesh = self
                 .meshes

@@ -53,6 +53,7 @@ macro_rules! impl_matrix {
         $(
             #[doc = concat!("A ", stringify!($col_dim), "x", stringify!($row_dim), " matrix.")]
             #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+            #[repr(C)]
             #[must_use]
             pub struct $Mat {
                 $(pub $field: $Vec),+

@@ -19,6 +19,19 @@ pub(crate) fn padded_uniform_buffer_size<T>(device: &Device) -> u64 {
     aligned_size
 }
 
+pub(crate) fn padded_storage_buffer_size<T>(device: &Device) -> u64 {
+    let min_alignment = device
+        .info
+        .properties
+        .limits
+        .min_storage_buffer_offset_alignment;
+    let mut aligned_size = mem::size_of::<T>() as u64;
+    if min_alignment > 0 {
+        aligned_size = (aligned_size + min_alignment - 1) & !(min_alignment - 1);
+    }
+    aligned_size
+}
+
 #[derive(Default, Deref, DerefMut)]
 #[must_use]
 pub(crate) struct AllocatedBuffer {
@@ -112,8 +125,7 @@ impl AllocatedBuffer {
         array: &[T],
         #[allow(unused)] debug: Option<&Debug>,
     ) -> Result<Self> {
-        // NOTE: mem::size_of::<T> must match typeof `vertices`
-        let size = (mem::size_of::<T>() * array.len()) as u64;
+        let size = std::mem::size_of_val(array) as u64;
 
         tracing::debug!("creating `{name}` array buffer");
 

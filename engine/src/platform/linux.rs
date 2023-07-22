@@ -11,11 +11,11 @@ mod vulkan {
         extensions::{ext, khr},
         vk, Entry, Instance,
     };
-    use std::{collections::HashSet, ffi::CStr};
+    use std::ffi::CStr;
 
     /// Set of [`vk::InstanceCreateFlags`] for Linux.
     pub(crate) const INSTANCE_CREATE_FLAGS: vk::InstanceCreateFlags =
-        vk::InstanceCreateFlags::default();
+        vk::InstanceCreateFlags::empty();
 
     /// Count of required Vulkan [ash::Instance] extensions for Linux.
     #[cfg(debug_assertions)]
@@ -24,23 +24,15 @@ mod vulkan {
     const REQUIRED_EXTENSIONS_COUNT: usize = 2;
 
     /// List of required Vulkan [ash::Instance] extensions for Linux.
-    pub(crate) const REQUIRED_EXTENSIONS: [*const i8; REQUIRED_EXTENSIONS_COUNT] = [
-        khr::Surface::name().as_ptr(),
+    pub(crate) const REQUIRED_EXTENSIONS: [&CStr; REQUIRED_EXTENSIONS_COUNT] = [
+        khr::Surface::name(),
         #[cfg(debug_assertions)]
-        ext::DebugUtils::name().as_ptr(),
-        khr::XlibSurface::name().as_ptr(),
+        ext::DebugUtils::name(),
+        khr::XlibSurface::name(),
     ];
 
     /// Return a list of required [`vk::PhysicalDevice`] extensions for Linux.
-    pub(crate) const REQUIRED_DEVICE_EXTENSIONS: [*const i8; 1] = [khr::Swapchain::name().as_ptr()];
-
-    /// Return a list of optional [`vk::PhysicalDevice`] extensions for Linux.
-    #[inline]
-    pub(crate) fn optional_device_extensions(
-        supported_extensions: &HashSet<&CStr>,
-    ) -> Vec<*const i8> {
-        vec![]
-    }
+    pub(crate) const REQUIRED_DEVICE_EXTENSIONS: [&CStr; 1] = [khr::Swapchain::name()];
 
     /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for Linux.
     pub(crate) fn create_surface(
@@ -48,7 +40,7 @@ mod vulkan {
         instance: &Instance,
         window: &Window,
     ) -> Result<vk::SurfaceKHR> {
-        use winit::platform::unix::WindowExtUnix;
+        use winit::platform::x11::WindowExtX11;
 
         tracing::debug!("creating Linux XLIB surface");
 

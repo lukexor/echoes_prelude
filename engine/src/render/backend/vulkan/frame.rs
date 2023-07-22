@@ -10,6 +10,7 @@ use super::{
 use crate::{
     camera::CameraData,
     mesh::{ObjectData, MAX_OBJECTS},
+    render::backend::vulkan::buffer::{padded_storage_buffer_size, padded_uniform_buffer_size},
     scene::SceneData,
 };
 use anyhow::{Context, Result};
@@ -85,7 +86,7 @@ impl Frame {
             let camera_buffer = AllocatedBuffer::create_mapped(
                 device,
                 "camera",
-                mem::size_of::<CameraData>() as u64,
+                padded_uniform_buffer_size::<CameraData>(device),
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
                 debug,
@@ -94,7 +95,7 @@ impl Frame {
                 device,
                 "object",
                 // TODO: Make this growable as objects are added.
-                MAX_OBJECTS as u64 * mem::size_of::<ObjectData>() as u64,
+                MAX_OBJECTS as u64 * padded_storage_buffer_size::<ObjectData>(device),
                 vk::BufferUsageFlags::STORAGE_BUFFER,
                 vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
                 debug,
@@ -118,7 +119,7 @@ impl Frame {
             let object_info = vk::DescriptorBufferInfo::builder()
                 .buffer(object_buffer.handle)
                 .offset(0)
-                .range(mem::size_of::<ObjectData>() as u64);
+                .range(MAX_OBJECTS as u64 * mem::size_of::<ObjectData>() as u64);
 
             let camera_write = vk::WriteDescriptorSet::builder()
                 .dst_binding(0)

@@ -12,6 +12,7 @@ macro_rules! impl_vector {
         $(
             #[doc = concat!("A ", stringify!($dim), "-dimensional vector.")]
             #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Serialize, Deserialize)]
+            #[repr(C)]
             #[must_use]
             pub struct $Vec {
                 $(pub $field: f32),+
@@ -1013,6 +1014,7 @@ impl From<[f32; 3]> for Vec4 {
 
 /// A `Quaternion`.
 #[derive(Debug, Copy, Clone)]
+#[repr(C)]
 #[must_use]
 pub struct Quaternion {
     pub x: f32,

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::{
     env,
     ffi::OsStr,
@@ -12,7 +12,11 @@ use tokio_stream::{wrappers::ReadDirStream, StreamExt};
 async fn find_shaders(directory: &Path) -> Result<Vec<PathBuf>> {
     let mut shaders = vec![];
 
-    let mut dirs = ReadDirStream::new(fs::read_dir(&directory).await?);
+    let mut dirs = ReadDirStream::new(
+        fs::read_dir(&directory)
+            .await
+            .with_context(|| format!("failed to read directory: {directory:?}"))?,
+    );
     while let Some(Ok(entry)) = dirs.next().await {
         let path = entry.path();
         let extension = path.extension().and_then(OsStr::to_str);
@@ -36,10 +40,9 @@ async fn main() -> Result<()> {
     asset_loader::convert_all(&assets_dir, &out_dir).await?;
 
     let shader_dir = assets_dir.join("shaders");
-    let shaders = find_shaders(&shader_dir).await.map_err(|err| {
-        eprintln!("failed to find shaders in {shader_dir:?}");
-        err
-    })?;
+    let shaders = find_shaders(&shader_dir)
+        .await
+        .with_context(|| format!("failed to find shaders in {shader_dir:?}"))?;
     for shader in &shaders {
         println!("cargo:rerun-if-changed={}", shader.display());
 
@@ -47,12 +50,13 @@ async fn main() -> Result<()> {
             .file_name()
             .expect("valid shader filename")
             .to_string_lossy();
-        let shader_out = out_dir.join(format!("{filename}.spv",));
+        let shader_out = out_dir.join(format!("{filename}.spv"));
         let output = Command::new("glslc")
             .arg(shader)
             .arg("-o")
-            .arg(shader_out)
-            .output()?;
+            .arg(&shader_out)
+            .output()
+            .with_context(|| format!("failed to write shader: {shader_out:?}"))?;
         if !output.status.success() {
             io::stdout()
                 .write_all(&output.stdout)

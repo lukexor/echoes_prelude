@@ -159,10 +159,16 @@ impl Device {
             .sampler_anisotropy(settings.sampler_ansiotropy && info.sampler_anisotropy_support)
             .sample_rate_shading(settings.sample_shading);
         let enabled_layer_names = ENABLED_LAYER_NAMES.map(CStr::as_ptr);
-        let enabled_extensions = info
+        let enabled_extension_names = info
             .required_extensions
             .iter()
             .copied()
+            .chain(
+                #[cfg(debug_assertions)]
+                std::iter::once(vk::KhrShaderNonSemanticInfoFn::name()),
+                #[cfg(not(debug_assertions))]
+                std::iter::empty(),
+            )
             .map(CStr::as_ptr)
             .collect::<Vec<_>>();
         let mut shader_draw_features =
@@ -171,7 +177,7 @@ impl Device {
             .queue_create_infos(&queue_create_infos)
             .enabled_features(&enabled_features)
             .enabled_layer_names(&enabled_layer_names)
-            .enabled_extension_names(&enabled_extensions)
+            .enabled_extension_names(&enabled_extension_names)
             .push_next(&mut shader_draw_features);
 
         // SAFETY: All create_info values are set correctly above with valid lifetimes.
