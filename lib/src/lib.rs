@@ -46,6 +46,7 @@ pub mod trace;
 // the `hot_lib_reloader` macro.
 pub use anyhow::Result;
 pub use game::{Cx, Game, GameEvent};
+pub use pix_engine::imgui::Ui;
 pub use pix_engine::prelude::*;
 pub use trace::TraceGuard;
 
@@ -60,8 +61,8 @@ pub fn initialize_trace() -> TraceGuard {
 /// Hot-reloadable [Game::on_update].
 #[inline]
 #[no_mangle]
-pub fn on_update(game: &mut Game, cx: &mut Cx) -> Result<()> {
-    game.on_update(cx)
+pub fn on_update(game: &mut Game, cx: &mut Cx, ui: &mut Ui) -> Result<()> {
+    game.on_update(cx, ui)
 }
 
 /// Hot-reloadable [Game::on_reload].

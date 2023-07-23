@@ -444,6 +444,12 @@ dependencies = [
 [[package]]
 name = "flappy"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pix-engine",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "flate2"

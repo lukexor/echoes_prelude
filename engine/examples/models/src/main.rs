@@ -1,5 +1,5 @@
 use anyhow::Result;
-use pix_engine::{config::Fullscreen, prelude::*, window::Positioned, Result as PixResult};
+use pix_engine::prelude::*;
 use std::io;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
@@ -11,8 +11,8 @@ const WINDOW_HEIGHT: u32 = 900;
 const MOVEMENT_SPEED: f32 = 10.0;
 const MOUSE_SENSITIVITY: f32 = 15.0;
 const SCROLL_PIXELS_PER_LINE: f32 = 12.0;
-const NEAR_CLIP: f32 = 0.1;
-const FAR_CLIP: f32 = 100.0;
+const NEAR_CLIP: f32 = 0.01;
+const FAR_CLIP: f32 = 10000.0;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -32,6 +32,7 @@ fn main() -> Result<()> {
         .inner_size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .positioned(Positioned::Center)
         .assets_directory("assets")
+        .cursor_grab(false)
         .build();
     engine.run(application)?;
     Ok(())
@@ -44,17 +45,15 @@ struct Application {
     projection: Mat4,
     projection_dirty: bool,
     menu_is_open: bool,
-    imgui: imgui::ImGui,
 }
 
 impl Application {
     fn initialize() -> Result<Self> {
         Ok(Self {
-            camera: Camera::new([0.0, 0.5, 3.0]),
+            camera: Camera::new([0.0, 0.0, 10.0]),
             projection: Mat4::identity(),
             projection_dirty: true,
             menu_is_open: false,
-            imgui: imgui::ImGui::create(),
         })
     }
 
@@ -118,13 +117,10 @@ impl Application {
         if !self.projection_dirty {
             return;
         }
-        self.projection = Mat4::perspective(
-            self.camera.fov(),
-            width as f32 / height as f32,
-            NEAR_CLIP,
-            FAR_CLIP,
-        )
-        .inverted_y();
+        let ratio = height as f32 / width as f32;
+        self.projection =
+            Mat4::orthographic(-0.5, 0.5, -0.5 * ratio, 0.5 * ratio, NEAR_CLIP, FAR_CLIP)
+                .inverted_y();
         self.projection_dirty = false;
     }
 }
@@ -138,8 +134,6 @@ impl OnUpdate for Application {
     /// Called on engine start.
     #[inline]
     fn on_start(&mut self, cx: &mut Cx) -> PixResult<()> {
-        self.imgui.initialize(cx)?;
-
         self.update_projection(cx.width(), cx.height());
         cx.set_projection(self.projection);
         cx.set_view(self.camera.view());
@@ -150,7 +144,7 @@ impl OnUpdate for Application {
             "viking_room",
             "viking_room_mesh",
             MaterialType::Texture("viking_room_texture".into()),
-            Mat4::translation([-3.0, 0.0, -3.0]) * Mat4::rotation([90.0, 0.0, 70.0]),
+            Mat4::translation([-4.0, 0.0, 0.0]) * Mat4::rotation([90.0, 0.0, 70.0]),
         );
 
         cx.load_mesh("provence_house_mesh", "assets/meshes/provence_house.mesh");
@@ -162,7 +156,7 @@ impl OnUpdate for Application {
             "provence_house",
             "provence_house_mesh",
             MaterialType::Texture("provence_house_texture".into()),
-            Mat4::translation([5.5, 1.0, -5.0]) * Mat4::rotation([90.0, 0.0, 30.0]),
+            Mat4::translation([5.5, 0.8, -1.0]) * Mat4::rotation([90.0, 0.0, 30.0]),
         );
 
         Ok(())
@@ -170,26 +164,20 @@ impl OnUpdate for Application {
 
     /// Called every frame.
     #[inline]
-    fn on_update(&mut self, cx: &mut Cx) -> PixResult<()> {
+    fn on_update(&mut self, cx: &mut Cx, ui: &mut Ui) -> PixResult<()> {
         self.handle_input(cx)?;
         self.update_projection(cx.width(), cx.height());
         cx.set_projection(self.projection);
         cx.set_view(self.camera.view());
-        Ok(())
-    }
 
-    /// Render UI.
-    #[inline]
-    fn render_imgui(&mut self, cx: &mut Cx) -> PixResult<&imgui::DrawData> {
-        let ui = cx.new_ui_frame(&mut self.imgui);
         if self.menu_is_open {
             cx.set_cursor_grab(false);
             ui.show_demo_window(&mut self.menu_is_open);
         } else {
             cx.set_cursor_grab(true);
         }
-        cx.end_ui_frame(ui);
-        Ok(cx.render_ui_frame(&mut self.imgui))
+
+        Ok(())
     }
 
     /// Called on every event.
@@ -199,7 +187,6 @@ impl OnUpdate for Application {
             return;
         }
 
-        self.imgui.on_event(event);
         match event {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::Resized(_) => self.projection_dirty = true,
@@ -208,6 +195,27 @@ impl OnUpdate for Application {
                     #[cfg(debug_assertions)]
                     if let (InputState::Pressed, Some(KeyCode::Escape)) = (state, keycode) {
                         cx.quit();
+                    }
+                    if let (InputState::Pressed, Some(KeyCode::Key1)) = (state, keycode) {
+                        let ratio = cx.height() as f32 / cx.width() as f32;
+                        self.projection = Mat4::orthographic(
+                            -0.5,
+                            0.5,
+                            -0.5 * ratio,
+                            0.5 * ratio,
+                            NEAR_CLIP,
+                            FAR_CLIP,
+                        )
+                        .inverted_y();
+                    }
+                    if let (InputState::Pressed, Some(KeyCode::Key2)) = (state, keycode) {
+                        self.projection = Mat4::perspective(
+                            self.camera.fov(),
+                            cx.width() as f32 / cx.height() as f32,
+                            NEAR_CLIP,
+                            FAR_CLIP,
+                        )
+                        .inverted_y();
                     }
                 }
                 _ => (),

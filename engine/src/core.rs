@@ -1,8 +1,9 @@
 //! Core engine traits and functionality.
 
+#[cfg(feature = "imgui")]
+use crate::imgui::{ImGui, Ui};
 use crate::{
     config::{Config, Fullscreen},
-    context::Context,
     prelude::*,
     render::{RenderBackend, RenderSettings, Renderer},
     window::{
@@ -39,13 +40,11 @@ pub trait OnUpdate {
     }
 
     /// Called every frame to update state and render frames.
-    fn on_update(&mut self, cx: &mut Context<Self::UserEvent, Self::Renderer>) -> Result<()>;
-
-    #[cfg(feature = "imgui")]
-    fn render_imgui(
+    fn on_update(
         &mut self,
-        _cx: &mut Context<Self::UserEvent, Self::Renderer>,
-    ) -> Result<&imgui::DrawData>;
+        cx: &mut Context<Self::UserEvent, Self::Renderer>,
+        #[cfg(feature = "imgui")] ui: &mut Ui,
+    ) -> Result<()>;
 
     /// Called on engine shutdown to clean up resources.
     fn on_stop(&mut self, _cx: &mut Context<Self::UserEvent, Self::Renderer>) {}
@@ -145,6 +144,8 @@ impl Engine {
         let event_loop = EventLoopBuilder::<A::UserEvent>::with_user_event().build();
         let event_proxy = event_loop.create_proxy();
         let mut cx = None;
+        #[cfg(feature = "imgui")]
+        let mut gui = ImGui::create();
 
         tracing::debug!("starting `Engine::on_update` loop.");
         event_loop.run(move |event, event_loop, control_flow| {
@@ -183,6 +184,10 @@ impl Engine {
                         Err(err) => Self::handle_error(control_flow, 1, err),
                     }
                 } else {
+                    #[cfg(feature = "imgui")]
+                    if let Err(err) = gui.initialize(&mut context) {
+                        Self::handle_error(control_flow, 2, err);
+                    }
                     cx = Some(context);
                 }
             }
@@ -191,17 +196,18 @@ impl Engine {
                 match event {
                     WinitEvent::MainEventsCleared if cx.is_running() => {
                         cx.begin_frame();
-                        if let Err(err) = app.on_update(cx) {
-                            return Self::handle_error(control_flow, 1, err);
+                        #[cfg(feature = "imgui")]
+                        let ui = cx.begin_ui_frame(&mut gui);
+                        if let Err(err) = app.on_update(cx, #[cfg(feature = "imgui")] ui) {
+                            return Self::handle_error(control_flow, 10, err);
                         }
 
                         #[cfg(feature = "imgui")]
-                        let ui_data = match app.render_imgui(cx) {
-                            Ok(ui_data) => ui_data,
-                            Err(err) => return Self::handle_error(control_flow, 1, err),
-                        };
+                        cx.end_ui_frame(ui);
+                        #[cfg(feature = "imgui")]
+                        let ui_data = cx.render_ui_frame(&mut gui);
                         if let Err(err) = cx.draw_frame(#[cfg(feature = "imgui")] ui_data) {
-                            return Self::handle_error(control_flow, 2, err);
+                            return Self::handle_error(control_flow, 11, err);
                         }
                         cx.end_frame();
                     }
@@ -209,6 +215,8 @@ impl Engine {
                         tracing::trace!("received event: {event:?}");
                         if let Ok(event) = event.try_into() {
                             cx.on_event(event);
+                            #[cfg(feature = "imgui")]
+                            gui.on_event(event);
                             app.on_event(cx, event);
                         }
                     }

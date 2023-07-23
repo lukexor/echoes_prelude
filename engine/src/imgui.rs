@@ -121,7 +121,7 @@ impl ImGui {
 impl<T, R> Context<T, R> {
     /// Begin a UI frame.
     #[inline]
-    pub fn new_ui_frame<'a>(&mut self, imgui: &'a mut imgui::ImGui) -> &'a mut imgui::Ui {
+    pub(crate) fn begin_ui_frame<'a>(&mut self, imgui: &'a mut ImGui) -> &'a mut imgui::Ui {
         use winit::dpi::PhysicalPosition;
 
         let io = imgui.io_mut();
@@ -140,7 +140,7 @@ impl<T, R> Context<T, R> {
 
     /// Called at the end of a frame to submit updates to imgui.
     #[inline]
-    pub fn end_ui_frame(&mut self, ui: &mut Ui) {
+    pub(crate) fn end_ui_frame(&mut self, ui: &mut Ui) {
         if !ui
             .io()
             .config_flags
@@ -158,7 +158,7 @@ impl<T, R> Context<T, R> {
 
     /// Render a UI frame.
     #[inline]
-    pub fn render_ui_frame<'a>(&mut self, imgui: &'a mut imgui::ImGui) -> &'a imgui::DrawData {
+    pub(crate) fn render_ui_frame<'a>(&mut self, imgui: &'a mut ImGui) -> &'a imgui::DrawData {
         imgui.render()
     }
 }

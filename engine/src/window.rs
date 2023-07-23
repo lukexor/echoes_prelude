@@ -123,17 +123,12 @@ impl LogicalSize<f64> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[must_use]
 pub enum Positioned {
+    #[default]
     Center,
     Position(Position),
-}
-
-impl Default for Positioned {
-    fn default() -> Self {
-        Self::Center
-    }
 }
 
 impl From<Position> for Positioned {

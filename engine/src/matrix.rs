@@ -753,45 +753,35 @@ impl Mat4 {
 
     /// Create an orthographic projection matrix.
     #[inline]
-    pub fn orthographic(
-        left: f32,
-        right: f32,
-        bottom: f32,
-        top: f32,
-        near_clip: f32,
-        far_clip: f32,
-    ) -> Self {
-        let lr = 1.0 / (left - right);
-        let bt = 1.0 / (bottom - top);
-        let nf = 1.0 / (near_clip - far_clip);
-        let mut matrix = Self::identity();
-
-        matrix[(0, 0)] = -2.0 * lr;
-        matrix[(1, 1)] = -2.0 * bt;
-        matrix[(2, 2)] = -2.0 * nf;
-
-        matrix[(3, 0)] = (left + right) * lr;
-        matrix[(3, 1)] = (bottom + top) * bt;
-        matrix[(3, 2)] = (near_clip + far_clip) * nf;
-
-        matrix
+    pub fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
+        mat4!(
+            [
+                2.0 / (right - left),
+                0.0,
+                0.0,
+                -(right + left) / (right - left)
+            ],
+            [
+                0.0,
+                2.0 / (top - bottom),
+                0.0,
+                -(top + bottom) / (top - bottom)
+            ],
+            [0.0, 0.0, -2.0 / (far - near), -(far + near) / (far - near)],
+            [0.0, 0.0, 0.0, 1.0],
+        )
     }
 
     /// Create a perspective projection matrix.
     #[inline]
-    pub fn perspective(
-        fov: impl Into<Angle>,
-        aspect_ratio: f32,
-        near_clip: f32,
-        far_clip: f32,
-    ) -> Self {
+    pub fn perspective(fov: impl Into<Angle>, aspect_ratio: f32, near: f32, far: f32) -> Self {
         let tan_frac_fov_two = (fov.into().to_radians() / 2.0).tan();
-        let nf = near_clip - far_clip;
+        let nf = near - far;
 
         let q = 1.0 / tan_frac_fov_two;
         let a = q / aspect_ratio;
-        let b = (near_clip + far_clip) / nf;
-        let c = (2.0 * near_clip * far_clip) / nf;
+        let b = (near + far) / nf;
+        let c = (2.0 * near * far) / nf;
 
         mat4!(
             [a, 0.0, 0.0, 0.0],

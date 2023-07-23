@@ -37,7 +37,7 @@
 )]
 
 use anyhow::Result;
-use pix_engine::{prelude::*, window::Positioned, Result as PixResult};
+use pix_engine::{imgui::Ui, prelude::*, window::Positioned, Result as PixResult};
 
 #[cfg(not(feature = "reload"))]
 use echoes_prelude_lib::*;
@@ -88,7 +88,6 @@ fn main() -> Result<()> {
 #[must_use]
 struct Application {
     game: Game,
-    imgui: imgui::ImGui,
     #[cfg(feature = "reload")]
     _trace_guard: TraceGuard,
 }
@@ -98,7 +97,6 @@ impl Application {
         let game = Game::new()?;
         Ok(Self {
             game,
-            imgui: imgui::ImGui::create(),
             #[cfg(feature = "reload")]
             _trace_guard: initialize_trace(),
         })
@@ -114,26 +112,19 @@ impl OnUpdate for Application {
     fn on_start(&mut self, cx: &mut Cx) -> PixResult<()> {
         tracing::info!("initializing");
         self.game.initialize(cx)?;
-        self.imgui.initialize(cx)?;
         Ok(())
     }
 
     /// Called every frame.
     #[inline]
-    fn on_update(&mut self, cx: &mut Cx) -> PixResult<()> {
+    fn on_update(&mut self, cx: &mut Cx, ui: &mut Ui) -> PixResult<()> {
         #[cfg(feature = "reload")]
         if hot_echoes_prelude_lib::was_updated() {
             self._trace_guard = initialize_trace();
         }
-        on_update(&mut self.game, cx)?;
+        on_update(&mut self.game, cx, ui)?;
         let _ = audio_samples(&mut self.game)?;
         Ok(())
-    }
-
-    /// Render UI.
-    #[inline]
-    fn render_imgui(&mut self, cx: &mut Cx) -> PixResult<&imgui::DrawData> {
-        Ok(self.game.render_imgui(cx, &mut self.imgui)?)
     }
 
     /// Called on engine shutdown.
@@ -145,7 +136,6 @@ impl OnUpdate for Application {
     /// Called on every event.
     #[inline]
     fn on_event(&mut self, cx: &mut Cx, event: Event<Self::UserEvent>) {
-        self.imgui.on_event(event);
         on_event(&mut self.game, cx, event);
     }
 }

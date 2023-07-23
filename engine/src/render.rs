@@ -59,7 +59,7 @@ impl<Ctx: RenderBackend> Renderer<Ctx> {
 
     /// Initialize imgui renderer.
     #[cfg(feature = "imgui")]
-    pub fn initialize_imgui(&mut self, imgui: &mut imgui::ImGui) -> Result<()> {
+    pub fn initialize_imgui(&mut self, imgui: &mut ImGui) -> Result<()> {
         self.cx.initialize_imgui(imgui)
     }
 

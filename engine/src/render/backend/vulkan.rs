@@ -283,7 +283,7 @@ impl RenderBackend for Context {
 
     /// Initialize imgui renderer.
     #[cfg(feature = "imgui")]
-    fn initialize_imgui(&mut self, imgui: &mut imgui::ImGui) -> Result<()> {
+    fn initialize_imgui(&mut self, imgui: &mut ImGui) -> Result<()> {
         self.imgui_renderer = Some(imgui_renderer::Renderer::initialize(
             &self.instance,
             &self.device,
@@ -372,14 +372,11 @@ impl RenderBackend for Context {
             )?;
         }
 
-        #[cfg(feature = "imgui")]
-        let command_buffers = if self.imgui_renderer.is_some() {
+        let command_buffers = if cfg!(feature = "imgui") {
             &self.frames[self.current_frame].command_buffers
         } else {
             slice::from_ref(&self.frames[self.current_frame].command_buffers[0])
         };
-        #[cfg(not(feature = "imgui"))]
-        let command_buffers = slice::from_ref(&self.frames[self.current_frame].command_buffers[0]);
         let wait_stages = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
         let render_semaphor = self.frames[self.current_frame].render_semaphor;
         let submit_info = vk::SubmitInfo::builder()

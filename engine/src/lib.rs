@@ -42,6 +42,7 @@ pub mod camera;
 pub mod color;
 pub mod config;
 pub mod context;
+pub mod coord;
 pub mod core;
 pub mod event;
 #[cfg(feature = "imgui")]
@@ -54,6 +55,7 @@ pub mod platform;
 pub mod render;
 pub mod scene;
 pub mod shader;
+pub mod text;
 pub mod vector;
 pub mod window;
 
@@ -117,10 +119,10 @@ pub mod prelude {
     //! Most commonly used exports for setting up an application.
 
     #[cfg(feature = "imgui")]
-    pub use crate::imgui;
+    pub use crate::imgui::{ImGui, Ui};
     pub use crate::{
         camera::Camera,
-        config::Config,
+        config::{Config, Fullscreen},
         context::Context,
         core::{Engine, OnUpdate},
         event::{
@@ -133,7 +135,8 @@ pub mod prelude {
         render::{Render, RenderBackend, RenderContext},
         shader::{Shader, ShaderStage},
         vector::{Vec2, Vec3, Vec4},
-        window::{PhysicalPosition, PhysicalSize, Position, Size},
+        window::{PhysicalPosition, PhysicalSize, Position, Positioned, Size},
+        Error as PixError, Result as PixResult,
     };
 
     // Macros

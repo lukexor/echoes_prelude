@@ -2,9 +2,12 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use pix_engine::{mesh::Mesh, prelude::*};
+use pix_engine::{imgui::Ui, mesh::Mesh, prelude::*};
 
 pub type Cx = Context<GameEvent, RenderContext>;
+
+const NEAR_CLIP: f32 = 0.001;
+const FAR_CLIP: f32 = 1000.0;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GameEvent {
@@ -32,7 +35,11 @@ impl Game {
     pub fn initialize(&mut self, cx: &mut Cx) -> Result<()> {
         tracing::debug!("initializing echoes prelude");
 
-        cx.set_projection(Mat4::identity().inverted_y());
+        let ratio = cx.height() as f32 / cx.width() as f32;
+        cx.set_projection(
+            Mat4::orthographic(-1.0, 1.0, -1.0 * ratio, 1.0 * ratio, NEAR_CLIP, FAR_CLIP)
+                .inverted_y(),
+        );
 
         cx.load_mesh("viewport_mesh", Mesh::RECTANGLE);
         cx.load_texture("cyberpunk_test", "lib/assets/textures/cyberpunk_test.tx");
@@ -56,10 +63,15 @@ impl Game {
 
     /// Called every frame to update game state.
     #[inline]
-    pub fn on_update(&mut self, cx: &mut Cx) -> Result<()> {
+    pub fn on_update(&mut self, cx: &mut Cx, ui: &mut Ui) -> Result<()> {
         // TODO: Reduce framerate when not focused.
 
         self.handle_input(cx)?;
+
+        if self.menu_is_open {
+            ui.show_demo_window(&mut self.menu_is_open);
+        } else {
+        }
 
         Ok(())
     }
@@ -85,22 +97,6 @@ impl Game {
         }
 
         Ok(())
-    }
-
-    /// Render UI
-    #[inline]
-    pub fn render_imgui<'a>(
-        &'a mut self,
-        cx: &mut Cx,
-        imgui: &'a mut imgui::ImGui,
-    ) -> Result<&imgui::DrawData> {
-        let ui = cx.new_ui_frame(imgui);
-        if self.menu_is_open {
-            ui.show_demo_window(&mut self.menu_is_open);
-        } else {
-        }
-        cx.end_ui_frame(ui);
-        Ok(cx.render_ui_frame(imgui))
     }
 
     /// Called every frame to retrieve audio samples to be played.

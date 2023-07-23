@@ -2,7 +2,7 @@ use super::{
     device::Device,
     swapchain::{Swapchain, MAX_FRAMES_IN_FLIGHT},
 };
-use crate::prelude::imgui;
+use crate::imgui::ImGui;
 use anyhow::{Context, Result};
 use ash::vk;
 use std::{mem::ManuallyDrop, slice};
@@ -20,7 +20,7 @@ impl Renderer {
         device: &Device,
         swapchain: &Swapchain,
         command_pool: vk::CommandPool,
-        imgui: &mut imgui::ImGui,
+        imgui: &mut ImGui,
     ) -> Result<Self> {
         use imgui_rs_vulkan_renderer::{Options, Renderer};
 
