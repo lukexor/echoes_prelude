@@ -31,8 +31,12 @@ mod vulkan {
         khr::XlibSurface::name(),
     ];
 
+    /// Count of required Vulkan [`vk::PhysicalDevice`] extensions for Linux.
+    const REQUIRED_DEVICE_EXTENSIONS_COUNT: usize = 1;
+
     /// Return a list of required [`vk::PhysicalDevice`] extensions for Linux.
-    pub(crate) const REQUIRED_DEVICE_EXTENSIONS: [&CStr; 1] = [khr::Swapchain::name()];
+    pub(crate) const REQUIRED_DEVICE_EXTENSIONS: [&CStr; REQUIRED_DEVICE_EXTENSIONS_COUNT] =
+        [khr::Swapchain::name()];
 
     /// Create a [`vk::SurfaceKHR`] instance for the current [Window] for Linux.
     pub(crate) fn create_surface(

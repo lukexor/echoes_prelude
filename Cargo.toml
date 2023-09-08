@@ -5,7 +5,6 @@ members = [
     "echoes_prelude",
     "engine",
     "engine/examples/models",
-    "engine/examples/flappy",
     "lib",
 ]
 default-members = ["echoes_prelude", "asset_loader", "engine/examples/models"]
