@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
             .arg("-o")
             .arg(&shader_out)
             .output()
-            .with_context(|| format!("failed to compile shader: {shader:?} -> {shader_out:?}"))?;
+            .with_context(|| format!("failed to compile shader: {shader:?} -> {shader_out:?}. Is glslc (included with Vulkan) installed?"))?;
         if !output.status.success() {
             io::stdout()
                 .write_all(&output.stdout)
